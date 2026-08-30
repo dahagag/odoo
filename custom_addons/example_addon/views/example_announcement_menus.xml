@@ -1,0 +1,10 @@
+<odoo>
+    <menuitem id="menu_example_addon_root" name="Announcements" sequence="90"/>
+    <menuitem
+        id="menu_example_announcement"
+        name="Announcements"
+        parent="menu_example_addon_root"
+        action="action_example_announcement"
+        sequence="10"
+    />
+</odoo>

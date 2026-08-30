@@ -1,0 +1,51 @@
+name: ${COMPOSE_PROJECT_NAME:-agentic-erp-dev}
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-odoo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-only}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/pgdata
+    restart: unless-stopped
+
+  odoo:
+    build:
+      context: .
+      dockerfile: docker/odoo-dev.Dockerfile
+      args:
+        ODOO_IMAGE: ${ODOO_IMAGE:-odoo:19.0-20260817}
+        HOST_UID: ${HOST_UID:-1000}
+        HOST_GID: ${HOST_GID:-1000}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ODOO_ADMIN_PASSWORD: ${ODOO_ADMIN_PASSWORD:-change-me-local-only}
+      ODOO_DB: ${ODOO_DB:-agentic_erp_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-odoo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-only}
+    command:
+      - odoo-source
+      - --database=${ODOO_DB:-agentic_erp_dev}
+      - --dev=${ODOO_DEV_MODE:-qweb,xml}
+    ports:
+      - "127.0.0.1:${ODOO_HTTP_PORT:-8069}:8069"
+      - "127.0.0.1:${ODOO_GEVENT_PORT:-8072}:8072"
+    volumes:
+      - .:/workspace
+      - ./docker/odoo.conf:/etc/odoo/odoo.conf:ro
+      - odoo_data:/var/lib/odoo
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  odoo_data:

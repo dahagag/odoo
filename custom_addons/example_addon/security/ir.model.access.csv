@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_example_announcement_user,example.announcement.user,model_example_announcement,base.group_user,1,0,0,0
+access_example_announcement_manager,example.announcement.manager,model_example_announcement,group_announcement_manager,1,1,1,1

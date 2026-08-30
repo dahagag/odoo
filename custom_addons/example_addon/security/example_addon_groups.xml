@@ -1,0 +1,17 @@
+<odoo>
+    <record id="module_category_example_addon" model="ir.module.category">
+        <field name="name">Example Addon</field>
+    </record>
+
+    <record id="privilege_example_addon" model="res.groups.privilege">
+        <field name="name">Example Addon</field>
+        <field name="category_id" ref="module_category_example_addon"/>
+    </record>
+
+    <record id="group_announcement_manager" model="res.groups">
+        <field name="name">Announcement Manager</field>
+        <field name="privilege_id" ref="privilege_example_addon"/>
+        <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+        <field name="comment">Can create, edit, and archive internal announcements.</field>
+    </record>
+</odoo>

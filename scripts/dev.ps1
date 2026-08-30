@@ -1,0 +1,283 @@
+param(
+    [Parameter(Position = 0, Mandatory = $true)]
+    [ValidateSet('doctor', 'build', 'init', 'up', 'down', 'logs', 'shell', 'db-shell', 'scaffold', 'install', 'update', 'test', 'lint', 'reset')]
+    [string]$Command,
+
+    [Parameter(Position = 1)]
+    [string]$Argument,
+
+    [Parameter(Position = 2)]
+    [string]$Extra,
+
+    [switch]$CleanupOnFailure
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$script:ComposeKind = $null
+$script:LastComposeExitCode = 0
+Set-Location -LiteralPath $script:RepoRoot
+
+function Resolve-Compose {
+    if ($script:ComposeKind) { return }
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        throw 'Docker is not installed or is not available on PATH.'
+    }
+
+    & docker compose version *> $null
+    if ($LASTEXITCODE -eq 0) {
+        $script:ComposeKind = 'plugin'
+        return
+    }
+    if (Get-Command docker-compose -ErrorAction SilentlyContinue) {
+        $script:ComposeKind = 'standalone'
+        return
+    }
+    throw 'Docker Compose is unavailable. Install the Docker Compose plugin or standalone docker-compose.'
+}
+
+function Invoke-Compose {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [switch]$AllowFailure
+    )
+    Resolve-Compose
+    if ($script:ComposeKind -eq 'plugin') {
+        & docker compose @Arguments
+    } else {
+        & docker-compose @Arguments
+    }
+    $script:LastComposeExitCode = $LASTEXITCODE
+    if ($script:LastComposeExitCode -ne 0 -and -not $AllowFailure) {
+        throw "Docker Compose failed with exit code $script:LastComposeExitCode."
+    }
+}
+
+function Get-ComposeOutput {
+    param([Parameter(Mandatory = $true)][string[]]$Arguments)
+    Resolve-Compose
+    if ($script:ComposeKind -eq 'plugin') {
+        $output = & docker compose @Arguments
+    } else {
+        $output = & docker-compose @Arguments
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "Docker Compose failed with exit code $LASTEXITCODE."
+    }
+    return $output
+}
+
+function Get-DevSetting {
+    param([string]$Name, [string]$Default)
+    $envPath = Join-Path $script:RepoRoot '.env'
+    if (Test-Path -LiteralPath $envPath) {
+        foreach ($line in Get-Content -LiteralPath $envPath) {
+            if ($line -match '^\s*([^#][A-Za-z0-9_]*)\s*=\s*(.*)\s*$' -and $Matches[1] -eq $Name) {
+                return $Matches[2].Trim().Trim('"').Trim("'")
+            }
+        }
+    }
+    return $Default
+}
+
+function Require-EnvironmentFile {
+    if (-not (Test-Path -LiteralPath (Join-Path $script:RepoRoot '.env'))) {
+        throw 'Missing .env. Copy .env.example to .env, review the development-only credentials, and retry.'
+    }
+}
+
+function Assert-Identifier {
+    param([string]$Value, [string]$Label)
+    if ($Value -notmatch '^[a-z][a-z0-9_]*$') {
+        throw "$Label '$Value' must start with a lowercase letter and contain only lowercase letters, digits, and underscores."
+    }
+}
+
+function Assert-Module {
+    param([string]$Module, [switch]$MustExist)
+    if (-not $Module) { throw 'A module name is required.' }
+    Assert-Identifier $Module 'Module name'
+    if ($MustExist) {
+        $manifest = Join-Path $script:RepoRoot "custom_addons\$Module\__manifest__.py"
+        if (-not (Test-Path -LiteralPath $manifest)) {
+            throw "Owned module '$Module' was not found under custom_addons/."
+        }
+    }
+}
+
+function Start-Database {
+    Invoke-Compose -Arguments @('up', '-d', 'db')
+    $user = Get-DevSetting 'POSTGRES_USER' 'odoo'
+    for ($attempt = 1; $attempt -le 60; $attempt++) {
+        Invoke-Compose -Arguments @('exec', '-T', 'db', 'pg_isready', '-U', $user, '-d', 'postgres') -AllowFailure
+        if ($script:LastComposeExitCode -eq 0) { return }
+        Start-Sleep -Seconds 1
+    }
+    throw 'PostgreSQL did not become healthy within 60 seconds. Run the logs command for details.'
+}
+
+function Invoke-OdooRun {
+    param([string[]]$Arguments, [switch]$AllowFailure)
+    $composeArgs = @('run', '--rm', '--no-deps', 'odoo', 'odoo-source') + $Arguments
+    Invoke-Compose -Arguments $composeArgs -AllowFailure:$AllowFailure
+}
+
+function Initialize-Database {
+    Start-Database
+    $database = Get-DevSetting 'ODOO_DB' 'agentic_erp_dev'
+    $user = Get-DevSetting 'POSTGRES_USER' 'odoo'
+    Assert-Identifier $database 'Database name'
+
+    $exists = Get-ComposeOutput -Arguments @('exec', '-T', 'db', 'psql', '-U', $user, '-d', 'postgres', '-tAc', "SELECT 1 FROM pg_database WHERE datname = '$database'")
+    if (($exists | Out-String).Trim() -ne '1') {
+        Invoke-Compose -Arguments @('exec', '-T', 'db', 'createdb', '-U', $user, $database)
+    }
+
+    $initialized = Get-ComposeOutput -Arguments @('exec', '-T', 'db', 'psql', '-U', $user, '-d', $database, '-tAc', "SELECT CASE WHEN to_regclass('public.ir_module_module') IS NOT NULL THEN 1 ELSE 0 END")
+    if (($initialized | Out-String).Trim() -eq '1') {
+        Write-Host "Database '$database' is already initialized."
+        return
+    }
+    Invoke-OdooRun -Arguments @("--database=$database", '--init=base,web', '--without-demo', '--stop-after-init')
+    Write-Host "Initialized development database '$database'."
+}
+
+function Invoke-ModuleLifecycle {
+    param([string]$Module, [ValidateSet('install', 'update')][string]$Mode)
+    Assert-Module $Module -MustExist
+    Initialize-Database
+    $database = Get-DevSetting 'ODOO_DB' 'agentic_erp_dev'
+    Assert-Identifier $database 'Database name'
+    Invoke-Compose -Arguments @('stop', 'odoo') -AllowFailure
+    try {
+        $switch = if ($Mode -eq 'install') { "--init=$Module" } else { "--update=$Module" }
+        Invoke-OdooRun -Arguments @("--database=$database", $switch, '--stop-after-init')
+    } finally {
+        Invoke-Compose -Arguments @('up', '-d', 'odoo') -AllowFailure
+    }
+}
+
+function Invoke-ModuleTest {
+    param([string]$Module, [string]$Tags, [bool]$Cleanup)
+    Assert-Module $Module -MustExist
+    Start-Database
+    $user = Get-DevSetting 'POSTGRES_USER' 'odoo'
+    $prefix = Get-DevSetting 'ODOO_TEST_DB_PREFIX' 'agentic_erp_test'
+    Assert-Identifier $prefix 'Test database prefix'
+    $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddHHmmss')
+    $testDatabase = "${prefix}_${stamp}_$PID"
+    Assert-Identifier $testDatabase 'Test database name'
+    if (-not $Tags) { $Tags = "/$Module" }
+
+    Invoke-Compose -Arguments @('exec', '-T', 'db', 'createdb', '-U', $user, $testDatabase)
+    Invoke-OdooRun -Arguments @("--database=$testDatabase", "--init=$Module", '--without-demo', '--test-enable', "--test-tags=$Tags", '--stop-after-init', '--log-level=test') -AllowFailure
+    $testExitCode = $script:LastComposeExitCode
+    if ($testExitCode -eq 0) {
+        Invoke-Compose -Arguments @('exec', '-T', 'db', 'dropdb', '-U', $user, $testDatabase)
+        Write-Host "Tests passed; removed ephemeral database '$testDatabase'."
+        return
+    }
+    if ($Cleanup) {
+        Invoke-Compose -Arguments @('exec', '-T', 'db', 'dropdb', '-U', $user, $testDatabase)
+        Write-Warning "Tests failed with exit code $testExitCode. Removed database '$testDatabase' as requested."
+    } else {
+        Write-Warning "Tests failed with exit code $testExitCode. Preserved database '$testDatabase' for investigation."
+    }
+    exit $testExitCode
+}
+
+function Invoke-Doctor {
+    Resolve-Compose
+    $required = @('compose.yaml', 'docker\odoo-dev.Dockerfile', 'docker\odoo.conf', '.env.example', 'custom_addons\README.md')
+    foreach ($path in $required) {
+        if (-not (Test-Path -LiteralPath (Join-Path $script:RepoRoot $path))) {
+            throw "Missing required development file: $path"
+        }
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $script:RepoRoot '.env'))) {
+        throw 'Missing .env. Copy .env.example to .env before starting the stack.'
+    }
+    $serverVersion = & docker info --format '{{.ServerVersion}}' 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $serverVersion) {
+        throw 'The Docker engine is not running. Start Docker Desktop with the Linux/WSL2 engine and retry.'
+    }
+    $httpPort = [int](Get-DevSetting 'ODOO_HTTP_PORT' '8069')
+    $geventPort = [int](Get-DevSetting 'ODOO_GEVENT_PORT' '8072')
+    foreach ($port in @($httpPort, $geventPort)) {
+        if ($port -lt 1 -or $port -gt 65535) { throw "Invalid host port: $port" }
+    }
+    $runningServices = @(Get-ComposeOutput -Arguments @('ps', '--status', 'running', '--services'))
+    if ($runningServices -notcontains 'odoo') {
+        foreach ($port in @($httpPort, $geventPort)) {
+            $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $port)
+            try {
+                $listener.Start()
+            } catch {
+                throw "Localhost port $port is already occupied. Change the corresponding value in .env."
+            } finally {
+                $listener.Stop()
+            }
+        }
+    }
+    Invoke-Compose -Arguments @('config', '--quiet')
+    Write-Host "Doctor passed: Docker $serverVersion, Compose $script:ComposeKind, HTTP $httpPort, gevent $geventPort."
+}
+
+Require-EnvironmentFile
+
+switch ($Command) {
+    'doctor' { Invoke-Doctor }
+    'build' { Invoke-Compose -Arguments @('build', 'odoo') }
+    'init' { Initialize-Database }
+    'up' { Start-Database; Invoke-Compose -Arguments @('up', '-d', 'odoo') }
+    'down' { Invoke-Compose -Arguments @('down') }
+    'logs' { Invoke-Compose -Arguments @('logs', '--follow', 'odoo') }
+    'shell' {
+        Start-Database
+        $database = Get-DevSetting 'ODOO_DB' 'agentic_erp_dev'
+        Invoke-Compose -Arguments @('run', '--rm', '--no-deps', 'odoo', 'odoo-source', 'shell', "--database=$database")
+    }
+    'db-shell' {
+        Start-Database
+        $user = Get-DevSetting 'POSTGRES_USER' 'odoo'
+        $database = Get-DevSetting 'ODOO_DB' 'agentic_erp_dev'
+        Invoke-Compose -Arguments @('exec', 'db', 'psql', '-U', $user, '-d', $database)
+    }
+    'scaffold' {
+        Assert-Module $Argument
+        foreach ($root in @('odoo\addons', 'addons', 'custom_addons')) {
+            if (Test-Path -LiteralPath (Join-Path $script:RepoRoot "$root\$Argument")) {
+                throw "Module '$Argument' already exists under $root."
+            }
+        }
+        Invoke-Compose -Arguments @('run', '--rm', '--no-deps', 'odoo', 'python3', '/workspace/odoo-bin', 'scaffold', $Argument, '/workspace/custom_addons')
+    }
+    'install' { Invoke-ModuleLifecycle $Argument 'install' }
+    'update' { Invoke-ModuleLifecycle $Argument 'update' }
+    'test' { Invoke-ModuleTest $Argument $Extra $CleanupOnFailure.IsPresent }
+    'lint' {
+        $path = if ($Argument) { $Argument } else { 'custom_addons' }
+        if ([IO.Path]::IsPathRooted($path) -or $path -split '[\\/]' -contains '..') {
+            throw 'Lint path must be a relative path inside the repository.'
+        }
+        if (-not (Test-Path -LiteralPath (Join-Path $script:RepoRoot $path))) {
+            throw "Lint path '$path' does not exist."
+        }
+        $ruffArguments = @('run', '--rm', '--no-deps', 'odoo', 'ruff', 'check')
+        if ($IsWindows) { $ruffArguments += @('--ignore', 'EXE002') }
+        $ruffArguments += "/workspace/$($path -replace '\\','/')"
+        Invoke-Compose -Arguments $ruffArguments
+    }
+    'reset' {
+        $project = Get-DevSetting 'COMPOSE_PROJECT_NAME' 'agentic-erp-dev'
+        if ($project -notmatch '^[a-z0-9][a-z0-9_-]*$') { throw "Unsafe Compose project name '$project'." }
+        Write-Warning 'This permanently removes the local development database and filestore.'
+        Write-Host "Project: $project"
+        Write-Host "Volumes: ${project}_postgres_data, ${project}_odoo_data"
+        $confirmation = Read-Host "Type '$project' to confirm"
+        if ($confirmation -ne $project) { throw 'Reset cancelled.' }
+        Invoke-Compose -Arguments @('down', '--volumes', '--remove-orphans')
+    }
+}
