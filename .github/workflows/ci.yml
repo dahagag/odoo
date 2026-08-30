@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev/19.0]
+    paths:
+      - "custom_addons/**"
+      - "docker/**"
+      - "requirements.txt"
+      - "compose.yaml"
+      - ".github/workflows/ci.yml"
+
+jobs:
+  lint:
+    name: Lint (required)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure environment
+        run: cp .env.example .env
+      - name: Build development image
+        run: bash scripts/dev.sh build
+      - name: Run ruff
+        run: bash scripts/dev.sh lint custom_addons
+
+  test:
+    name: Test (informational)
+    runs-on: ubuntu-latest
+    # Non-blocking by design: see docs/agents/sdlc.md#continuous-integration.
+    # Do not add this job to the branch's required status checks.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure environment
+        run: cp .env.example .env
+      - name: Build development image
+        run: bash scripts/dev.sh build
+      - name: Run tests for every owned module
+        run: |
+          set -euo pipefail
+          for manifest in custom_addons/*/__manifest__.py; do
+            module="$(basename "$(dirname "$manifest")")"
+            echo "::group::Testing $module"
+            bash scripts/dev.sh test "$module"
+            echo "::endgroup::"
+          done
