@@ -1,4 +1,4 @@
-from odoo.exceptions import AccessError
+from odoo.exceptions import AccessError, UserError
 from odoo.tests import TransactionCase, tagged
 from odoo.tools.convert import convert_file
 
@@ -111,3 +111,15 @@ class TestCrmMethodologyResetDemoData(TransactionCase):
 
         with self.assertRaises(AccessError):
             self.env['crm.methodology'].with_user(self.viewer).action_reset_demo_data()
+
+    def test_reset_requires_the_demo_config_parameter(self):
+        # Ownership-based deletion matches the generic base.user_admin/base.user_demo logins,
+        # which is only safe on a database dedicated to this module's demo (see the comment
+        # above CONFIG_PARAM_RESET_ENABLED in crm_methodology.py) - so the action stays disabled
+        # unless that config parameter is explicitly present, as it is once this demo file loads.
+        self.env['ir.config_parameter'].sudo().search([
+            ('key', '=', 'crm_methodology.demo_reset_enabled'),
+        ]).unlink()
+
+        with self.assertRaises(UserError):
+            self.env['crm.methodology'].with_user(self.sales_manager).action_reset_demo_data()

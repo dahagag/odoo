@@ -18,6 +18,14 @@
          through to its linked quotation but cannot edit/create/delete anything).
          ============================================================ -->
 
+    <!-- Only present when this file is loaded, so "Reset Demo Data" (crm_methodology.py's
+         action_reset_demo_data) is enabled exactly on a database that has this demo dataset,
+         never on a real install where its own persona-ownership matching would be unsafe. -->
+    <record id="crm_methodology_demo_config_reset_enabled" model="ir.config_parameter">
+        <field name="key">crm_methodology.demo_reset_enabled</field>
+        <field name="value">True</field>
+    </record>
+
     <!-- ================= Stakeholder demo personas ================= -->
     <!-- Three named logins for demoing to stakeholders, distinct from the generic
          base.user_admin ("admin") / base.user_demo ("demo") logins above: a Sales Manager and

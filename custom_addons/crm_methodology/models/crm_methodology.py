@@ -12,8 +12,8 @@ DEMO_XMLID_PREFIX = 'crm_methodology_demo_'
 # persist across a reset, only the CRM data attributed to them does.
 # Ownership-based matching (see RESET_PERSONA_OWNED_MODELS below) is DB-wide, not scoped to this
 # module: on a database where other installed modules' own demo data also assigns leads/partners
-# to base.user_admin/base.user_demo, a reset wipes those too. Accepted for this module's intended
-# use as a dedicated single-purpose demo database, not a shared multi-app demo.
+# to base.user_admin/base.user_demo, a reset wipes those too. CONFIG_PARAM_RESET_ENABLED below
+# gates the whole action behind an opt-in system parameter for exactly this reason.
 DEMO_PERSONA_USER_XMLIDS = (
     'base.user_admin',
     'base.user_demo',
@@ -31,6 +31,13 @@ RESET_PERSONA_OWNED_MODELS = ('crm.lead', 'mail.activity', 'res.partner')
 # by XML ID) are in scope, never anything else a Sales Manager may have configured since.
 RESET_SEEDED_ONLY_MODELS = (
     'crm.methodology', 'crm.methodology.requirement', 'crm.methodology.playbook.question')
+
+# Ownership-based matching includes the generic base.user_admin/base.user_demo logins (see
+# DEMO_PERSONA_USER_XMLIDS above), so the reset is only safe on a database dedicated to this
+# module's demo, not one also carrying other modules' demo data assigned to those same logins.
+# Require this system parameter as an explicit opt-in rather than trusting the caller's group
+# membership alone to imply the database is safe to wipe.
+CONFIG_PARAM_RESET_ENABLED = 'crm_methodology.demo_reset_enabled'
 
 
 class CrmMethodology(models.Model):
@@ -98,6 +105,14 @@ class CrmMethodology(models.Model):
         independent of whatever UI wizard/button triggers it."""
         if not self.env.user.has_group('sales_team.group_sale_manager'):
             raise AccessError(_("Only a Sales Manager can reset the demo data."))
+        if not self.env['ir.config_parameter'].sudo().get_param(CONFIG_PARAM_RESET_ENABLED):
+            raise UserError(_(
+                "Resetting demo data is disabled on this database. It deletes any Opportunity, "
+                "Contact, or Activity assigned to the generic “admin”/“demo” logins, which is "
+                "only safe on a database dedicated to this module's demo. Set the "
+                "“%(param)s” system parameter to enable it.",
+                param=CONFIG_PARAM_RESET_ENABLED,
+            ))
         self.sudo()._reset_demo_data()
 
     def _reset_demo_data(self):
