@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+
+    <!-- ============================================================
+         This file is a demo *script*, not just fixtures: records are
+         spread across every stage (New/Qualified/Proposition/Won),
+         every methodology, and both roles this module distinguishes.
+
+         Roles: log in as the Sales Manager (login "admin") to see
+         Configuration > Sales Methodologies and the pivot; log in as
+         the Salesperson (login "demo", password "demo" - already
+         restricted to sales_team.group_sale_salesman by sales_team's
+         own demo data) to see the restricted, opportunity-level view.
+         ============================================================ -->
+
+    <!-- Individual contacts used as MEDDIC Economic Buyer / Champion -->
+    <record id="crm_methodology_demo_contact_diana" model="res.partner">
+        <field name="name">Diana Alvarez (CFO)</field>
+    </record>
+    <record id="crm_methodology_demo_contact_ethan" model="res.partner">
+        <field name="name">Ethan Brooks (VP Operations)</field>
+    </record>
+
+    <!-- Client companies, each assigned a methodology -->
+    <record id="crm_methodology_demo_partner_nimbus" model="res.partner">
+        <field name="name">Nimbus Robotics</field>
+        <field name="is_company" eval="True"/>
+        <field name="methodology_id" ref="crm_methodology_meddic"/>
+    </record>
+    <record id="crm_methodology_demo_partner_falcon" model="res.partner">
+        <field name="name">Falcon Logistics</field>
+        <field name="is_company" eval="True"/>
+        <field name="methodology_id" ref="crm_methodology_sandler"/>
+    </record>
+    <record id="crm_methodology_demo_partner_comet" model="res.partner">
+        <field name="name">Comet Analytics</field>
+        <field name="is_company" eval="True"/>
+        <field name="methodology_id" ref="crm_methodology_spin"/>
+    </record>
+
+    <!-- ================= MEDDIC: New -> Qualified -> Proposition -> Won ================= -->
+
+    <!-- Step 1: brand new opportunity, nothing filled in yet. Salesperson-owned: log in as
+         "demo" to see this on your own pipeline with both banners lit up immediately. -->
+    <record id="crm_methodology_demo_lead_meddic_new" model="crm.lead">
+        <field name="name">Nimbus Robotics - Warehouse Automation</field>
+        <field name="type">opportunity</field>
+        <field name="partner_id" ref="crm_methodology_demo_partner_nimbus"/>
+        <field name="team_id" ref="sales_team.team_sales_department"/>
+        <field name="user_id" ref="base.user_demo"/>
+        <field name="stage_id" ref="crm.stage_lead1"/>
+        <field name="expected_revenue">85000</field>
+    </record>
+
+    <!-- Step 2: moved to Qualified, Champion identified but not yet the Economic Buyer -
+         half-credit on the completion score. -->
+    <record id="crm_methodology_demo_lead_meddic_qualified" model="crm.lead">
+        <field name="name">Nimbus Robotics - Line 2 Expansion</field>
+        <field name="type">opportunity</field>
+        <field name="partner_id" ref="crm_methodology_demo_partner_nimbus"/>
+        <field name="team_id" ref="sales_team.team_sales_department"/>
+        <field name="user_id" ref="base.user_demo"/>
+        <field name="stage_id" ref="crm.stage_lead2"/>
+        <field name="expected_revenue">42000</field>
+    </record>
+
+    <!-- Step 3: Proposition, fully qualified - the one to demo clicking "Won" on and
+         watching it succeed (rainbow man included). Manager-owned. -->
+    <record id="crm_methodology_demo_lead_meddic_proposition" model="crm.lead">
+        <field name="name">Nimbus Robotics - Predictive Maintenance Add-on</field>
+        <field name="type">opportunity</field>
+        <field name="partner_id" ref="crm_methodology_demo_partner_nimbus"/>
+        <field name="team_id" ref="sales_team.team_sales_department"/>
+        <field name="user_id" ref="base.user_admin"/>
+        <field name="stage_id" ref="crm.stage_lead3"/>
+        <field name="expected_revenue">61000</field>
+    </record>
+
+    <!-- Step 4: already Won - gives the Qualification Completion pivot a second, closed data
+         point to report on. -->
+    <record id="crm_methodology_demo_lead_meddic_won" model="crm.lead">
+        <field name="name">Nimbus Robotics - Phase 1 Rollout</field>
+        <field name="type">opportunity</field>
+        <field name="partner_id" ref="crm_methodology_demo_partner_nimbus"/>
+        <field name="team_id" ref="sales_team.team_sales_department"/>
+        <field name="user_id" ref="base.user_admin"/>
+        <field name="stage_id" ref="crm.stage_lead4"/>
+        <field name="probability">100</field>
+        <field name="expected_revenue">120000</field>
+    </record>
+
+    <!-- ================= Sandler: New -> a second, distinct "blocked Won" story -> Lost ================= -->
+
+    <record id="crm_methodology_demo_lead_sandler_new" model="crm.lead">
+        <field name="name">Falcon Logistics - Fleet Tracking</field>
+        <field name="type">opportunity</field>
+        <field name="partner_id" ref="crm_methodology_demo_partner_falcon"/>
+        <field name="team_id" ref="sales_team.team_sales_department"/>
+        <field name="user_id" ref="base.user_demo"/>
+        <field name="stage_id" ref="crm.stage_lead1"/>
+        <field name="expected_revenue">18000</field>
+    </record>
+
+    <!-- Pain known, Budget still not - Sandler's own Block requirement, distinct from MEDDIC's,
+         so trying "Won" here demonstrates the *same generic mechanism* gating on a completely
+         different field. Manager-owned. -->
+    <record id="crm_methodology_demo_lead_sandler_proposition" model="crm.lead">
+        <field name="name">Falcon Logistics - Route Optimization</field>
+        <field name="type">opportunity</field>
+        <field name="partner_id" ref="crm_methodology_demo_partner_falcon"/>
+        <field name="team_id" ref="sales_team.team_sales_department"/>
+        <field name="user_id" ref="base.user_admin"/>
+        <field name="stage_id" ref="crm.stage_lead3"/>
+        <field name="expected_revenue">27000</field>
+    </record>
+
+    <!-- Lost: methodology assignment and qualification history survive losing a deal, same as
+         any other opportunity field. -->
+    <record id="crm_methodology_demo_lead_sandler_lost" model="crm.lead">
+        <field name="name">Falcon Logistics - Cold Chain Monitoring</field>
+        <field name="type">opportunity</field>
+        <field name="partner_id" ref="crm_methodology_demo_partner_falcon"/>
+        <field name="team_id" ref="sales_team.team_sales_department"/>
+        <field name="user_id" ref="base.user_demo"/>
+        <field name="stage_id" ref="crm.stage_lead2"/>
+        <field name="expected_revenue">15000</field>
+        <field name="active" eval="False"/>
+        <field name="probability">0</field>
+        <field name="lost_reason_id" ref="crm.lost_reason_1"/>
+    </record>
+
+    <!-- ================= SPIN Selling: playbook-only, staged for the wizard demo ================= -->
+
+    <!-- No Requirements at all for this methodology (by design - see crm_methodology_data.xml),
+         so its own value is entirely in the playbook. A "Call" activity is scheduled and left
+         open below: log in as "demo", open Activities, mark it done, and the SPIN questions
+         wizard should appear immediately - no setup needed to see tier 2 working. -->
+    <record id="crm_methodology_demo_lead_spin_new" model="crm.lead">
+        <field name="name">Comet Analytics - Data Pipeline Discovery</field>
+        <field name="type">opportunity</field>
+        <field name="partner_id" ref="crm_methodology_demo_partner_comet"/>
+        <field name="team_id" ref="sales_team.team_sales_department"/>
+        <field name="user_id" ref="base.user_demo"/>
+        <field name="stage_id" ref="crm.stage_lead1"/>
+        <field name="expected_revenue">30000</field>
+    </record>
+
+    <record id="crm_methodology_demo_activity_spin_call" model="mail.activity">
+        <field name="res_model_id" ref="crm.model_crm_lead"/>
+        <field name="res_id" ref="crm_methodology_demo_lead_spin_new"/>
+        <field name="activity_type_id" ref="mail.mail_activity_data_call"/>
+        <field name="user_id" ref="base.user_demo"/>
+        <field name="summary">Discovery call</field>
+        <field name="date_deadline" eval="(DateTime.today()).strftime('%Y-%m-%d')"/>
+    </record>
+
+    <!-- Materialize MEDDIC's and Sandler's Requirements onto the demo team's Properties, using
+         the module's own sync logic rather than duplicating the field list here. -->
+    <function model="crm.lead" name="action_sync_methodology_properties"
+              eval="[[ref('crm_methodology_demo_lead_meddic_new')]]"/>
+    <function model="crm.lead" name="action_sync_methodology_properties"
+              eval="[[ref('crm_methodology_demo_lead_sandler_new')]]"/>
+
+    <!-- Now that the team's Properties exist, fill in demo values at each opportunity's
+         intended completeness. -->
+    <record id="crm_methodology_demo_lead_meddic_qualified" model="crm.lead">
+        <field name="lead_properties" eval="{
+            'meddic_champion': ref('crm_methodology_demo_contact_ethan'),
+        }"/>
+    </record>
+
+    <record id="crm_methodology_demo_lead_meddic_proposition" model="crm.lead">
+        <field name="lead_properties" eval="{
+            'meddic_metrics': '15 percent reduction in pick-time, worth ~$400k/yr',
+            'meddic_economic_buyer': ref('crm_methodology_demo_contact_diana'),
+            'meddic_decision_process': 'Ops review -&gt; CFO sign-off -&gt; procurement PO',
+            'meddic_decision_criteria': 'Uptime SLA, integration with existing WMS',
+            'meddic_identify_pain': 'Manual picking cannot keep up with peak-season volume',
+            'meddic_champion': ref('crm_methodology_demo_contact_ethan'),
+        }"/>
+    </record>
+
+    <record id="crm_methodology_demo_lead_meddic_won" model="crm.lead">
+        <field name="lead_properties" eval="{
+            'meddic_metrics': '22 percent throughput increase, ~$650k/yr',
+            'meddic_economic_buyer': ref('crm_methodology_demo_contact_diana'),
+            'meddic_decision_process': 'Ops review -&gt; CFO sign-off -&gt; procurement PO',
+            'meddic_decision_criteria': 'Uptime SLA, integration with existing WMS',
+            'meddic_identify_pain': 'Backlog during peak season was costing weekend shifts',
+            'meddic_champion': ref('crm_methodology_demo_contact_ethan'),
+        }"/>
+    </record>
+
+    <record id="crm_methodology_demo_lead_sandler_proposition" model="crm.lead">
+        <field name="lead_properties" eval="{
+            'sandler_pain': 'Missed delivery windows on 3 major routes last quarter',
+        }"/>
+    </record>
+
+    <record id="crm_methodology_demo_lead_sandler_lost" model="crm.lead">
+        <field name="lead_properties" eval="{
+            'sandler_pain': 'Wanted real-time GPS tracking across the fleet',
+            'sandler_budget': 'Confirmed $20k/yr, below our minimum deal size',
+        }"/>
+    </record>
+
+</odoo>
