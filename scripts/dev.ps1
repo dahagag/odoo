@@ -110,9 +110,19 @@ function Assert-Module {
 function Start-Database {
     Invoke-Compose -Arguments @('up', '-d', 'db')
     $user = Get-DevSetting 'POSTGRES_USER' 'odoo'
+    # On a fresh volume, Postgres' entrypoint briefly runs a temporary server to apply init
+    # scripts, stops it, then starts the real one; pg_isready can report ready during that
+    # temporary server's short life. Require two ready checks a second apart so a restart in
+    # between is caught (the counter resets) instead of returning into that shutdown window.
+    $consecutive = 0
     for ($attempt = 1; $attempt -le 60; $attempt++) {
         Invoke-Compose -Arguments @('exec', '-T', 'db', 'pg_isready', '-U', $user, '-d', 'postgres') -AllowFailure
-        if ($script:LastComposeExitCode -eq 0) { return }
+        if ($script:LastComposeExitCode -eq 0) {
+            $consecutive++
+            if ($consecutive -ge 2) { return }
+        } else {
+            $consecutive = 0
+        }
         Start-Sleep -Seconds 1
     }
     throw 'PostgreSQL did not become healthy within 60 seconds. Run the logs command for details.'

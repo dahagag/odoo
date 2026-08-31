@@ -74,11 +74,20 @@ assert_module() {
 }
 
 start_database() {
-    local user attempt
+    local user attempt consecutive=0
     compose up -d db
     user="$(setting POSTGRES_USER odoo)"
     for attempt in $(seq 1 60); do
-        if compose exec -T db pg_isready -U "$user" -d postgres >/dev/null 2>&1; then return; fi
+        # On a fresh volume, Postgres' entrypoint briefly runs a temporary server to apply init
+        # scripts, stops it, then starts the real one; pg_isready can report ready during that
+        # temporary server's short life. Require two ready checks a second apart so a restart in
+        # between is caught (the counter resets) instead of returning into that shutdown window.
+        if compose exec -T db pg_isready -U "$user" -d postgres >/dev/null 2>&1; then
+            consecutive=$((consecutive + 1))
+            if [[ "$consecutive" -ge 2 ]]; then return; fi
+        else
+            consecutive=0
+        fi
         sleep 1
     done
     echo "PostgreSQL did not become healthy within 60 seconds. Run the logs command for details." >&2
