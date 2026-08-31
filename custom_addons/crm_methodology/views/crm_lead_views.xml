@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="crm_lead_view_form_methodology" model="ir.ui.view">
+        <field name="name">crm.lead.form.methodology</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_lead_view_form"/>
+        <field name="arch" type="xml">
+            <!-- The stock Properties widget (unfiltered: every key ever synced onto the team,
+                 across every methodology, per docs/adr/0005) is replaced by our own filtered
+                 instance inside the Qualification tab below, so hide this one to avoid showing
+                 the same field twice with two different sets of visible keys. -->
+            <field name="lead_properties" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </field>
+            <page name="internal_notes" position="after">
+                <page string="Qualification" name="methodology_qualification">
+                    <group>
+                        <field name="methodology_id"/>
+                    </group>
+                    <div class="alert alert-danger" role="alert"
+                         invisible="not methodology_block_labels">
+                        <strong>Blocking:</strong> <field name="methodology_block_labels" readonly="1" nolabel="1"/>
+                    </div>
+                    <div class="alert alert-warning" role="alert"
+                         invisible="not methodology_warning_labels">
+                        <strong>Missing (not blocking):</strong> <field name="methodology_warning_labels" readonly="1" nolabel="1"/>
+                    </div>
+                    <div class="alert alert-info d-flex align-items-center justify-content-between" role="alert"
+                         invisible="not methodology_properties_to_sync">
+                        <span>
+                            <field name="methodology_properties_to_sync" readonly="1" nolabel="1"/>
+                            properties from this methodology aren't configured on this opportunity's Sales Team yet.
+                        </span>
+                        <button name="action_sync_methodology_properties" type="object"
+                                string="Sync to Team" class="btn-secondary"
+                                confirm="This adds the missing properties to the opportunity's Sales Team, visible to every opportunity on that team. Continue?"/>
+                    </div>
+                    <group string="Qualification Completion">
+                        <field name="methodology_completion" widget="progressbar"/>
+                    </group>
+                    <field name="methodology_property_keys" invisible="1"/>
+                    <field name="lead_properties" widget="crm_methodology_properties"/>
+                </page>
+            </page>
+        </field>
+    </record>
+
+    <record id="crm_lead_view_pivot_methodology" model="ir.ui.view">
+        <field name="name">crm.lead.pivot.methodology</field>
+        <field name="model">crm.lead</field>
+        <field name="arch" type="xml">
+            <pivot string="Qualification Completion">
+                <field name="team_id" type="row"/>
+                <field name="methodology_id" type="row"/>
+                <field name="methodology_completion" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="crm_lead_view_graph_methodology" model="ir.ui.view">
+        <field name="name">crm.lead.graph.methodology</field>
+        <field name="model">crm.lead</field>
+        <field name="arch" type="xml">
+            <graph string="Qualification Completion" type="bar">
+                <field name="methodology_id"/>
+                <field name="methodology_completion" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="crm_lead_action_methodology_completion" model="ir.actions.act_window">
+        <field name="name">Qualification Completion</field>
+        <field name="res_model">crm.lead</field>
+        <field name="view_mode">pivot,graph</field>
+        <field name="domain">[('type', '=', 'opportunity'), ('active', '=', True)]</field>
+        <field name="view_ids" eval="[(5, 0, 0),
+            (0, 0, {'view_mode': 'pivot', 'view_id': ref('crm_lead_view_pivot_methodology')}),
+            (0, 0, {'view_mode': 'graph', 'view_id': ref('crm_lead_view_graph_methodology')})]"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No open opportunities to report on yet.
+            </p>
+        </field>
+    </record>
+
+</odoo>

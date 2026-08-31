@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <menuitem
+        id="crm_methodology_menu_config"
+        name="Sales Methodologies"
+        parent="crm.crm_menu_config"
+        action="crm_methodology_action"
+        groups="sales_team.group_sale_salesman"
+        sequence="15"/>
+
+    <menuitem
+        id="crm_methodology_menu_report"
+        name="Qualification Completion"
+        parent="crm.crm_menu_report"
+        action="crm_lead_action_methodology_completion"
+        sequence="5"/>
+
+</odoo>
