@@ -90,6 +90,28 @@ class TestCrmMethodology(TransactionCase):
         lead = self._create_lead(methodology_id=self.spin.id)
         self.assertEqual(lead.methodology_completion, 100.0)
 
+    def test_qualification_completion_report_groups_by_team_and_methodology_and_averages(self):
+        # Two MEDDIC leads on the same team: one fully qualified, one not at all.
+        # The report (crm_lead_action_methodology_completion / its pivot view) groups
+        # opportunities by team then methodology and measures the mean completion across
+        # the group, not the sum, so a manager sees "50%", not "100".
+        fully_qualified = self._create_lead()
+        fully_qualified.action_sync_methodology_properties()
+        fully_qualified.lead_properties = {
+            'meddic_economic_buyer': self.economic_buyer.id,
+            'meddic_champion': self.champion.id,
+        }
+        unqualified = self._create_lead()
+        unqualified.action_sync_methodology_properties()
+
+        leads = fully_qualified | unqualified
+        [(_, _, avg_completion)] = self.env['crm.lead']._read_group(
+            domain=[('id', 'in', leads.ids)],
+            groupby=['team_id', 'methodology_id'],
+            aggregates=['methodology_completion:avg'],
+        )
+        self.assertEqual(avg_completion, 50.0, "the group's completion must be averaged, not summed")
+
     def test_methodology_property_keys_scopes_qualification_tab_to_own_methodology(self):
         # The team's Properties are shared across every methodology assigned to it (docs/adr/0005),
         # so the Qualification tab widget relies on this field to show only the current
