@@ -21,4 +21,13 @@
         <field name="comment">Read-only access to CRM opportunities, quotations, contacts, sales teams, stages, products, and this module's own methodology data (the last three via read rows granted directly to internal users; the rest via new rows scoped to this group). Cannot create, edit, or delete anything, anywhere.</field>
     </record>
 
+    <!-- Model-level ACL alone isn't enough: the CRM app's own root menu is gated to
+         sales_team.group_sale_salesman/group_sale_manager, so without this the Viewer would
+         have read access to crm.lead but no way to reach it through the UI at all. Its "My
+         Pipeline" and "Customers" submenus carry no group of their own, so they inherit
+         visibility from this and become reachable too. -->
+    <record id="crm.crm_menu_root" model="ir.ui.menu">
+        <field name="group_ids" eval="[(4, ref('crm_methodology_group_viewer'))]"/>
+    </record>
+
 </odoo>
