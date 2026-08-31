@@ -1,3 +1,4 @@
+from odoo.exceptions import AccessError
 from odoo.tests import TransactionCase, tagged
 from odoo.tools.convert import convert_file
 
@@ -75,3 +76,44 @@ class TestCrmMethodologyDemo(TransactionCase):
         self.assertTrue(self.demo_leads.filtered(lambda lead: lead.user_id == salesperson))
         self.assertTrue(self.demo_leads.filtered(lambda lead: lead.user_id == manager))
         self.assertEqual(self.demo_leads.user_id, salesperson | manager)
+
+    def test_demo_creates_named_stakeholder_personas(self):
+        sales_manager = self.env.ref('crm_methodology.crm_methodology_demo_user_sales_manager')
+        salesperson = self.env.ref('crm_methodology.crm_methodology_demo_user_salesperson')
+        viewer = self.env.ref('crm_methodology.crm_methodology_demo_user_viewer')
+
+        self.assertEqual(sales_manager.name, "Priya Shah")
+        self.assertEqual(salesperson.name, "Jordan Lee")
+        self.assertEqual(viewer.name, "Morgan Ito")
+
+        # Distinct from the module's existing generic base.user_admin/base.user_demo logins.
+        self.assertNotIn(sales_manager.login, ('admin', 'demo'))
+        self.assertNotIn(salesperson.login, ('admin', 'demo'))
+        self.assertNotIn(viewer.login, ('admin', 'demo'))
+
+        self.assertTrue(sales_manager.has_group('sales_team.group_sale_manager'))
+        self.assertTrue(salesperson.has_group('sales_team.group_sale_salesman'))
+        self.assertFalse(salesperson.has_group('sales_team.group_sale_manager'))
+        self.assertTrue(viewer.has_group('crm_methodology.crm_methodology_group_viewer'))
+        self.assertFalse(viewer.has_group('sales_team.group_sale_salesman'))
+        self.assertFalse(viewer.has_group('sales_team.group_sale_manager'))
+
+    def test_viewer_group_grants_read_but_not_write_create_or_unlink(self):
+        viewer = self.env.ref('crm_methodology.crm_methodology_demo_user_viewer')
+        lead = self.demo_leads[0].with_user(viewer)
+
+        # Read: can browse the opportunity and follow it to its client company.
+        self.assertTrue(lead.name)
+        self.assertTrue(lead.partner_id.name)
+
+        with self.assertRaises(AccessError):
+            lead.write({'name': "Edited by Viewer"})
+
+        with self.assertRaises(AccessError):
+            self.env['crm.lead'].with_user(viewer).create({
+                'name': "Created by Viewer",
+                'type': 'opportunity',
+            })
+
+        with self.assertRaises(AccessError):
+            lead.unlink()
