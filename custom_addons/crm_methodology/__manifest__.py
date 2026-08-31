@@ -19,6 +19,7 @@ reference Properties by key instead of owning field definitions.
     'depends': ['crm', 'sales_team', 'mail', 'sale_crm'],
 
     'data': [
+        'security/crm_methodology_groups.xml',
         'security/ir.model.access.csv',
         'data/crm_methodology_data.xml',
         'views/crm_methodology_views.xml',
