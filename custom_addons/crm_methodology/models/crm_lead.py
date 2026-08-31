@@ -59,7 +59,8 @@ class CrmLead(models.Model):
             if not lead.methodology_id:
                 raise ValidationError(_("A Sales Methodology is required (use “None” if not yet decided)."))
 
-    @api.depends('methodology_id', 'methodology_id.requirement_ids.enforcement', 'lead_properties')
+    @api.depends('methodology_id', 'methodology_id.requirement_ids.enforcement',
+                 'methodology_id.requirement_ids.property_key', 'lead_properties')
     def _compute_methodology_completion(self):
         for lead in self:
             block_requirements = lead.methodology_id.requirement_ids.filtered(lambda r: r.enforcement == 'block')
@@ -127,6 +128,7 @@ class CrmLead(models.Model):
         self.ensure_one()
         if not self.team_id:
             raise UserError(_("Assign a Sales Team to this opportunity first."))
+        self.methodology_id.requirement_ids._check_compatible_with_team(self.team_id)
         missing = self._get_requirements_missing_from_team()
         if not missing:
             return

@@ -1,5 +1,5 @@
 from odoo import _, api, fields, models
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 
 
 class CrmMethodology(models.Model):
@@ -30,6 +30,19 @@ class CrmMethodology(models.Model):
         """Return the "None" fallback methodology, the single source of truth for every place
         that needs it (a new client's default, a new opportunity with no client methodology)."""
         return self.search([('is_default', '=', True)], limit=1)
+
+    @api.constrains('is_default')
+    def _check_single_default(self):
+        count = self.env['crm.methodology'].with_context(active_test=False).search_count(
+            [('is_default', '=', True)])
+        if count > 1:
+            raise ValidationError(_("Only one Sales Methodology can be the default."))
+
+    @api.constrains('active', 'is_default')
+    def _check_default_not_archived(self):
+        for methodology in self:
+            if methodology.is_default and not methodology.active:
+                raise ValidationError(_("The default Sales Methodology can't be archived."))
 
     def unlink(self):
         if any(self.mapped('is_default')):

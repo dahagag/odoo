@@ -8,6 +8,7 @@ class CrmMethodologyPlaybookWizard(models.TransientModel):
     activity_id = fields.Many2one('mail.activity', required=True)
     activity_type_name = fields.Char(related='activity_id.activity_type_id.name', readonly=True)
     feedback = fields.Text()
+    attachment_ids = fields.Many2many('ir.attachment')
     line_ids = fields.One2many('crm.methodology.playbook.wizard.line', 'wizard_id', string="Questions")
 
     @api.model_create_multi
@@ -39,7 +40,9 @@ class CrmMethodologyPlaybookWizard(models.TransientModel):
     def _complete_activity(self, note):
         self.ensure_one()
         full_feedback = "\n\n".join(filter(None, [self.feedback, note]))
-        self.activity_id.with_context(crm_methodology_playbook_bypass=True).action_feedback(feedback=full_feedback)
+        self.activity_id.with_context(crm_methodology_playbook_bypass=True).action_feedback(
+            feedback=full_feedback, attachment_ids=self.attachment_ids.ids,
+        )
         # Completing the activity here (via a button on this wizard) posts a new chatter message
         # on the underlying record, but nothing else tells that record's still-open form view to
         # notice - unlike Odoo's own "Mark Done" button, which explicitly refreshes the chatter

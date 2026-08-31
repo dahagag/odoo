@@ -469,10 +469,12 @@ Source: [Coevera — Sales Methodologies / Selling Techniques](https://www.coeve
 
 Salesforce's own Help documentation describes **Path**, a configurable
 per-object/per-picklist/per-record-type visual guide for opportunities (and
-other objects) that lets an admin define, per stage, "key fields" a rep
-completes before moving on, plus free-text "Guidance for Success" content
-and a completion celebration. Source: [Salesforce Help — Considerations and Guidelines for Creating Paths](https://help.salesforce.com/s/articleView?language=en_US&id=sales.path_considerations.htm&type=5).
-Path is a generic, admin-configured stage-gating mechanism — it names no
+other objects) that lets an admin define, per stage, "key fields" shown to
+guide a rep, plus free-text "Guidance for Success" content and a completion
+celebration. Path's key fields are guidance only — Path itself does not
+require or block on them; enforcing that a field be filled before a stage
+change needs a separate Validation Rule. Source: [Salesforce Help — Considerations and Guidelines for Creating Paths](https://help.salesforce.com/s/articleView?language=en_US&id=sales.path_considerations.htm&type=5).
+Path is a generic, admin-configured stage-guidance mechanism — it names no
 sales methodology and ships no methodology-specific field set by default.
 
 Salesforce's own Help documentation also describes **Einstein Opportunity
@@ -631,7 +633,7 @@ here).
 ### 5. Pipeliner CRM (now Coevera)
 
 Coevera's own site (redirected from pipelinersales.com, see the note above)
-carries a page listing twelve sales methodologies it claims to support:
+carries a page listing eleven sales methodologies it claims to support:
 SPIN Selling, Conceptual Selling, SNAP Selling, Challenger Sale, Solution
 Selling, CustomerCentric Selling, Strategic Selling, ValueSelling
 Framework, RAIN Selling, Baseline Selling, and Hoffeld Selling. Source: [Coevera — Selling Techniques](https://www.coevera.com/sales-methodologies-shortcut/selling-techniques/)
@@ -648,7 +650,7 @@ general-purpose customizability ("fully, rapidly and visually
 customizable") accommodates it.
 
 Notably, **MEDDIC/MEDDPICC and the Sandler Selling System do not appear** in
-Coevera's own list of twelve supported methodologies, despite the task's
+Coevera's own list of eleven supported methodologies, despite the task's
 premise that Pipeliner markets multi-methodology support broadly — its own
 page's specific list stops short of naming those two. Conclusion for
 Pipeliner CRM/Coevera: **no methodology ships as named, structured
@@ -725,12 +727,16 @@ specifically.
 
 ### Patterns worth borrowing for Odoo
 
-- **Stage-gated required fields (Salesforce Path).** Salesforce's Path lets
-  an admin attach "key fields" to a specific stage of a specific
-  object/record-type combination, so a rep is shown (and can be required to
-  fill) particular fields only when the opportunity reaches that stage —
-  distinct from Odoo's `crm.lead.lead_properties`, which are available
-  uniformly regardless of stage. This is a concrete mechanism for enforcing
+- **Stage-scoped key fields, paired with separate enforcement (Salesforce
+  Path).** Salesforce's Path lets an admin attach "key fields" to a specific
+  stage of a specific object/record-type combination, so a rep is shown
+  particular fields only when the opportunity reaches that stage — distinct
+  from Odoo's `crm.lead.lead_properties`, which are available uniformly
+  regardless of stage. Path's own Key Fields are guidance only, not
+  enforced: making a stage's fields actually required needs a separate
+  Validation Rule that checks the stage and the field. Combining "which
+  fields are relevant at this stage" (Path's job) with "block advancing
+  until they're filled" (a Validation Rule's job) is a concrete pattern for
   "fill in the Economic Buyer before this deal reaches Proposition" that
   Properties alone does not provide.
 - **Freeform "Playbook" content blocks with answer-capturing questions

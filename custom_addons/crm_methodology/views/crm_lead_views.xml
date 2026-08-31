@@ -30,11 +30,11 @@
                          invisible="not methodology_properties_to_sync">
                         <span>
                             <field name="methodology_properties_to_sync" readonly="1" nolabel="1"/>
-                            propert(y/ies) from this methodology aren't configured on this opportunity's Sales Team yet.
+                            properties from this methodology aren't configured on this opportunity's Sales Team yet.
                         </span>
                         <button name="action_sync_methodology_properties" type="object"
                                 string="Sync to Team" class="btn-secondary"
-                                confirm="This adds the missing propert(y/ies) to the opportunity's Sales Team, visible to every opportunity on that team. Continue?"/>
+                                confirm="This adds the missing properties to the opportunity's Sales Team, visible to every opportunity on that team. Continue?"/>
                     </div>
                     <group string="Qualification Completion">
                         <field name="methodology_completion" widget="progressbar"/>

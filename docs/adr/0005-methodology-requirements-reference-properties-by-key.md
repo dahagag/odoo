@@ -13,7 +13,9 @@ team running different methodologies see the union of every field either
 methodology has ever needed — the Qualification tab has to filter that union
 down to the active methodology's own keys itself, and nothing stops a
 Requirement from referencing a key a given team hasn't actually configured
-yet (see the "sync to team" mechanism this forced on `crm.lead` save).
+yet (see the "sync to team" mechanism this forced on `crm.lead`, triggered
+by the Salesperson through an explicit "Sync to Team" action rather than
+automatically).
 
 We accepted that wrinkle to keep the zero-code path Odoo's Properties widget
 already provides — a Sales Manager can add a new qualification field from

@@ -1,5 +1,5 @@
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 
 PROPERTY_TYPES = [
     ('char', "Text"),
@@ -53,6 +53,28 @@ class CrmMethodologyRequirement(models.Model):
         for requirement in self:
             if requirement.property_type == 'many2one' and not requirement.property_comodel:
                 raise ValidationError(_("A Link-type Requirement needs a Linked Model."))
+
+    def _check_compatible_with_team(self, team):
+        """Raise if any of these Requirements' keys already exist on the team's Properties with a
+        different type/model than this Requirement now expects (e.g. a Requirement was edited
+        after an earlier sync already pushed its old shape onto the team)."""
+        existing_by_key = {d['name']: d for d in (team.lead_properties_definition or [])}
+
+        def is_incompatible(requirement):
+            existing = existing_by_key.get(requirement.property_key)
+            if not existing:
+                return False
+            return (existing.get('type'), existing.get('comodel') or False) \
+                != (requirement.property_type, requirement.property_comodel or False)
+
+        incompatible = self.filtered(is_incompatible)
+        if incompatible:
+            raise UserError(_(
+                "%(fields)s already exist on %(team)s with a different type. Resolve the "
+                "conflict on the Sales Team's Properties before syncing.",
+                fields=", ".join(incompatible.mapped('property_label')),
+                team=team.display_name,
+            ))
 
     def _build_property_definition(self):
         """Return the dict shape Odoo's Properties field expects, so this Requirement's field

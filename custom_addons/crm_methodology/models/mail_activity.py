@@ -18,6 +18,7 @@ class MailActivity(models.Model):
                     wizard = self.env['crm.methodology.playbook.wizard'].create({
                         'activity_id': activity.id,
                         'feedback': feedback or '',
+                        'attachment_ids': [(6, 0, attachment_ids or [])],
                     })
                     return wizard._open_wizard()
         return super().action_feedback(feedback=feedback, attachment_ids=attachment_ids)

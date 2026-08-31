@@ -1,4 +1,4 @@
-from odoo.exceptions import AccessError, ValidationError
+from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests import TransactionCase, tagged
 
 
@@ -159,3 +159,38 @@ class TestCrmMethodology(TransactionCase):
     def test_default_methodology_cannot_be_deleted(self):
         with self.assertRaises(Exception):
             self.none_methodology.unlink()
+
+    def test_default_methodology_cannot_be_archived(self):
+        with self.assertRaises(ValidationError):
+            self.none_methodology.active = False
+
+    def test_only_one_methodology_can_be_default(self):
+        other = self.env['crm.methodology'].create({'name': "Aspiring Default"})
+        with self.assertRaises(ValidationError):
+            other.is_default = True
+
+    def test_sync_rejects_property_key_reused_with_a_different_type(self):
+        strict_methodology = self.env['crm.methodology'].create({'name': "Type-Conflict Methodology"})
+        self.env['crm.methodology.requirement'].create({
+            'methodology_id': strict_methodology.id,
+            'property_key': 'conflicting_key',
+            'property_label': "Conflicting Field",
+            'property_type': 'char',
+        })
+        self.team.lead_properties_definition = [{
+            'name': 'conflicting_key', 'string': "Conflicting Field", 'type': 'boolean',
+        }]
+        lead = self._create_lead(methodology_id=strict_methodology.id)
+        with self.assertRaises(UserError):
+            lead.action_sync_methodology_properties()
+
+    def test_playbook_preserves_attachments_selected_on_mark_done(self):
+        lead = self._create_lead(methodology_id=self.spin.id)
+        activity = lead.activity_schedule(activity_type_id=self.call_activity_type.id, summary="Discovery call")
+        attachment = self.env['ir.attachment'].create({'name': "notes.txt", 'datas': b''})
+        wizard_action = activity.action_feedback(attachment_ids=[attachment.id])
+        wizard = self.env[wizard_action['res_model']].browse(wizard_action['res_id'])
+        self.assertEqual(wizard.attachment_ids, attachment)
+        wizard.action_skip()
+        message = lead.message_ids.sorted('id')[-1]
+        self.assertIn(attachment, message.attachment_ids)
