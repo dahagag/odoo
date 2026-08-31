@@ -61,16 +61,20 @@ class TestCrmMethodologyResetDemoData(TransactionCase):
         self.assertEqual(wizard_action.get('res_model'), 'crm.methodology.playbook.wizard')
 
     def test_reset_removes_extra_persona_owned_leads_and_partners(self):
+        # Owned by the named stakeholder personas, not base.user_admin/base.user_demo: those
+        # generic logins are deliberately excluded from ownership-based matching (see the comment
+        # above DEMO_PERSONA_USER_XMLIDS in crm_methodology.py), so a live demo session's own
+        # extras are modeled as created by whichever named persona is doing the demoing.
         extra_partner = self.env['res.partner'].create({
             'name': "Extra Demo Client",
             'is_company': True,
-            'user_id': self.demo_manager.id,
+            'user_id': self.sales_manager.id,
         })
         extra_lead = self.env['crm.lead'].create({
             'name': "Extra Demo Opportunity",
             'type': 'opportunity',
             'partner_id': extra_partner.id,
-            'user_id': self.demo_salesperson.id,
+            'user_id': self.salesperson.id,
         })
 
         self.env['crm.methodology'].with_user(self.sales_manager).action_reset_demo_data()
