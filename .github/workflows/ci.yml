@@ -6,6 +6,7 @@ on:
     paths:
       - "custom_addons/**"
       - "docker/**"
+      - "scripts/**"
       - "requirements.txt"
       - "compose.yaml"
       - ".github/workflows/ci.yml"
