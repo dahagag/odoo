@@ -48,11 +48,11 @@ class CrmMethodology(models.Model):
             if methodology.is_default and not methodology.active:
                 raise ValidationError(_("The default Sales Methodology can't be archived."))
 
-    def unlink(self):
+    @api.ondelete(at_uninstall=False)
+    def _unlink_except_default(self):
         seeded_default = self._get_seeded_default()
         if any(self.mapped('is_default')) or (seeded_default and seeded_default in self):
             raise UserError(_("The default Sales Methodology can't be deleted."))
-        return super().unlink()
 
     def write(self, vals):
         seeded_default = self._get_seeded_default()

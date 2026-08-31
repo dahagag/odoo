@@ -19,23 +19,17 @@ class TestCrmMethodology(TransactionCase):
             'name': "Test MEDDIC Client",
             'methodology_id': cls.meddic.id,
         })
-        cls.salesperson = cls.env['res.users'].create({
-            'name': "Methodology Salesperson",
-            'login': "methodology_salesperson",
+        cls.salesperson = cls._create_user("Methodology Salesperson", 'sales_team.group_sale_salesman')
+        cls.sales_manager = cls._create_user("Methodology Sales Manager", 'sales_team.group_sale_manager')
+        cls.internal_user = cls._create_user("Methodology Internal User", 'base.group_user')
+
+    @classmethod
+    def _create_user(cls, name, group_xmlid):
+        return cls.env['res.users'].create({
+            'name': name,
+            'login': name.lower().replace(' ', '_'),
             'lang': 'en_US',
-            'group_ids': [(6, 0, cls.env.ref('sales_team.group_sale_salesman').ids)],
-        })
-        cls.sales_manager = cls.env['res.users'].create({
-            'name': "Methodology Sales Manager",
-            'login': "methodology_sales_manager",
-            'lang': 'en_US',
-            'group_ids': [(6, 0, cls.env.ref('sales_team.group_sale_manager').ids)],
-        })
-        cls.internal_user = cls.env['res.users'].create({
-            'name': "Methodology Internal User",
-            'login': "methodology_internal_user",
-            'lang': 'en_US',
-            'group_ids': [(6, 0, cls.env.ref('base.group_user').ids)],
+            'group_ids': [(6, 0, cls.env.ref(group_xmlid).ids)],
         })
 
     def _create_lead(self, **extra):
@@ -188,12 +182,7 @@ class TestCrmMethodology(TransactionCase):
             lead.with_user(self.internal_user).action_sync_methodology_properties()
 
     def test_salesperson_cannot_sync_another_salespersons_opportunity(self):
-        other_salesperson = self.env['res.users'].create({
-            'name': "Other Methodology Salesperson",
-            'login': "other_methodology_salesperson",
-            'lang': 'en_US',
-            'group_ids': [(6, 0, self.env.ref('sales_team.group_sale_salesman').ids)],
-        })
+        other_salesperson = self._create_user("Other Methodology Salesperson", 'sales_team.group_sale_salesman')
         lead = self._create_lead(user_id=other_salesperson.id)
         # Prime the shared prefetch as administrator: the public action must enforce record rules
         # explicitly rather than depending on a later field fetch to happen to do it.
