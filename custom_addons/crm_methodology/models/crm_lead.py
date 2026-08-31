@@ -26,10 +26,17 @@ class CrmLead(models.Model):
     methodology_properties_to_sync = fields.Integer(
         string="Properties to Sync", compute='_compute_methodology_properties_to_sync',
     )
+    methodology_property_keys = fields.Char(
+        compute='_compute_methodology_property_keys',
+        help="Comma-separated Property keys owned by this opportunity's own methodology. Lets the "
+             "Qualification tab's widget filter the team's Properties (shared, and possibly also "
+             "populated by other methodologies) down to just this methodology's own fields; see "
+             "docs/adr/0005.",
+    )
 
     @api.model_create_multi
     def create(self, vals_list):
-        default_methodology = self.env['crm.methodology'].search([('is_default', '=', True)], limit=1)
+        default_methodology = self.env['crm.methodology']._get_default()
         for vals in vals_list:
             if vals.get('methodology_id'):
                 continue
@@ -75,6 +82,11 @@ class CrmLead(models.Model):
     def _compute_methodology_properties_to_sync(self):
         for lead in self:
             lead.methodology_properties_to_sync = len(lead._get_requirements_missing_from_team())
+
+    @api.depends('methodology_id.requirement_ids.property_key')
+    def _compute_methodology_property_keys(self):
+        for lead in self:
+            lead.methodology_property_keys = ",".join(lead.methodology_id.requirement_ids.mapped('property_key'))
 
     def _get_missing_requirements(self, checkpoint=None, enforcement=None):
         self.ensure_one()

@@ -7,7 +7,7 @@ class ResPartner(models.Model):
 
     methodology_id = fields.Many2one(
         'crm.methodology', string="Sales Methodology",
-        default=lambda self: self.env['crm.methodology'].search([('is_default', '=', True)], limit=1).id,
+        default=lambda self: self.env['crm.methodology']._get_default().id,
         help="Governs which qualification properties and discovery playbooks apply to this "
              "client's opportunities. New opportunities default to this methodology at creation "
              "time; changing it here does not retroactively change already-open opportunities.",

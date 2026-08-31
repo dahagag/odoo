@@ -1,4 +1,4 @@
-from odoo import _, fields, models
+from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
 
@@ -24,6 +24,12 @@ class CrmMethodology(models.Model):
         'unique(name)',
         "A Sales Methodology with this name already exists.",
     )
+
+    @api.model
+    def _get_default(self):
+        """Return the "None" fallback methodology, the single source of truth for every place
+        that needs it (a new client's default, a new opportunity with no client methodology)."""
+        return self.search([('is_default', '=', True)], limit=1)
 
     def unlink(self):
         if any(self.mapped('is_default')):

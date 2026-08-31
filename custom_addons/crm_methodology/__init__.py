@@ -2,7 +2,7 @@ from . import models, wizards
 
 
 def _post_init_backfill_methodology(env):
-    default_methodology = env.ref('crm_methodology.crm_methodology_none')
+    default_methodology = env['crm.methodology']._get_default()
     env['res.partner'].search([('methodology_id', '=', False)]).write({
         'methodology_id': default_methodology.id,
     })
