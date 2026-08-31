@@ -10,7 +10,7 @@ COPY requirements.txt /tmp/odoo-requirements.txt
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs npm \
-    && python3 -m pip install --no-cache-dir --break-system-packages -r /tmp/odoo-requirements.txt \
+    && python3 -m pip install --no-cache-dir --break-system-packages --ignore-installed -r /tmp/odoo-requirements.txt \
     && python3 -m pip install --no-cache-dir --break-system-packages ruff==0.16.1 \
     && npm install --global rtlcss \
     && wkhtmltopdf --version | grep -E '0\.12\.6' \
