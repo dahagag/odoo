@@ -16,4 +16,19 @@
         action="crm_lead_action_methodology_completion"
         sequence="5"/>
 
+    <record id="crm_methodology_action_reset_demo_data" model="ir.actions.server">
+        <field name="name">Reset Demo Data</field>
+        <field name="model_id" ref="model_crm_methodology"/>
+        <field name="state">code</field>
+        <field name="code">model.action_reset_demo_data()</field>
+    </record>
+
+    <menuitem
+        id="crm_methodology_menu_reset_demo_data"
+        name="Reset Demo Data"
+        parent="crm.crm_menu_config"
+        action="crm_methodology_action_reset_demo_data"
+        groups="sales_team.group_sale_manager"
+        sequence="99"/>
+
 </odoo>
