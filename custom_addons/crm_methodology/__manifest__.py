@@ -14,7 +14,7 @@ reference Properties by key instead of owning field definitions.
     """,
     'author': "agentic-erp",
     'category': 'Sales/CRM',
-    'version': '19.0.1.0.0',
+    'version': '19.0.1.1.0',
 
     'depends': ['crm', 'sales_team', 'mail', 'sale_crm'],
 
