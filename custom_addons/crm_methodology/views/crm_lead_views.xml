@@ -6,6 +6,13 @@
         <field name="model">crm.lead</field>
         <field name="inherit_id" ref="crm.crm_lead_view_form"/>
         <field name="arch" type="xml">
+            <!-- The stock Properties widget (unfiltered: every key ever synced onto the team,
+                 across every methodology, per docs/adr/0005) is replaced by our own filtered
+                 instance inside the Qualification tab below, so hide this one to avoid showing
+                 the same field twice with two different sets of visible keys. -->
+            <field name="lead_properties" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </field>
             <page name="internal_notes" position="after">
                 <page string="Qualification" name="methodology_qualification">
                     <group>
@@ -32,7 +39,8 @@
                     <group string="Qualification Completion">
                         <field name="methodology_completion" widget="progressbar"/>
                     </group>
-                    <field name="lead_properties" widget="properties"/>
+                    <field name="methodology_property_keys" invisible="1"/>
+                    <field name="lead_properties" widget="crm_methodology_properties"/>
                 </page>
             </page>
         </field>

@@ -6,7 +6,7 @@
         name="Sales Methodologies"
         parent="crm.crm_menu_config"
         action="crm_methodology_action"
-        groups="sales_team.group_sale_manager"
+        groups="sales_team.group_sale_salesman"
         sequence="15"/>
 
     <menuitem

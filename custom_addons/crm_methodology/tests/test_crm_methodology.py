@@ -90,11 +90,23 @@ class TestCrmMethodology(TransactionCase):
         lead = self._create_lead(methodology_id=self.spin.id)
         self.assertEqual(lead.methodology_completion, 100.0)
 
+    def test_methodology_property_keys_scopes_qualification_tab_to_own_methodology(self):
+        # The team's Properties are shared across every methodology assigned to it (docs/adr/0005),
+        # so the Qualification tab widget relies on this field to show only the current
+        # opportunity's own methodology fields instead of the team's full superset.
+        meddic_lead = self._create_lead()
+        self.assertEqual(
+            set(meddic_lead.methodology_property_keys.split(",")),
+            set(self.meddic.requirement_ids.mapped('property_key')),
+        )
+        spin_lead = self._create_lead(methodology_id=self.spin.id)
+        self.assertEqual(spin_lead.methodology_property_keys, "")
+
     def test_sync_materializes_missing_properties_on_team(self):
         lead = self._create_lead()
-        self.assertEqual(len(lead._get_requirements_missing_from_team()), len(self.meddic.requirement_ids))
+        self.assertEqual(lead.methodology_properties_to_sync, len(self.meddic.requirement_ids))
         lead.action_sync_methodology_properties()
-        self.assertFalse(lead._get_requirements_missing_from_team())
+        self.assertEqual(lead.methodology_properties_to_sync, 0)
         team_keys = {d['name'] for d in self.team.lead_properties_definition or []}
         self.assertEqual(team_keys, set(self.meddic.requirement_ids.mapped('property_key')))
 

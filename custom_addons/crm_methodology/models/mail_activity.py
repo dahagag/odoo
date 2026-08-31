@@ -5,6 +5,8 @@ class MailActivity(models.Model):
     _inherit = 'mail.activity'
 
     def action_feedback(self, feedback=False, attachment_ids=None):
+        # The playbook wizard only makes sense one activity at a time (its questions are asked
+        # about a single opportunity); fall through to the stock batch behavior otherwise.
         if not self.env.context.get('crm_methodology_playbook_bypass') and len(self) == 1:
             activity = self
             if activity.res_model == 'crm.lead':

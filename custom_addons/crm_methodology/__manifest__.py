@@ -33,6 +33,7 @@ reference Properties by key instead of owning field definitions.
     'assets': {
         'web.assets_backend': [
             'crm_methodology/static/src/js/activity_model_patch.js',
+            'crm_methodology/static/src/js/methodology_properties_field.js',
         ],
         'web.assets_tests': [
             'crm_methodology/static/tests/tours/**/*',
