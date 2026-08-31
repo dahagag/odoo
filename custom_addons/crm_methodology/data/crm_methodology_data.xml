@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+
+    <!-- ================= None (default fallback) ================= -->
+    <record id="crm_methodology_none" model="crm.methodology">
+        <field name="name">None</field>
+        <field name="sequence">0</field>
+        <field name="is_default" eval="True"/>
+        <field name="description">Fallback methodology for clients with no real methodology chosen yet. Has no Requirements and no Playbook Questions.</field>
+    </record>
+
+    <!-- ================= MEDDIC ================= -->
+    <record id="crm_methodology_meddic" model="crm.methodology">
+        <field name="name">MEDDIC</field>
+        <field name="sequence">10</field>
+        <field name="description">Metrics, Economic Buyer, Decision Process, Decision Criteria, Identify Pain, Champion. See docs/research/b2b-sales-methodologies-odoo.md.</field>
+    </record>
+
+    <record id="crm_methodology_meddic_req_metrics" model="crm.methodology.requirement">
+        <field name="methodology_id" ref="crm_methodology_meddic"/>
+        <field name="sequence">10</field>
+        <field name="property_key">meddic_metrics</field>
+        <field name="property_label">Metrics</field>
+        <field name="property_type">char</field>
+        <field name="checkpoint">continuous</field>
+        <field name="enforcement">warn</field>
+    </record>
+    <record id="crm_methodology_meddic_req_economic_buyer" model="crm.methodology.requirement">
+        <field name="methodology_id" ref="crm_methodology_meddic"/>
+        <field name="sequence">20</field>
+        <field name="property_key">meddic_economic_buyer</field>
+        <field name="property_label">Economic Buyer</field>
+        <field name="property_type">many2one</field>
+        <field name="property_comodel">res.partner</field>
+        <field name="checkpoint">won</field>
+        <field name="enforcement">block</field>
+    </record>
+    <record id="crm_methodology_meddic_req_decision_process" model="crm.methodology.requirement">
+        <field name="methodology_id" ref="crm_methodology_meddic"/>
+        <field name="sequence">30</field>
+        <field name="property_key">meddic_decision_process</field>
+        <field name="property_label">Decision Process</field>
+        <field name="property_type">char</field>
+        <field name="checkpoint">quotation</field>
+        <field name="enforcement">warn</field>
+    </record>
+    <record id="crm_methodology_meddic_req_decision_criteria" model="crm.methodology.requirement">
+        <field name="methodology_id" ref="crm_methodology_meddic"/>
+        <field name="sequence">40</field>
+        <field name="property_key">meddic_decision_criteria</field>
+        <field name="property_label">Decision Criteria</field>
+        <field name="property_type">char</field>
+        <field name="checkpoint">quotation</field>
+        <field name="enforcement">warn</field>
+    </record>
+    <record id="crm_methodology_meddic_req_identify_pain" model="crm.methodology.requirement">
+        <field name="methodology_id" ref="crm_methodology_meddic"/>
+        <field name="sequence">50</field>
+        <field name="property_key">meddic_identify_pain</field>
+        <field name="property_label">Identify Pain</field>
+        <field name="property_type">char</field>
+        <field name="checkpoint">continuous</field>
+        <field name="enforcement">warn</field>
+    </record>
+    <record id="crm_methodology_meddic_req_champion" model="crm.methodology.requirement">
+        <field name="methodology_id" ref="crm_methodology_meddic"/>
+        <field name="sequence">60</field>
+        <field name="property_key">meddic_champion</field>
+        <field name="property_label">Champion</field>
+        <field name="property_type">many2one</field>
+        <field name="property_comodel">res.partner</field>
+        <field name="checkpoint">won</field>
+        <field name="enforcement">block</field>
+    </record>
+
+    <record id="crm_methodology_meddic_pb_metrics" model="crm.methodology.playbook.question">
+        <field name="methodology_id" ref="crm_methodology_meddic"/>
+        <field name="sequence">10</field>
+        <field name="activity_type_id" ref="mail.mail_activity_data_call"/>
+        <field name="question">What's the quantifiable cost of this problem today (Metrics)?</field>
+    </record>
+    <record id="crm_methodology_meddic_pb_pain" model="crm.methodology.playbook.question">
+        <field name="methodology_id" ref="crm_methodology_meddic"/>
+        <field name="sequence">20</field>
+        <field name="activity_type_id" ref="mail.mail_activity_data_call"/>
+        <field name="question">What specific pain triggered this evaluation (Identify Pain)?</field>
+    </record>
+    <record id="crm_methodology_meddic_pb_economic_buyer" model="crm.methodology.playbook.question">
+        <field name="methodology_id" ref="crm_methodology_meddic"/>
+        <field name="sequence">30</field>
+        <field name="activity_type_id" ref="mail.mail_activity_data_call"/>
+        <field name="question">Who besides you would need to approve this purchase (Economic Buyer)?</field>
+    </record>
+
+    <!-- ================= Sandler ================= -->
+    <record id="crm_methodology_sandler" model="crm.methodology">
+        <field name="name">Sandler</field>
+        <field name="sequence">20</field>
+        <field name="description">Seven-step system: Bonding &amp; Rapport, Up-Front Contract, Identify Pain, Uncover Budget, Decision-Making Process, Present, Confirm Post-Sell. See docs/research/b2b-sales-methodologies-odoo.md.</field>
+    </record>
+
+    <record id="crm_methodology_sandler_req_pain" model="crm.methodology.requirement">
+        <field name="methodology_id" ref="crm_methodology_sandler"/>
+        <field name="sequence">10</field>
+        <field name="property_key">sandler_pain</field>
+        <field name="property_label">Pain</field>
+        <field name="property_type">char</field>
+        <field name="checkpoint">won</field>
+        <field name="enforcement">warn</field>
+    </record>
+    <record id="crm_methodology_sandler_req_budget" model="crm.methodology.requirement">
+        <field name="methodology_id" ref="crm_methodology_sandler"/>
+        <field name="sequence">20</field>
+        <field name="property_key">sandler_budget</field>
+        <field name="property_label">Budget</field>
+        <field name="property_type">char</field>
+        <field name="checkpoint">won</field>
+        <field name="enforcement">block</field>
+    </record>
+    <record id="crm_methodology_sandler_req_decision_process" model="crm.methodology.requirement">
+        <field name="methodology_id" ref="crm_methodology_sandler"/>
+        <field name="sequence">30</field>
+        <field name="property_key">sandler_decision_process</field>
+        <field name="property_label">Decision-Making Process</field>
+        <field name="property_type">char</field>
+        <field name="checkpoint">quotation</field>
+        <field name="enforcement">warn</field>
+    </record>
+
+    <record id="crm_methodology_sandler_pb_contract" model="crm.methodology.playbook.question">
+        <field name="methodology_id" ref="crm_methodology_sandler"/>
+        <field name="sequence">10</field>
+        <field name="activity_type_id" ref="mail.mail_activity_data_call"/>
+        <field name="question">Did you agree an up-front contract for this call (a clear agreed outcome)?</field>
+    </record>
+    <record id="crm_methodology_sandler_pb_postsell" model="crm.methodology.playbook.question">
+        <field name="methodology_id" ref="crm_methodology_sandler"/>
+        <field name="sequence">20</field>
+        <field name="activity_type_id" ref="mail.mail_activity_data_call"/>
+        <field name="question">Is there a clear next step confirmed (Confirm Post-Sell)?</field>
+    </record>
+
+    <!-- ================= SPIN Selling ================= -->
+    <!-- Deliberately zero Requirements: SPIN is a question-sequence methodology, not a field
+         checklist, so it validates the engine works with a Playbook-only methodology. -->
+    <record id="crm_methodology_spin" model="crm.methodology">
+        <field name="name">SPIN Selling</field>
+        <field name="sequence">30</field>
+        <field name="description">Situation, Problem, Implication, Need-payoff question sequence. Playbook-only: no qualification fields. See docs/research/b2b-sales-methodologies-odoo.md.</field>
+    </record>
+
+    <record id="crm_methodology_spin_pb_situation" model="crm.methodology.playbook.question">
+        <field name="methodology_id" ref="crm_methodology_spin"/>
+        <field name="sequence">10</field>
+        <field name="activity_type_id" ref="mail.mail_activity_data_call"/>
+        <field name="question">Situation: What does your current process look like?</field>
+    </record>
+    <record id="crm_methodology_spin_pb_problem" model="crm.methodology.playbook.question">
+        <field name="methodology_id" ref="crm_methodology_spin"/>
+        <field name="sequence">20</field>
+        <field name="activity_type_id" ref="mail.mail_activity_data_call"/>
+        <field name="question">Problem: Where does that process create difficulty?</field>
+    </record>
+    <record id="crm_methodology_spin_pb_implication" model="crm.methodology.playbook.question">
+        <field name="methodology_id" ref="crm_methodology_spin"/>
+        <field name="sequence">30</field>
+        <field name="activity_type_id" ref="mail.mail_activity_data_call"/>
+        <field name="question">Implication: What does that difficulty cost you when it happens?</field>
+    </record>
+    <record id="crm_methodology_spin_pb_needpayoff" model="crm.methodology.playbook.question">
+        <field name="methodology_id" ref="crm_methodology_spin"/>
+        <field name="sequence">40</field>
+        <field name="activity_type_id" ref="mail.mail_activity_data_call"/>
+        <field name="question">Need-payoff: How would it help if that were solved?</field>
+    </record>
+
+</odoo>

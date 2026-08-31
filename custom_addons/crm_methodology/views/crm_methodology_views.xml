@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="crm_methodology_view_list" model="ir.ui.view">
+        <field name="name">crm.methodology.list</field>
+        <field name="model">crm.methodology</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="is_default"/>
+                <field name="active" column_invisible="True"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="crm_methodology_view_form" model="ir.ui.view">
+        <field name="name">crm.methodology.form</field>
+        <field name="model">crm.methodology</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
+                    <group>
+                        <field name="name"/>
+                        <field name="is_default" readonly="1"/>
+                        <field name="active" invisible="not is_default"/>
+                    </group>
+                    <field name="description" placeholder="What is this methodology, and when should a client be assigned it?"/>
+                    <notebook>
+                        <page string="Requirements" name="requirements">
+                            <field name="requirement_ids">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="property_label"/>
+                                    <field name="property_key"/>
+                                    <field name="property_type"/>
+                                    <field name="property_comodel" invisible="property_type != 'many2one'"/>
+                                    <field name="checkpoint"/>
+                                    <field name="enforcement"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Playbook Questions" name="playbook_questions">
+                            <field name="playbook_question_ids">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="activity_type_id"/>
+                                    <field name="question"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="crm_methodology_action" model="ir.actions.act_window">
+        <field name="name">Sales Methodologies</field>
+        <field name="res_model">crm.methodology</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Define a Sales Methodology
+            </p>
+            <p>
+                MEDDIC, Sandler, and SPIN Selling ship pre-configured. Add your own, or add
+                Requirements/Playbook Questions to the existing ones.
+            </p>
+        </field>
+    </record>
+
+</odoo>

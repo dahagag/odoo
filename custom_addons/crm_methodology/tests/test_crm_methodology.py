@@ -1,0 +1,149 @@
+from odoo.exceptions import AccessError, ValidationError
+from odoo.tests import TransactionCase, tagged
+
+
+@tagged('post_install', '-at_install')
+class TestCrmMethodology(TransactionCase):
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.meddic = cls.env.ref('crm_methodology.crm_methodology_meddic')
+        cls.spin = cls.env.ref('crm_methodology.crm_methodology_spin')
+        cls.none_methodology = cls.env.ref('crm_methodology.crm_methodology_none')
+        cls.call_activity_type = cls.env.ref('mail.mail_activity_data_call')
+        cls.team = cls.env['crm.team'].create({'name': "Methodology Test Team"})
+        cls.economic_buyer = cls.env['res.partner'].create({'name': "Test Economic Buyer"})
+        cls.champion = cls.env['res.partner'].create({'name': "Test Champion"})
+        cls.client = cls.env['res.partner'].create({
+            'name': "Test MEDDIC Client",
+            'methodology_id': cls.meddic.id,
+        })
+
+    def _create_lead(self, **extra):
+        return self.env['crm.lead'].create({
+            'name': "Test Opportunity",
+            'type': 'opportunity',
+            'partner_id': self.client.id,
+            'team_id': self.team.id,
+            **extra,
+        })
+
+    def test_new_partner_defaults_to_none_methodology(self):
+        partner = self.env['res.partner'].create({'name': "Undecided Client"})
+        self.assertEqual(partner.methodology_id, self.none_methodology)
+
+    def test_lead_defaults_methodology_from_partner(self):
+        lead = self._create_lead()
+        self.assertEqual(lead.methodology_id, self.meddic)
+
+    def test_lead_methodology_stays_editable_and_not_retroactive(self):
+        lead = self._create_lead()
+        lead.methodology_id = self.spin
+        self.client.methodology_id = self.none_methodology
+        self.assertEqual(lead.methodology_id, self.spin, "changing the client later must not touch existing leads")
+
+    def test_action_set_won_blocks_on_missing_block_requirement(self):
+        lead = self._create_lead()
+        with self.assertRaises(ValidationError):
+            lead.action_set_won()
+
+    def test_action_set_won_succeeds_once_block_requirements_filled(self):
+        lead = self._create_lead()
+        lead.action_sync_methodology_properties()
+        lead.lead_properties = {
+            'meddic_economic_buyer': self.economic_buyer.id,
+            'meddic_champion': self.champion.id,
+        }
+        lead.action_set_won()
+        self.assertEqual(lead.probability, 100)
+
+    def test_action_set_lost_blocks_on_missing_block_requirement(self):
+        strict_methodology = self.env['crm.methodology'].create({'name': "Lost-Gated Methodology"})
+        self.env['crm.methodology.requirement'].create({
+            'methodology_id': strict_methodology.id,
+            'property_key': 'lost_gate_field',
+            'property_label': "Lost Reason Detail",
+            'property_type': 'char',
+            'checkpoint': 'lost',
+            'enforcement': 'block',
+        })
+        lead = self._create_lead(methodology_id=strict_methodology.id)
+        with self.assertRaises(ValidationError):
+            lead.action_set_lost()
+
+    def test_methodology_completion_computation(self):
+        lead = self._create_lead()
+        lead.action_sync_methodology_properties()
+        self.assertEqual(lead.methodology_completion, 0.0)
+
+        lead.lead_properties = {'meddic_economic_buyer': self.economic_buyer.id}
+        self.assertEqual(lead.methodology_completion, 50.0)
+
+        lead.lead_properties = {
+            'meddic_economic_buyer': self.economic_buyer.id,
+            'meddic_champion': self.champion.id,
+        }
+        self.assertEqual(lead.methodology_completion, 100.0)
+
+    def test_methodology_with_no_block_requirements_is_always_100(self):
+        lead = self._create_lead(methodology_id=self.spin.id)
+        self.assertEqual(lead.methodology_completion, 100.0)
+
+    def test_sync_materializes_missing_properties_on_team(self):
+        lead = self._create_lead()
+        self.assertEqual(len(lead._get_requirements_missing_from_team()), len(self.meddic.requirement_ids))
+        lead.action_sync_methodology_properties()
+        self.assertFalse(lead._get_requirements_missing_from_team())
+        team_keys = {d['name'] for d in self.team.lead_properties_definition or []}
+        self.assertEqual(team_keys, set(self.meddic.requirement_ids.mapped('property_key')))
+
+    def test_quotation_creation_blocked_by_ad_hoc_requirement(self):
+        # Build a minimal fixture rather than relying on seed data, so this asserts the generic
+        # checkpoint mechanism itself, independent of MEDDIC's specific field choices.
+        strict_methodology = self.env['crm.methodology'].create({'name': "Strict Test Methodology"})
+        self.env['crm.methodology.requirement'].create({
+            'methodology_id': strict_methodology.id,
+            'property_key': 'strict_test_field',
+            'property_label': "Strict Field",
+            'property_type': 'char',
+            'checkpoint': 'quotation',
+            'enforcement': 'block',
+        })
+        lead = self._create_lead(methodology_id=strict_methodology.id)
+        with self.assertRaises(ValidationError):
+            self.env['sale.order'].create({
+                'partner_id': self.client.id,
+                'opportunity_id': lead.id,
+            })
+
+    def test_playbook_wizard_opens_on_matching_activity(self):
+        lead = self._create_lead(methodology_id=self.spin.id)
+        activity = lead.activity_schedule(activity_type_id=self.call_activity_type.id, summary="Discovery call")
+        result = activity.action_feedback()
+        self.assertEqual(result.get('res_model'), 'crm.methodology.playbook.wizard')
+
+    def test_playbook_skip_still_completes_the_activity(self):
+        lead = self._create_lead(methodology_id=self.spin.id)
+        activity = lead.activity_schedule(activity_type_id=self.call_activity_type.id, summary="Discovery call")
+        wizard_action = activity.action_feedback()
+        wizard = self.env[wizard_action['res_model']].browse(wizard_action['res_id'])
+        wizard.action_skip()
+        self.assertFalse(activity.exists() and activity.active, "activity should be done (archived) after skip")
+        self.assertTrue(
+            "skipped" in " ".join(lead.message_ids.mapped('body')).lower(),
+            "skip should still leave a trace in chatter",
+        )
+
+    def test_forbidden_user_cannot_create_methodology(self):
+        salesperson = self.env['res.users'].create({
+            'name': "Plain Salesperson",
+            'login': "plain_salesperson_methodology_test",
+            'group_ids': [(6, 0, self.env.ref('sales_team.group_sale_salesman').ids)],
+        })
+        with self.assertRaises(AccessError):
+            self.env['crm.methodology'].with_user(salesperson).create({'name': "Should not be allowed"})
+
+    def test_default_methodology_cannot_be_deleted(self):
+        with self.assertRaises(Exception):
+            self.none_methodology.unlink()
