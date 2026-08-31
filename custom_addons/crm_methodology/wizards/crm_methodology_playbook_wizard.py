@@ -1,4 +1,5 @@
 from odoo import _, api, fields, models
+from odoo.exceptions import UserError
 
 
 class CrmMethodologyPlaybookWizard(models.TransientModel):
@@ -13,18 +14,31 @@ class CrmMethodologyPlaybookWizard(models.TransientModel):
 
     @api.model_create_multi
     def create(self, vals_list):
-        wizards = super().create(vals_list)
-        for wizard in wizards:
-            activity = wizard.activity_id
-            lead = self.env['crm.lead'].browse(activity.res_id)
-            questions = lead.methodology_id.playbook_question_ids.filtered(
-                lambda q: q.activity_type_id == activity.activity_type_id,
+        for vals in vals_list:
+            activity_id = vals.get('activity_id')
+            activity = self.env['mail.activity'].browse(activity_id).exists() if activity_id else activity_id
+            questions = (
+                activity._get_methodology_playbook_questions()
+                if activity else self.env['crm.methodology.playbook.question']
             )
-            wizard.line_ids = [
-                (0, 0, {'sequence': question.sequence, 'question': question.question})
+            if not questions:
+                raise UserError(_("This activity has no applicable Sales Methodology Playbook."))
+            # RPC callers cannot forge the question set: it always comes from the activity's
+            # current opportunity, methodology, and activity type.
+            vals['line_ids'] = [
+                (0, 0, {'sequence': question.sequence, 'question_id': question.id})
                 for question in questions
             ]
-        return wizards
+        return super().create(vals_list)
+
+    def _validate_playbook(self):
+        self.ensure_one()
+        questions = self.activity_id._get_methodology_playbook_questions()
+        actual_question_ids = self.line_ids.sorted().question_id.ids
+        if not questions or actual_question_ids != questions.ids:
+            raise UserError(_("This Playbook no longer matches the activity's Sales Methodology."))
+        self.attachment_ids.check_access('read')
+        return questions
 
     def _open_wizard(self):
         return {
@@ -39,6 +53,7 @@ class CrmMethodologyPlaybookWizard(models.TransientModel):
 
     def _complete_activity(self, note):
         self.ensure_one()
+        self._validate_playbook()
         full_feedback = "\n\n".join(filter(None, [self.feedback, note]))
         self.activity_id.with_context(crm_methodology_playbook_bypass=True).action_feedback(
             feedback=full_feedback, attachment_ids=self.attachment_ids.ids,
@@ -71,5 +86,8 @@ class CrmMethodologyPlaybookWizardLine(models.TransientModel):
 
     wizard_id = fields.Many2one('crm.methodology.playbook.wizard', required=True, ondelete='cascade')
     sequence = fields.Integer(default=10)
-    question = fields.Char(readonly=True)
+    question_id = fields.Many2one(
+        'crm.methodology.playbook.question', string="Playbook Question", required=True, readonly=True,
+    )
+    question = fields.Char(related='question_id.question', readonly=True)
     answer = fields.Text()

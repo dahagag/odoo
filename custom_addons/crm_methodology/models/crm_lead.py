@@ -26,13 +26,6 @@ class CrmLead(models.Model):
     methodology_properties_to_sync = fields.Integer(
         string="Properties to Sync", compute='_compute_methodology_properties_to_sync',
     )
-    methodology_property_keys = fields.Char(
-        compute='_compute_methodology_property_keys',
-        help="Comma-separated Property keys owned by this opportunity's own methodology. Lets the "
-             "Qualification tab's widget filter the team's Properties (shared, and possibly also "
-             "populated by other methodologies) down to just this methodology's own fields; see "
-             "docs/adr/0005.",
-    )
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -84,11 +77,6 @@ class CrmLead(models.Model):
         for lead in self:
             lead.methodology_properties_to_sync = len(lead._get_requirements_missing_from_team())
 
-    @api.depends('methodology_id.requirement_ids.property_key')
-    def _compute_methodology_property_keys(self):
-        for lead in self:
-            lead.methodology_property_keys = ",".join(lead.methodology_id.requirement_ids.mapped('property_key'))
-
     def _get_missing_requirements(self, checkpoint=None, enforcement=None):
         self.ensure_one()
         requirements = self.methodology_id.requirement_ids
@@ -124,8 +112,10 @@ class CrmLead(models.Model):
         self.ensure_one()
         if not self.env.user.has_group('sales_team.group_sale_salesman'):
             raise AccessError(_("Only Salespeople can sync methodology properties to a Sales Team."))
+        self.check_access('write')
         if not self.team_id:
             raise UserError(_("Assign a Sales Team to this opportunity first."))
+        self.team_id.check_access('read')
         self.methodology_id.requirement_ids._check_compatible_with_team(self.team_id)
         missing = self._get_requirements_missing_from_team()
         if not missing:

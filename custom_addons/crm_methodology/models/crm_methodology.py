@@ -31,6 +31,10 @@ class CrmMethodology(models.Model):
         that needs it (a new client's default, a new opportunity with no client methodology)."""
         return self.search([('is_default', '=', True)], limit=1)
 
+    def _get_seeded_default(self):
+        """Return the immutable fallback record shipped by this module."""
+        return self.env.ref('crm_methodology.crm_methodology_none', raise_if_not_found=False)
+
     @api.constrains('is_default')
     def _check_single_default(self):
         count = self.env['crm.methodology'].with_context(active_test=False).search_count(
@@ -45,6 +49,13 @@ class CrmMethodology(models.Model):
                 raise ValidationError(_("The default Sales Methodology can't be archived."))
 
     def unlink(self):
-        if any(self.mapped('is_default')):
+        seeded_default = self._get_seeded_default()
+        if any(self.mapped('is_default')) or (seeded_default and seeded_default in self):
             raise UserError(_("The default Sales Methodology can't be deleted."))
         return super().unlink()
+
+    def write(self, vals):
+        seeded_default = self._get_seeded_default()
+        if 'is_default' in vals and not vals['is_default'] and seeded_default and seeded_default in self:
+            raise ValidationError(_("The ‘None’ Sales Methodology must remain the default."))
+        return super().write(vals)
