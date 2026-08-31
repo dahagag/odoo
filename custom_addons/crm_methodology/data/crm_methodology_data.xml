@@ -94,7 +94,7 @@
 
     <!-- ================= Sandler ================= -->
     <record id="crm_methodology_sandler" model="crm.methodology">
-        <field name="name">Sandler</field>
+        <field name="name">Sandler Selling System</field>
         <field name="sequence">20</field>
         <field name="description">Seven-step system: Bonding &amp; Rapport, Up-Front Contract, Identify Pain, Uncover Budget, Decision-Making Process, Present, Confirm Post-Sell. See docs/research/b2b-sales-methodologies-odoo.md.</field>
     </record>
