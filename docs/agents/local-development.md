@@ -109,6 +109,14 @@ Odoo's generic scaffold is a starting point and may need formatting before its f
 
 Tests use a database named from `ODOO_TEST_DB_PREFIX`, a UTC timestamp, and the wrapper process identifier. A passing run removes that exact database. A failing run preserves it for `shell` or `db-shell` investigation and prints its name. Use `-CleanupOnFailure` in PowerShell or pass `--cleanup-on-failure` as the fourth Bash token to remove that exact test database after a failure. Otherwise, delete a preserved database explicitly from `db-shell` when investigation is complete.
 
+## Browser tests
+
+The development image installs Google Chrome (`google-chrome-stable`) specifically for `odoo.tests.HttpCase.start_tour` — Ubuntu's own `chromium`/`chromium-browser` packages are snap-only stubs with no real binary in a container, so Odoo's own browser detection (which looks for `google-chrome`/`chromium`/etc. on `PATH`) would otherwise skip every tour test with "Chrome executable not found". `requirements.txt` also pins `websocket-client`, which `HttpCase` needs to drive Chrome over the DevTools protocol; without it, tour tests are silently skipped ("websocket-client module is not installed") rather than run. `custom_addons/dev_e2e_smoke_test` holds a minimal tour with no dependency on any other addon; run `./scripts/dev.ps1 test dev_e2e_smoke_test` to confirm this seam works in a given environment.
+
+Tag tour/`HttpCase` tests `@tagged('post_install', '-at_install')` (they need a running HTTP server, not available at `at_install` time) — see `custom_addons/dev_e2e_smoke_test/tests/test_browser_tour_smoke.py` and its matching tour in `custom_addons/dev_e2e_smoke_test/static/tests/tours/`. No extra flags are needed to run them: `scripts/dev.ps1 test <module>` already includes every tagged test in that module.
+
+A tour step whose `run` triggers a full page navigation (e.g. a wizard button returning `{'type': 'ir.actions.client', 'tag': 'reload'}`) must set `expectUnloadPage: true` on that step, or the tour engine flags the run as non-deterministic and fails it.
+
 ## Troubleshooting
 
 ### Docker engine is not running
