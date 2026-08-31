@@ -4,8 +4,7 @@
     'description': """
 Assign a Sales Methodology per client, governing which qualification
 properties apply to their opportunities (with per-requirement Block/Warn
-enforcement at the Quotation-Created, Marked-Won, and Marked-Lost
-checkpoints) and which
+enforcement at the Quotation-Created and Marked-Won checkpoints) and which
 discovery Playbook Questions surface when a matching activity is completed.
 
 See docs/research/b2b-sales-methodologies-odoo.md and

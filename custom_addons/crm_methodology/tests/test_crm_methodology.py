@@ -87,7 +87,7 @@ class TestCrmMethodology(TransactionCase):
         lead.action_set_won()
         self.assertEqual(lead.probability, 100)
 
-    def test_action_set_lost_blocks_on_missing_block_requirement(self):
+    def test_action_set_lost_ignores_inert_lost_checkpoint(self):
         strict_methodology = self.env['crm.methodology'].create({'name': "Lost-Gated Methodology"})
         self.env['crm.methodology.requirement'].create({
             'methodology_id': strict_methodology.id,
@@ -98,8 +98,8 @@ class TestCrmMethodology(TransactionCase):
             'enforcement': 'block',
         })
         lead = self._create_lead(methodology_id=strict_methodology.id)
-        with self.assertRaises(ValidationError):
-            lead.action_set_lost()
+        lead.action_set_lost()
+        self.assertEqual(lead.probability, 0)
 
     def test_methodology_completion_computation(self):
         lead = self._create_lead()
@@ -159,6 +159,20 @@ class TestCrmMethodology(TransactionCase):
         lead.action_sync_methodology_properties()
         self.assertEqual(lead.methodology_properties_to_sync, 0)
         team_keys = {d['name'] for d in self.team.lead_properties_definition or []}
+        self.assertEqual(team_keys, set(self.meddic.requirement_ids.mapped('property_key')))
+
+    def test_salesperson_can_sync_missing_properties_to_team(self):
+        salesperson = self.env['res.users'].create({
+            'name': "Methodology Sync Salesperson",
+            'login': "methodology_sync_salesperson",
+            'group_ids': [(6, 0, self.env.ref('sales_team.group_sale_salesman').ids)],
+        })
+        lead = self._create_lead()
+
+        lead.with_user(salesperson).action_sync_methodology_properties()
+
+        self.team.invalidate_recordset(['lead_properties_definition'])
+        team_keys = {definition['name'] for definition in self.team.lead_properties_definition or []}
         self.assertEqual(team_keys, set(self.meddic.requirement_ids.mapped('property_key')))
 
     def test_quotation_creation_blocked_by_ad_hoc_requirement(self):

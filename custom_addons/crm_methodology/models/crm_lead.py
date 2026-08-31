@@ -1,5 +1,5 @@
 from odoo import _, api, fields, models
-from odoo.exceptions import UserError, ValidationError
+from odoo.exceptions import AccessError, UserError, ValidationError
 
 
 class CrmLead(models.Model):
@@ -120,12 +120,10 @@ class CrmLead(models.Model):
         self._check_methodology_checkpoint('won')
         return super().action_set_won()
 
-    def action_set_lost(self, **additional_values):
-        self._check_methodology_checkpoint('lost')
-        return super().action_set_lost(**additional_values)
-
     def action_sync_methodology_properties(self):
         self.ensure_one()
+        if not self.env.user.has_group('sales_team.group_sale_salesman'):
+            raise AccessError(_("Only Salespeople can sync methodology properties to a Sales Team."))
         if not self.team_id:
             raise UserError(_("Assign a Sales Team to this opportunity first."))
         self.methodology_id.requirement_ids._check_compatible_with_team(self.team_id)
@@ -134,4 +132,7 @@ class CrmLead(models.Model):
             return
         new_definition = list(self.team_id.lead_properties_definition or [])
         new_definition.extend(requirement._build_property_definition() for requirement in missing)
-        self.team_id.lead_properties_definition = new_definition
+        # Salespeople may fill qualification values but cannot otherwise administer Sales Teams.
+        # Elevate only the exact field write promised by this confirmed action, after validating
+        # the caller, opportunity, team, and every property definition under the caller's access.
+        self.team_id.sudo().write({'lead_properties_definition': new_definition})
