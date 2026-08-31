@@ -33,6 +33,35 @@ class TestCrmMethodology(TransactionCase):
         partner = self.env['res.partner'].create({'name': "Undecided Client"})
         self.assertEqual(partner.methodology_id, self.none_methodology)
 
+    def test_reference_methodologies_ship_with_expected_requirements_and_playbook_questions(self):
+        sandler = self.env.ref('crm_methodology.crm_methodology_sandler')
+
+        self.assertEqual(self.meddic.name, "MEDDIC")
+        self.assertEqual(
+            self.meddic.requirement_ids.mapped('property_label'),
+            ["Metrics", "Economic Buyer", "Decision Process", "Decision Criteria", "Identify Pain", "Champion"],
+        )
+        self.assertTrue(self.meddic.playbook_question_ids)
+
+        self.assertEqual(sandler.name, "Sandler Selling System")
+        self.assertEqual(
+            sandler.requirement_ids.mapped('property_label'),
+            ["Pain", "Budget", "Decision-Making Process"],
+        )
+        self.assertTrue(sandler.playbook_question_ids)
+
+        self.assertEqual(self.spin.name, "SPIN Selling")
+        self.assertFalse(self.spin.requirement_ids)
+        self.assertEqual(
+            self.spin.playbook_question_ids.mapped('question'),
+            [
+                "Situation: What does your current process look like?",
+                "Problem: Where does that process create difficulty?",
+                "Implication: What does that difficulty cost you when it happens?",
+                "Need-payoff: How would it help if that were solved?",
+            ],
+        )
+
     def test_lead_defaults_methodology_from_partner(self):
         lead = self._create_lead()
         self.assertEqual(lead.methodology_id, self.meddic)
