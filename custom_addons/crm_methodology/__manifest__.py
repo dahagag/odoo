@@ -4,8 +4,7 @@
     'description': """
 Assign a Sales Methodology per client, governing which qualification
 properties apply to their opportunities (with per-requirement Block/Warn
-enforcement at the Quotation-Created, Marked-Won, and Marked-Lost
-checkpoints) and which
+enforcement at the Quotation-Created and Marked-Won checkpoints) and which
 discovery Playbook Questions surface when a matching activity is completed.
 
 See docs/research/b2b-sales-methodologies-odoo.md and
@@ -34,7 +33,6 @@ reference Properties by key instead of owning field definitions.
     'assets': {
         'web.assets_backend': [
             'crm_methodology/static/src/js/activity_model_patch.js',
-            'crm_methodology/static/src/js/methodology_properties_field.js',
         ],
         'web.assets_tests': [
             'crm_methodology/static/tests/tours/**/*',

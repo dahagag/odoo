@@ -1,5 +1,5 @@
 from odoo.exceptions import AccessError, UserError, ValidationError
-from odoo.tests import TransactionCase, tagged
+from odoo.tests import Form, TransactionCase, tagged
 
 
 @tagged('post_install', '-at_install')
@@ -18,6 +18,18 @@ class TestCrmMethodology(TransactionCase):
         cls.client = cls.env['res.partner'].create({
             'name': "Test MEDDIC Client",
             'methodology_id': cls.meddic.id,
+        })
+        cls.salesperson = cls._create_user("Methodology Salesperson", 'sales_team.group_sale_salesman')
+        cls.sales_manager = cls._create_user("Methodology Sales Manager", 'sales_team.group_sale_manager')
+        cls.internal_user = cls._create_user("Methodology Internal User", 'base.group_user')
+
+    @classmethod
+    def _create_user(cls, name, group_xmlid):
+        return cls.env['res.users'].create({
+            'name': name,
+            'login': name.lower().replace(' ', '_'),
+            'lang': 'en_US',
+            'group_ids': [(6, 0, cls.env.ref(group_xmlid).ids)],
         })
 
     def _create_lead(self, **extra):
@@ -66,6 +78,12 @@ class TestCrmMethodology(TransactionCase):
         lead = self._create_lead()
         self.assertEqual(lead.methodology_id, self.meddic)
 
+    def test_lead_form_onchange_defaults_methodology_from_partner(self):
+        with Form(self.env['crm.lead'].with_context(default_type='opportunity')) as lead_form:
+            lead_form.name = "Form-created Opportunity"
+            lead_form.partner_id = self.client
+            self.assertEqual(lead_form.methodology_id, self.meddic)
+
     def test_lead_methodology_stays_editable_and_not_retroactive(self):
         lead = self._create_lead()
         lead.methodology_id = self.spin
@@ -87,7 +105,7 @@ class TestCrmMethodology(TransactionCase):
         lead.action_set_won()
         self.assertEqual(lead.probability, 100)
 
-    def test_action_set_lost_blocks_on_missing_block_requirement(self):
+    def test_action_set_lost_ignores_inert_lost_checkpoint(self):
         strict_methodology = self.env['crm.methodology'].create({'name': "Lost-Gated Methodology"})
         self.env['crm.methodology.requirement'].create({
             'methodology_id': strict_methodology.id,
@@ -98,8 +116,8 @@ class TestCrmMethodology(TransactionCase):
             'enforcement': 'block',
         })
         lead = self._create_lead(methodology_id=strict_methodology.id)
-        with self.assertRaises(ValidationError):
-            lead.action_set_lost()
+        lead.action_set_lost()
+        self.assertEqual(lead.probability, 0)
 
     def test_methodology_completion_computation(self):
         lead = self._create_lead()
@@ -141,18 +159,6 @@ class TestCrmMethodology(TransactionCase):
         )
         self.assertEqual(avg_completion, 50.0, "the group's completion must be averaged, not summed")
 
-    def test_methodology_property_keys_scopes_qualification_tab_to_own_methodology(self):
-        # The team's Properties are shared across every methodology assigned to it (docs/adr/0005),
-        # so the Qualification tab widget relies on this field to show only the current
-        # opportunity's own methodology fields instead of the team's full superset.
-        meddic_lead = self._create_lead()
-        self.assertEqual(
-            set(meddic_lead.methodology_property_keys.split(",")),
-            set(self.meddic.requirement_ids.mapped('property_key')),
-        )
-        spin_lead = self._create_lead(methodology_id=self.spin.id)
-        self.assertEqual(spin_lead.methodology_property_keys, "")
-
     def test_sync_materializes_missing_properties_on_team(self):
         lead = self._create_lead()
         self.assertEqual(lead.methodology_properties_to_sync, len(self.meddic.requirement_ids))
@@ -160,6 +166,29 @@ class TestCrmMethodology(TransactionCase):
         self.assertEqual(lead.methodology_properties_to_sync, 0)
         team_keys = {d['name'] for d in self.team.lead_properties_definition or []}
         self.assertEqual(team_keys, set(self.meddic.requirement_ids.mapped('property_key')))
+
+    def test_salesperson_can_sync_missing_properties_to_team(self):
+        lead = self._create_lead(user_id=self.salesperson.id)
+
+        lead.with_user(self.salesperson).action_sync_methodology_properties()
+
+        self.team.invalidate_recordset(['lead_properties_definition'])
+        team_keys = {definition['name'] for definition in self.team.lead_properties_definition or []}
+        self.assertEqual(team_keys, set(self.meddic.requirement_ids.mapped('property_key')))
+
+    def test_non_salesperson_cannot_sync_properties_to_team(self):
+        lead = self._create_lead()
+        with self.assertRaises(AccessError):
+            lead.with_user(self.internal_user).action_sync_methodology_properties()
+
+    def test_salesperson_cannot_sync_another_salespersons_opportunity(self):
+        other_salesperson = self._create_user("Other Methodology Salesperson", 'sales_team.group_sale_salesman')
+        lead = self._create_lead(user_id=other_salesperson.id)
+        # Prime the shared prefetch as administrator: the public action must enforce record rules
+        # explicitly rather than depending on a later field fetch to happen to do it.
+        lead.read(['team_id', 'methodology_id', 'lead_properties'])
+        with self.assertRaises(AccessError):
+            lead.with_user(self.salesperson).action_sync_methodology_properties()
 
     def test_quotation_creation_blocked_by_ad_hoc_requirement(self):
         # Build a minimal fixture rather than relying on seed data, so this asserts the generic
@@ -180,6 +209,50 @@ class TestCrmMethodology(TransactionCase):
                 'opportunity_id': lead.id,
             })
 
+    def test_warn_requirements_do_not_block_quotation_or_won_checkpoints(self):
+        warning_methodology = self.env['crm.methodology'].create({'name': "Warning Test Methodology"})
+        self.env['crm.methodology.requirement'].create([
+            {
+                'methodology_id': warning_methodology.id,
+                'property_key': 'warn_quotation_field',
+                'property_label': "Quotation Warning",
+                'property_type': 'char',
+                'checkpoint': 'quotation',
+                'enforcement': 'warn',
+            },
+            {
+                'methodology_id': warning_methodology.id,
+                'property_key': 'warn_won_field',
+                'property_label': "Won Warning",
+                'property_type': 'char',
+                'checkpoint': 'won',
+                'enforcement': 'warn',
+            },
+        ])
+        leads = self.env['crm.lead'].create([
+            {
+                'name': "Warning Opportunity A",
+                'type': 'opportunity',
+                'partner_id': self.client.id,
+                'team_id': self.team.id,
+                'methodology_id': warning_methodology.id,
+            },
+            {
+                'name': "Warning Opportunity B",
+                'type': 'opportunity',
+                'partner_id': self.client.id,
+                'team_id': self.team.id,
+                'methodology_id': warning_methodology.id,
+            },
+        ])
+        orders = self.env['sale.order'].create([
+            {'partner_id': self.client.id, 'opportunity_id': lead.id}
+            for lead in leads
+        ])
+        leads.action_set_won()
+        self.assertEqual(len(orders), 2)
+        self.assertEqual(leads.mapped('probability'), [100.0, 100.0])
+
     def test_playbook_wizard_opens_on_matching_activity(self):
         lead = self._create_lead(methodology_id=self.spin.id)
         activity = lead.activity_schedule(activity_type_id=self.call_activity_type.id, summary="Discovery call")
@@ -198,14 +271,51 @@ class TestCrmMethodology(TransactionCase):
             "skip should still leave a trace in chatter",
         )
 
+    def test_salesperson_can_answer_playbook_and_post_answers_to_chatter(self):
+        lead = self._create_lead(methodology_id=self.spin.id, user_id=self.salesperson.id)
+        activity = lead.activity_schedule(
+            activity_type_id=self.call_activity_type.id,
+            summary="Salesperson discovery call",
+            user_id=self.salesperson.id,
+        )
+        wizard_action = activity.with_user(self.salesperson).action_feedback()
+        wizard = self.env[wizard_action['res_model']].browse(wizard_action['res_id']).with_user(self.salesperson)
+        wizard.line_ids[0].answer = "The current handoff is manual."
+        wizard.action_confirm()
+        self.assertFalse(activity.exists() and activity.active)
+        chatter = " ".join(lead.message_ids.mapped('body'))
+        self.assertIn("The current handoff is manual.", chatter)
+
+    def test_playbook_wizard_rejects_activity_without_matching_questions(self):
+        lead = self._create_lead(methodology_id=self.none_methodology.id)
+        activity = lead.activity_schedule(activity_type_id=self.call_activity_type.id, summary="Ordinary call")
+        with self.assertRaises(UserError):
+            self.env['crm.methodology.playbook.wizard'].create({'activity_id': activity.id})
+
     def test_forbidden_user_cannot_create_methodology(self):
-        salesperson = self.env['res.users'].create({
-            'name': "Plain Salesperson",
-            'login': "plain_salesperson_methodology_test",
-            'group_ids': [(6, 0, self.env.ref('sales_team.group_sale_salesman').ids)],
-        })
         with self.assertRaises(AccessError):
-            self.env['crm.methodology'].with_user(salesperson).create({'name': "Should not be allowed"})
+            self.env['crm.methodology'].with_user(self.salesperson).create({'name': "Should not be allowed"})
+
+    def test_configuration_access_is_read_only_for_salespeople_and_full_for_managers(self):
+        self.meddic.with_user(self.salesperson).read(['name'])
+        with self.assertRaises(AccessError):
+            self.meddic.with_user(self.salesperson).write({'description': "Forbidden change"})
+        with self.assertRaises(AccessError):
+            self.spin.with_user(self.salesperson).unlink()
+
+        managed = self.env['crm.methodology'].with_user(self.sales_manager).create({
+            'name': "Manager-owned Methodology",
+        })
+        managed.write({'description': "Manager can configure it"})
+        managed.unlink()
+
+    def test_salesperson_can_fill_ordinary_qualification_values(self):
+        lead = self._create_lead(user_id=self.salesperson.id)
+        lead.with_user(self.salesperson).action_sync_methodology_properties()
+        lead.with_user(self.salesperson).lead_properties = {
+            'meddic_economic_buyer': self.economic_buyer.id,
+        }
+        self.assertEqual(lead.lead_properties['meddic_economic_buyer'], self.economic_buyer)
 
     def test_default_methodology_cannot_be_deleted(self):
         with self.assertRaises(Exception):
@@ -214,6 +324,12 @@ class TestCrmMethodology(TransactionCase):
     def test_default_methodology_cannot_be_archived(self):
         with self.assertRaises(ValidationError):
             self.none_methodology.active = False
+
+    def test_seeded_none_cannot_stop_being_default_then_be_deleted(self):
+        with self.assertRaises(ValidationError):
+            self.none_methodology.is_default = False
+        with self.assertRaises(UserError):
+            self.none_methodology.unlink()
 
     def test_only_one_methodology_can_be_default(self):
         other = self.env['crm.methodology'].create({'name': "Aspiring Default"})
