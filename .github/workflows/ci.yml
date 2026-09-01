@@ -3,32 +3,51 @@ name: CI
 on:
   pull_request:
     branches: [dev/19.0, main/19.0]
-    paths:
-      - "custom_addons/**"
-      - "docker/**"
-      - "scripts/**"
-      - "requirements.txt"
-      - "compose.yaml"
-      - ".github/workflows/ci.yml"
 
 jobs:
+  changes:
+    name: Detect lint/test-relevant changes
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.check.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check for changes under custom_addons/, docker/, scripts/, etc.
+        id: check
+        run: |
+          if git diff --quiet "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}" -- \
+              custom_addons docker scripts requirements.txt compose.yaml .github/workflows/ci.yml; then
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          fi
+
   lint:
     name: Lint (required)
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.relevant == 'true'
       - name: Configure environment
+        if: needs.changes.outputs.relevant == 'true'
         run: |
           cp .env.example .env
           echo "HOST_UID=$(id -u)" >> .env
           echo "HOST_GID=$(id -g)" >> .env
       - name: Build development image
+        if: needs.changes.outputs.relevant == 'true'
         run: bash scripts/dev.sh build
       - name: Run ruff
+        if: needs.changes.outputs.relevant == 'true'
         run: bash scripts/dev.sh lint custom_addons
 
   test:
     name: Test (informational)
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     # Non-blocking by design: see docs/agents/sdlc.md#continuous-integration.
     # Do not add this job to the branch's required status checks.
