@@ -95,46 +95,45 @@ class _Ilo:
     items: list[str]
 
 
-_ILO_HEADING_TEXT = "intended learning outcomes"
+_ILO_HEADING_TEXT = "Intended Learning Outcomes"
 
 
 def _apply_component_conventions(blocks: list) -> list:
-    """Recognize doc-level conventions (issue #46): a leading H1 (+ optional following
-    paragraph) becomes the hero header; a heading literally titled "Intended Learning
-    Outcomes" followed by a list becomes the ILO box. Both are inferred from structure
-    and heading text a teach-doc author already writes naturally — no new Markdown
-    syntax is introduced.
+    """Recognize doc-level conventions (issue #46): a leading H1 becomes the hero
+    header, and a heading titled "Intended Learning Outcomes" becomes the ILO box.
+    Both are inferred from structure and heading text a teach-doc author already
+    writes naturally — no new Markdown syntax is introduced.
     """
-    result = []
-    hero_applied = False
-    index = 0
-    while index < len(blocks):
-        block = blocks[index]
+    return _extract_ilo(_extract_hero(blocks))
 
-        if not hero_applied and isinstance(block, _Heading) and block.level == 1:
+
+def _extract_hero(blocks: list) -> list:
+    """Fold the first H1 (+ an immediately-following paragraph, if any) into a _Hero."""
+    for index, block in enumerate(blocks):
+        if isinstance(block, _Heading) and block.level == 1:
             dek = None
             consumed = 1
             if index + 1 < len(blocks) and isinstance(blocks[index + 1], _Paragraph):
                 dek = blocks[index + 1].text
                 consumed = 2
-            result.append(_Hero(title=block.text, dek=dek))
-            hero_applied = True
-            index += consumed
-            continue
+            hero = _Hero(title=block.text, dek=dek)
+            return blocks[:index] + [hero] + blocks[index + consumed :]
+    return blocks
 
-        if (
-            isinstance(block, _Heading)
-            and block.text.strip().lower() == _ILO_HEADING_TEXT
-            and index + 1 < len(blocks)
-            and isinstance(blocks[index + 1], _List)
-        ):
+
+def _extract_ilo(blocks: list) -> list:
+    """Fold a heading titled "Intended Learning Outcomes" + a following list into an _Ilo."""
+    result = []
+    index = 0
+    while index < len(blocks):
+        block = blocks[index]
+        is_ilo_heading = isinstance(block, _Heading) and block.text.strip().lower() == _ILO_HEADING_TEXT.lower()
+        if is_ilo_heading and index + 1 < len(blocks) and isinstance(blocks[index + 1], _List):
             result.append(_Ilo(items=blocks[index + 1].items))
             index += 2
             continue
-
         result.append(block)
         index += 1
-
     return result
 
 
@@ -289,13 +288,13 @@ def _render_table(table: _Table) -> str:
 
 
 def _render_hero(hero: _Hero) -> str:
-    dek_html = f"<p class=\"dek\">{_render_inline(hero.dek)}</p>" if hero.dek else ""
+    dek_html = f'<p class="dek">{_render_inline(hero.dek)}</p>' if hero.dek else ""
     return f'<header class="hero"><h1 class="title">{_render_inline(hero.title)}</h1>{dek_html}</header>'
 
 
 def _render_ilo(ilo: _Ilo) -> str:
     items = "".join(f"<li>{_render_inline(item)}</li>" for item in ilo.items)
-    return f'<div class="ilo"><h2>Intended Learning Outcomes</h2><ul>{items}</ul></div>'
+    return f'<div class="ilo"><h2>{_ILO_HEADING_TEXT}</h2><ul>{items}</ul></div>'
 
 
 def _render_inline(text: str) -> str:
