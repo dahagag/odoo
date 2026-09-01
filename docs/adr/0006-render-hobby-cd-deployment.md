@@ -1,10 +1,13 @@
 # Render Hobby CD deployment
 
 The client-demo instance runs on Render's free web service + free Postgres, promoted by
-merging a reviewed release PR from `dev/19.0` into a new `main/19.0` branch, which Render
-watches for auto-deploy. No GitHub Actions deploy job exists: `dev/19.0` keeps its existing
-lint/test CI, and the PR merge into `main/19.0` *is* the human approval gate — Render's own
-git integration handles the rest.
+merging a release PR from `dev/19.0` into a new `main/19.0` branch, which Render watches for
+auto-deploy. No GitHub Actions deploy job exists: `dev/19.0` keeps its existing lint/test CI,
+and the PR merge into `main/19.0` *is* the approval gate — Render's own git integration
+handles the rest. This is a solo-maintainer repo with no external contributors, so
+`main/19.0`'s branch protection requires a passing `lint` check but no separate reviewer,
+matching `dev/19.0`'s own protection rather than GitHub's default reviewed-PR shape (which
+can't be satisfied by a single account anyway — GitHub disallows self-approval).
 
 We accepted two real costs of the free tier to keep this a zero-recurring-cost POC:
 
