@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       relevant: ${{ steps.check.outputs.relevant }}
+      test_modules: ${{ steps.plan.outputs.modules }}
     steps:
       - name: Check for changes under custom_addons/, docker/, scripts/, etc.
         id: check
@@ -23,6 +24,52 @@ jobs:
               - 'requirements.txt'
               - 'compose.yaml'
               - '.github/workflows/ci.yml'
+      - uses: actions/checkout@v4
+      - name: Build per-module change filters
+        run: |
+          {
+            echo "shared:"
+            echo "  - 'docker/**'"
+            echo "  - 'scripts/**'"
+            echo "  - 'requirements.txt'"
+            echo "  - 'compose.yaml'"
+            echo "  - '.github/workflows/ci.yml'"
+            for manifest in custom_addons/*/__manifest__.py; do
+              module="$(basename "$(dirname "$manifest")")"
+              echo "module_${module}:"
+              echo "  - 'custom_addons/${module}/**'"
+            done
+          } > "$RUNNER_TEMP/module-filters.yml"
+      - name: Detect which modules changed
+        id: modules
+        uses: dorny/paths-filter@v3
+        with:
+          filters: "${{ runner.temp }}/module-filters.yml"
+      - name: Plan which owned modules need testing
+        id: plan
+        env:
+          SHARED_CHANGED: ${{ steps.modules.outputs.shared }}
+          CHANGED_FILTERS: ${{ steps.modules.outputs.changes }}
+        run: |
+          # A change outside a specific module's own directory (docker/, scripts/, a
+          # shared file directly under custom_addons/, the Dockerfile, etc.) can affect
+          # every module's test run, so fall back to testing all of them. Only when
+          # every changed path falls under a single module's own directory do we narrow
+          # the run to just those modules.
+          if [[ "$SHARED_CHANGED" == "true" ]]; then
+            modules=()
+            for manifest in custom_addons/*/__manifest__.py; do
+              modules+=("$(basename "$(dirname "$manifest")")")
+            done
+          else
+            mapfile -t matched < <(jq -r '.[]' <<<"$CHANGED_FILTERS")
+            modules=()
+            for filter in "${matched[@]}"; do
+              [[ "$filter" == module_* ]] && modules+=("${filter#module_}")
+            done
+          fi
+
+          printf '%s\n' "${modules[@]:-}" | jq -R . | jq -sc 'map(select(length > 0))' | { read -r json; echo "modules=$json" >> "$GITHUB_OUTPUT"; }
 
   build-image:
     name: Build development image
@@ -94,7 +141,7 @@ jobs:
   test:
     name: Test (informational)
     needs: [changes, build-image]
-    if: needs.changes.outputs.relevant == 'true'
+    if: needs.changes.outputs.relevant == 'true' && needs.changes.outputs.test_modules != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -113,11 +160,12 @@ jobs:
       - uses: ./.github/actions/ghcr-login
       - name: Pull cached development image
         run: docker compose pull odoo
-      - name: Run tests for every owned module
+      - name: Run tests for changed modules
+        env:
+          TEST_MODULES: ${{ needs.changes.outputs.test_modules }}
         run: |
           set -euo pipefail
-          for manifest in custom_addons/*/__manifest__.py; do
-            module="$(basename "$(dirname "$manifest")")"
+          for module in $(jq -r '.[]' <<<"$TEST_MODULES"); do
             echo "::group::Testing $module"
             bash scripts/dev.sh test "$module"
             echo "::endgroup::"
