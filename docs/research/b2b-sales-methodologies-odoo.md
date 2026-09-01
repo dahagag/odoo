@@ -848,6 +848,284 @@ specifically.
   fetch a page detailing the installed field-level content of any specific
   edition.
 
+## Phase 4 — Addendum (2026-09-01): Odoo edition split and a deeper competitor comparison
+
+Added 2026-09-01, extending the research above with two further questions: (A)
+whether this repo's vendored Odoo source is Community or Enterprise, and what
+Odoo's own Enterprise CRM adds beyond Community; and (B) a deeper look at the
+specific tier/pricing/configurability of the three competitor features
+flagged as closest analogs in Phase 3 — Salesforce Path, HubSpot Playbooks,
+and Membrain Scorecards — checked against each vendor's *current* (2026-09-01)
+pricing and documentation pages. The same sourcing rule as Phases 1–3
+applies: every claim is checked against a primary source (the vendor's own
+site, or this repo's own vendored code) and anything not confirmed that way
+is stated as such rather than asserted.
+
+### Section A — Odoo Community vs Enterprise split
+
+**A1. This repo's vendored source is Community edition (LGPL-3), not
+Enterprise.** Every manifest checked declares `'license': 'LGPL-3'`, which is
+Odoo's own marker for Community-licensed code (Enterprise modules are
+licensed OEEL-1, the Odoo Enterprise Edition License):
+
+| Module | `__manifest__.py` license key |
+|---|---|
+| `addons/crm/__manifest__.py` | `'license': 'LGPL-3'` |
+| `addons/sale_crm/__manifest__.py` | `'license': 'LGPL-3'` |
+| `addons/sales_team/__manifest__.py` | `'license': 'LGPL-3'` |
+| `addons/mail/__manifest__.py` | `'license': 'LGPL-3'` |
+
+Source: `addons/crm/__manifest__.py`, `addons/sale_crm/__manifest__.py`,
+`addons/sales_team/__manifest__.py`, `addons/mail/__manifest__.py` (this
+repo, vendored Odoo 19 source).
+Corroborating evidence: a repo-wide search under `addons/` found no
+`enterprise/` directory and no file anywhere under `addons/crm/`,
+`addons/sale_crm/`, `addons/sales_team/`, or `addons/mail/` containing the
+string `OEEL` (Odoo's Enterprise license identifier) — the pattern this repo
+would show if any Enterprise-licensed module were vendored alongside the
+Community ones. Source: directory listing and grep of `addons/` (this repo).
+This repo's own custom `crm_methodology` module (the module whose
+Requirements/Checkpoints/Enforcement system this addendum compares against)
+is itself also licensed `'license': 'LGPL-3'`, per
+`custom_addons/crm_methodology/__manifest__.py` (this repo).
+
+**A2. What Odoo's own site says Enterprise/Custom adds beyond Community, for
+CRM specifically.** Odoo restructured its commercial offering since Phase 1–3
+were written: `odoo.com/pricing-plan` (fetched 2026-09-01) no longer frames
+the split as "Community vs Enterprise" but as **Standard** ($7.95/user/month,
+billed yearly, Odoo Online hosting only) vs **Custom** ($10.90/user/month,
+billed yearly — adds flexible hosting including "Download Odoo Enterprise and
+host it yourself" or Odoo.sh, Odoo Studio access, multi-company support, and
+external API access). Source: [Odoo — Pricing Plan](https://www.odoo.com/pricing-plan)
+(fetched 2026-09-01). Both tiers include "all apps," and the fetched page
+text draws no CRM-specific feature distinction between Standard and Custom —
+it names no lead-scoring, AI, forecasting, or qualification-checklist
+difference between the two.
+
+Odoo's own dedicated editions-comparison page,
+[odoo.com/page/editions](https://www.odoo.com/page/editions) (fetched
+2026-09-01), states in its own words: "Odoo Community is the core upon which
+Odoo Enterprise is built — and you can switch versions at any time." Its
+feature-comparison table lists CRM and Sales as rows linking to
+`odoo.com/app/crm-features` and `odoo.com/app/sales-features`, but the
+page's checkmark grid did not render as fetchable text in this session (it
+appears to be populated by client-side JavaScript), so this addendum cannot
+quote which specific checkmarks differ for the CRM row — that gap is listed
+under Unverified below rather than guessed at. The only differences this
+session *could* confirm from that page's fetched text are in other app
+areas entirely: Mobile (Android/iOS), Payroll, Spreadsheet, Manufacturing
+Shopfloor/Control Panel/Scheduling, and advanced Timesheet features — none
+of them CRM/Sales.
+
+Odoo's own CRM features marketing page,
+[odoo.com/app/crm-features](https://www.odoo.com/app/crm-features) (fetched
+2026-09-01), lists **Predictive Lead Scoring** ("Odoo computes the
+probability of success according to several criteria such as past
+performance") among the CRM app's headline features, without marking it
+Enterprise-only anywhere in the fetched text — and this matches Phase 2's
+own finding above, which already traced `crm.lead.scoring.frequency` and the
+`predictive_lead_scoring_fields`/`predictive_lead_scoring_start_date`
+settings directly in this repo's Community-licensed `addons/crm/` source
+(see `addons/crm/models/crm_lead_scoring_frequency.py`,
+`addons/crm/models/res_config_settings.py`). In other words: **Predictive
+Lead Scoring is confirmed, by this repo's own vendored LGPL-3 code, to be a
+Community-edition feature, not an Enterprise upsell.** Odoo 19's own
+documentation for the feature,
+[Assign leads with predictive lead scoring](https://www.odoo.com/documentation/19.0/applications/sales/crm/track_leads/lead_scoring.html)
+(fetched 2026-09-01), describes it as "a machine-learning model that uses
+historical data from Odoo CRM to score open leads/opportunities" (a
+naive-Bayes-style model over fields such as assigned salesperson, lead
+source, language, and contact-information quality) and states no
+edition/licensing restriction anywhere in the fetched page text.
+
+The same Odoo 19 documentation index page,
+[CRM (19.0)](https://www.odoo.com/documentation/19.0/applications/sales/crm.html)
+(fetched 2026-09-01), lists a **Forecast report** under "Analyze
+Performance," alongside Pipeline Analysis and Expected Revenue report — this
+is revenue/pipeline forecasting (a report over `expected_revenue` and
+stage/probability data), not a qualification-methodology feature, and no
+edition restriction is stated for it either in the index or in its
+immediate surrounding navigation text.
+
+**A3. Conclusion: not offered.** Based on everything fetched from Odoo's own
+site and documentation in this session, Odoo Enterprise (in either its old
+"Enterprise" framing or its current "Custom" pricing-tier framing) does
+**not** ship anything equivalent to `crm_methodology`'s configurable
+Requirements/Checkpoints/Enforcement system — a mechanism where an admin
+defines named, per-methodology qualification fields, assigns each one a
+specific lifecycle checkpoint (Quotation Created / Marked Won / Marked Lost
+/ Continuous, per `custom_addons/crm_methodology/models/crm_methodology_requirement.py`),
+and sets a Block-vs-Warn enforcement level per requirement, gating the
+`action_set_won` transition on the Block-level ones (per
+`custom_addons/crm_methodology/models/crm_lead.py`,
+`_check_methodology_checkpoint`). No page fetched in this session — the
+pricing plan page, the editions-comparison page (to the extent its text
+rendered), the CRM features page, the CRM documentation index, or the
+predictive-lead-scoring doc page — describes a comparable named-methodology,
+per-checkpoint, block-vs-warn field-gating mechanism as either a Community or
+an Enterprise/Custom feature. The two Odoo mechanisms that come closest by
+category are (a) the `lead_properties`/`PropertiesDefinition` system already
+covered in Phase 2, which is itself Community-licensed (confirmed in
+`addons/crm/models/crm_team.py`, `addons/crm/models/crm_lead.py`, under the
+`LGPL-3` manifest above) and offers arbitrary named fields but no
+checkpoint/enforcement concept, and (b) Predictive Lead Scoring, also
+Community, which is an opaque ML probability rather than a captured,
+per-requirement qualification checklist — the same distinction Phase 2 (see
+"MEDDIC / MEDDPICC" notes) already draws for it. Neither is Enterprise-gated,
+and neither is what `crm_methodology` provides, so the honest characterization
+is **"not offered"** at either edition, not "partially offered by Enterprise
+and missing from Community."
+
+### Section B — Deepening the competitor comparison
+
+Phase 3 already established that Salesforce Path, HubSpot Playbooks, and
+Membrain Scorecards/Playbooks are each a *generic, admin-configured*
+qualification mechanism rather than a named, out-of-the-box methodology.
+This addendum adds the specific tier/price gate and a closer read of each
+one's configurability, using each vendor's own pricing and documentation
+pages as fetched on 2026-09-01 (a later date than Phase 3's 2026-08-31
+research, so prices reflect that day's posted list pricing and may already
+differ from Phase 3's framing of these platforms).
+
+**1. Salesforce Path (Sales Cloud).**
+*Tier/cost.* Salesforce's own current pricing page,
+[salesforce.com/sales/pricing](https://www.salesforce.com/sales/pricing/)
+(fetched via browser 2026-09-01), lists five/six tiers: Starter Suite ($25
+USD/user/month), Pro Suite ($100 USD/user/month, billed annually), Enterprise
+($175 USD/user/month, billed annually), Unlimited ($350 USD/user/month,
+billed annually), and Agentforce 1 Sales ($550 USD/user/month, billed
+annually) — this is a different, simplified tier-naming scheme than the
+"Essentials/Group/Professional/Enterprise/Performance/Unlimited" naming still
+used in Salesforce's own Help Center. Path's own Help Center page states its
+own required editions directly: "Available in: Essentials, Group,
+Professional, Enterprise, Performance, Unlimited, and Developer Editions" —
+i.e. Path is bundled broadly, not reserved for a top tier, under that
+(older) naming. Source: [Salesforce Help — Considerations and Guidelines for
+Creating Paths](https://help.salesforce.com/s/articleView?language=en_US&id=sales.path_considerations.htm&type=5)
+(fetched via browser 2026-09-01). This session could not confirm, from a
+fetched primary source, the exact mapping between that classic-edition list
+and the current Starter Suite/Pro Suite/Enterprise/Unlimited pricing names —
+see Unverified below.
+*Configurability.* Per Phase 3's own already-cited finding (unchanged by this
+addendum): Path's "key fields" are stage-scoped guidance only, not
+enforcement — making a field required at a given stage needs a separate
+Validation Rule layered on top. So Path plus Validation Rules can reach
+"required field X at stage Y," but Salesforce's own documentation does not
+describe a single mechanism offering `crm_methodology`'s three-way
+combination of arbitrary named methodologies, a warn-vs-block distinction
+per field, and checkpoints tied to lifecycle *actions* (Quotation
+Created/Marked Won/Marked Lost) rather than only to pipeline *stages*.
+*Verdict:* Path (+ Validation Rules) reaches stage-scoped required fields but
+has no native warn-vs-block distinction and no per-methodology field-set
+switching, so it covers a narrower slice of what `crm_methodology` does.
+
+Separately, **Einstein Opportunity Scoring** — the closest Salesforce
+feature to Odoo's Predictive Lead Scoring — is explicitly tier-gated, per
+Salesforce's own Help Center: "Available with Sales Cloud Einstein, which is
+available in Performance and Unlimited Editions, and for an extra cost in
+Enterprise Edition" and "Available to eligible customers for no extra cost
+in: Enterprise, Performance, and Unlimited Editions." Source: [Salesforce
+Help — Understand How Einstein Scores Your Opportunities](https://help.salesforce.com/s/articleView?id=einstein_sales_opportunity_scoring_how_it_works.htm&language=en_US&type=5)
+(fetched via browser 2026-09-01). Mapped loosely onto the current pricing
+names, that means the ML-scoring feature needs Enterprise ($175/user/month)
+or above — unlike Odoo's Predictive Lead Scoring, which (per Section A above)
+ships in Odoo's free-to-self-host Community edition. This is a genuine,
+confirmed asymmetry between the two platforms' ML-scoring features, distinct
+from — and not to be confused with — the qualification-gating comparison
+above, since (as Phase 2 already establishes) neither platform's ML score is
+itself a substitute for captured qualification-checklist data.
+
+**2. HubSpot Playbooks (Sales Hub).**
+*Tier/cost.* HubSpot's own current pricing page,
+[hubspot.com/pricing/sales](https://www.hubspot.com/pricing/sales) (fetched
+2026-09-01), lists Free ($0/month), Starter ($7/month/seat billed annually,
+$20/month/seat billed monthly), Professional ($90/month/seat billed
+annually, $100/month/seat billed monthly), and Enterprise ($150/month/seat,
+with custom pricing available). Per that page's own feature-comparison
+table, **Playbooks first appear at the Professional tier** ("Create up to
+5,000 playbooks. Embed properties or capture notes in playbooks."), with the
+same capability carried into Enterprise; Free and Starter list no Playbooks
+entitlement. Source: [HubSpot — Sales Hub Pricing](https://www.hubspot.com/pricing/sales)
+(fetched 2026-09-01).
+*Configurability.* Per Phase 3's own already-cited finding (unchanged by this
+addendum): a Playbook is free-text/link/image/knowledge-base content plus
+"questions" whose answers write back onto record properties — a flexible,
+admin-authored content structure, but HubSpot's own Knowledge Base article
+describes no checkpoint concept (Playbooks are opened by a rep during a
+call/record view, not gated to a stage transition or a Won/Lost action) and
+no block-vs-warn enforcement distinction; a Playbook's questions can at most
+be marked as producing a property value, not as blocking a pipeline
+transition. Source: [HubSpot Knowledge Base — Use playbooks](https://knowledge.hubspot.com/playbooks/use-playbooks)
+(cited already in Phase 3, re-confirmed here).
+*Verdict:* Playbooks are more rigid than `crm_methodology` in the dimension
+that matters most for qualification-gating — there is no native block/warn
+enforcement or lifecycle-checkpoint concept at all, only content-plus-answer
+capture, and that capability itself is withheld below the $90–100/seat/month
+Professional tier.
+
+**3. Membrain Scorecards.**
+*Tier/cost.* Membrain's own pricing page,
+[membrain.com/pricing](https://www.membrain.com/pricing) (fetched
+2026-09-01), lists Prospecting ($49/user/month), Active Pipeline
+($69/user/month), Account Growth ($89/user/month), and a coaching-focused
+Elevate tier ($89/coach/month), plus paid add-ons (Tickets $29, Flows $19,
+Content Hub $12) and platform upgrades (Insight Engine from $199, API+ $499,
+Automation+ $299 — all per-org/month figures per that page). Per the same
+page, **Score Cards are included starting at the entry Prospecting tier**
+($49/user/month), and Active Pipeline additionally lists "Score Cards &
+Probability Score"; the fetched page text does not list Score Cards under
+Account Growth or Elevate. Source: [Membrain — Pricing](https://www.membrain.com/pricing)
+(fetched 2026-09-01). This is a materially lower entry price than either
+Salesforce's Path-bearing tiers or HubSpot's Playbooks-bearing Professional
+tier — Scorecards are Membrain's base-tier headline feature, not an
+upsell.
+*Configurability.* Per Phase 3's own already-cited finding (unchanged by
+this addendum): Membrain's own Help Center describes Scorecards as
+fully user-defined — "Score Cards are simply custom fields created to
+capture data, but with additional functionality," built by the admin
+"documenting key elements of your sales process" and adding "questions...
+with a range of answers and a structure for how you would like to score each
+answer." Source: [Membrain Help Center — Scorecards](https://www.membrain.com/help-center/process-tools/scorecards)
+(cited already in Phase 3, re-confirmed here). Membrain's own Playbooks
+(a separate feature from Scorecards) add conditional, rule-driven branching —
+"control and dynamically change your sales processes based on conditions you
+specify" — closer to a checkpoint concept than Path or HubSpot's Playbooks,
+though the fetched Help Center text still does not use a "block vs. warn"
+vocabulary the way `crm_methodology`'s `enforcement` field does explicitly;
+Membrain's own examples (competitor selected, stakeholder count, activity
+thresholds) describe branching the *process*, not a two-level (block/warn)
+severity on a single required field.
+*Verdict:* of the three, Membrain's Scorecards+Playbooks combination comes
+closest to `crm_methodology` — user-defined named scoring rubrics, available
+at the lowest entry price of the three vendors, with rule-driven process
+branching — but still without a first-class, explicit block-vs-warn
+enforcement axis on individual fields the way `crm_methodology`'s
+`enforcement` selection field provides.
+
+### Addendum: additions to Unverified / could not confirm
+
+- **The exact checkmark differences between Odoo Community and Enterprise/
+  Custom for the CRM app specifically**, on `odoo.com/page/editions`. The
+  page's own text confirms a comparison table exists with a CRM row, but its
+  checkmark grid did not render as fetchable text in this session (likely
+  client-side-JavaScript-populated), so no specific CRM-row difference can be
+  quoted from it.
+- **The mapping between Salesforce's current pricing-page tier names
+  (Starter Suite / Pro Suite / Enterprise / Unlimited / Agentforce 1 Sales)
+  and the classic edition names Salesforce's Help Center still uses
+  (Essentials / Group / Professional / Enterprise / Performance / Unlimited /
+  Developer) when stating feature-availability requirements such as Path's.**
+  Both naming schemes were confirmed independently (pricing page vs. Help
+  Center article) but no fetched page in this session states the
+  correspondence between them explicitly.
+- **Whether Odoo 19's Enterprise-only apps (outside CRM/Sales entirely, e.g.
+  Odoo Studio, multi-company, the areas `odoo.com/page/editions` did confirm
+  differ) have any indirect bearing on CRM — for example whether Odoo Studio,
+  a Custom-tier feature per `odoo.com/pricing-plan`, could be used to build a
+  Requirements/Checkpoints/Enforcement-equivalent system with no code.** This
+  was out of scope for this addendum (Studio is a generic app-builder, not a
+  CRM feature) and was not investigated.
+
 ## Sources
 
 - [CustomerCentric Selling® — Sales Training Workshops](https://customercentric.com/)
@@ -898,3 +1176,22 @@ specifically.
 - [Zoho CRM Help — Blueprint: An Overview](https://help.zoho.com/portal/en/kb/crm/customize-crm-account/blueprint/articles/blueprint-an-overview)
 - [Zoho CRM — Glossary](https://www.zoho.com/crm/resources/glossary.html)
 - [Zoho Blog — App Spotlight: Meddicc Score for Zoho CRM](https://www.zoho.com/blog/marketplace/app-spotlight-meddicc-score-for-zoho-crm.html)
+
+### Addendum sources (2026-09-01, Phase 4)
+
+- `addons/crm/__manifest__.py`, `addons/sale_crm/__manifest__.py`, `addons/sales_team/__manifest__.py`, `addons/mail/__manifest__.py` (this repo, vendored Odoo 19 source; license keys)
+- `custom_addons/crm_methodology/__manifest__.py` (this repo)
+- `custom_addons/crm_methodology/models/crm_methodology_requirement.py` (this repo)
+- `custom_addons/crm_methodology/models/crm_lead.py` (this repo)
+- [Odoo — Pricing Plan](https://www.odoo.com/pricing-plan)
+- [Odoo — Editions comparison](https://www.odoo.com/page/editions)
+- [Odoo — CRM features](https://www.odoo.com/app/crm-features)
+- [Odoo 19.0 — Assign leads with predictive lead scoring](https://www.odoo.com/documentation/19.0/applications/sales/crm/track_leads/lead_scoring.html)
+- [Odoo — CRM documentation (19.0)](https://www.odoo.com/documentation/19.0/applications/sales/crm.html)
+- [Salesforce — Sales Pricing](https://www.salesforce.com/sales/pricing/)
+- [Salesforce Help — Considerations and Guidelines for Creating Paths](https://help.salesforce.com/s/articleView?language=en_US&id=sales.path_considerations.htm&type=5)
+- [Salesforce Help — Understand How Einstein Scores Your Opportunities](https://help.salesforce.com/s/articleView?id=einstein_sales_opportunity_scoring_how_it_works.htm&language=en_US&type=5)
+- [HubSpot — Sales Hub Pricing](https://www.hubspot.com/pricing/sales)
+- [HubSpot Knowledge Base — Use playbooks](https://knowledge.hubspot.com/playbooks/use-playbooks)
+- [Membrain — Pricing](https://www.membrain.com/pricing)
+- [Membrain Help Center — Scorecards](https://www.membrain.com/help-center/process-tools/scorecards)
