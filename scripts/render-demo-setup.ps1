@@ -188,6 +188,7 @@ Write-Say "Render auto-detects the container port from the Dockerfile's"
 Write-Say "EXPOSE 8069 - no PORT variable to set."
 Write-Note "Don't click 'Create Web Service' yet if the next stage's env vars form"
 Write-Note "is on the same page - fill those in first, then create."
+Wait-ForEnter "Press Enter once the web service form is filled in (don't submit yet)"
 
 # ── Stage 3: Environment variables ─────────────────────────────────────────
 Start-Stage "Render: set the web service's environment variables"
@@ -208,6 +209,7 @@ Write-Step "* POSTGRES_PASSWORD = (the database password from Stage 1)"
 Write-Step "Save changes, then click 'Create Web Service' (or 'Save, rebuild, and"
 Write-Step "deploy' if the service already exists)."
 $script:Skipped.Add("store ODOO_ADMIN_PASSWORD somewhere durable (e.g. a password manager) - it is not saved anywhere by this script")
+Wait-ForEnter "Press Enter once the web service is created and deploying"
 
 # ── Stage 4: First deploy ──────────────────────────────────────────────────
 Start-Stage "Verify the first deploy is live"
