@@ -19,9 +19,13 @@ parallel Odoo versions — that's not what `main/19.0` is for.
 `main/19.0` is the protected deploy branch Render watches for auto-deploy of
 the client-demo instance (see
 [ADR 0006](../adr/0006-render-hobby-cd-deployment.md)). It only moves via a
-reviewed release PR from `dev/19.0`; no direct pushes. Promoting a change to
-the demo instance means opening a `dev/19.0` → `main/19.0` PR — the PR
-review *is* the deploy gate, since Render's own git integration handles the
+release PR from `dev/19.0` with passing CI; no direct pushes. This repo has
+no external contributors (see the top of this doc), so there's no separate
+reviewer to require — the protection matches `dev/19.0`'s own (required
+`lint` check, no reviewer count, `enforce_admins: false` so the solo
+maintainer can merge once CI passes). Promoting a change to the demo
+instance means opening and merging a `dev/19.0` → `main/19.0` PR — that
+merge *is* the deploy gate, since Render's own git integration handles the
 rest with no separate approval step.
 
 ## Branch naming
