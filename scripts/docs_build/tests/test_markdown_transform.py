@@ -254,6 +254,24 @@ class RenderMarkdownDocumentTests(unittest.TestCase):
         self.assertIn('<a href="sibling.html#section"', html)
 
 
+class RenderMarkdownDocumentVideoEmbedTests(unittest.TestCase):
+    def test_no_video_tag_when_video_src_omitted(self):
+        html = render_markdown_document("# Doc\n\nBody.", fallback_title="Doc")
+
+        self.assertNotIn("<video", html)
+
+    def test_video_tag_embedded_at_top_of_page_when_video_src_given(self):
+        html = render_markdown_document("# Doc\n\nBody.", fallback_title="Doc", video_src="doc.mp4")
+
+        self.assertIn('<video src="doc.mp4" controls', html)
+        self.assertLess(html.index("<video"), html.index("<h1>Doc</h1>"))
+
+    def test_video_src_is_html_escaped(self):
+        html = render_markdown_document("Body.", fallback_title="Doc", video_src='a"b.mp4')
+
+        self.assertIn('<video src="a&quot;b.mp4"', html)
+
+
 class IsLocalMarkdownLinkTests(unittest.TestCase):
     def test_relative_md_path_is_local(self):
         self.assertTrue(is_local_markdown_link("../adr/0005-thing.md"))

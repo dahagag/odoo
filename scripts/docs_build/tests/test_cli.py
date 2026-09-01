@@ -269,5 +269,50 @@ class BuildDocImageEmbeddingTests(unittest.TestCase):
             self.assertIn('<img src="https://example.com/picture.png"', html)
 
 
+class BuildDocVideoEmbedTests(unittest.TestCase):
+    def test_embeds_sibling_video_that_already_exists_in_the_output_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "doc.md"
+            source.write_text("# Doc\n\nBody.", encoding="utf-8")
+            output_dir = Path(tmp) / "out"
+            output_dir.mkdir()
+            (output_dir / "doc.mp4").write_bytes(b"fake-mp4-bytes")
+
+            output_path = build_doc(source, output_dir)
+
+            html = output_path.read_text(encoding="utf-8")
+            self.assertIn('<video src="doc.mp4" controls', html)
+
+    def test_omits_video_tag_when_no_sibling_video_exists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "doc.md"
+            source.write_text("# Doc\n\nBody.", encoding="utf-8")
+            output_dir = Path(tmp) / "out"
+
+            output_path = build_doc(source, output_dir)
+
+            html = output_path.read_text(encoding="utf-8")
+            self.assertNotIn("<video", html)
+
+    def test_each_closure_member_gets_its_own_sibling_video_lookup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            teach_dir = Path(tmp) / "docs" / "teach"
+            teach_dir.mkdir(parents=True)
+            (teach_dir / "main.md").write_text(
+                "# Main\n\nSee [the other doc](other.md).", encoding="utf-8",
+            )
+            (teach_dir / "other.md").write_text("# Other\n\nBody.", encoding="utf-8")
+            output_dir = Path(tmp) / "out"
+            output_dir.mkdir()
+            (output_dir / "other.mp4").write_bytes(b"fake-mp4-bytes")
+
+            output_path = build_doc(teach_dir / "main.md", output_dir)
+
+            main_html = output_path.read_text(encoding="utf-8")
+            other_html = (output_dir / "other.html").read_text(encoding="utf-8")
+            self.assertNotIn("<video", main_html)
+            self.assertIn('<video src="other.mp4" controls', other_html)
+
+
 if __name__ == "__main__":
     unittest.main()

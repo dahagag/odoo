@@ -1,6 +1,6 @@
 param(
     [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateSet('doctor', 'build', 'init', 'up', 'down', 'logs', 'shell', 'db-shell', 'scaffold', 'install', 'update', 'test', 'lint', 'docs-build:doc', 'reset')]
+    [ValidateSet('doctor', 'build', 'init', 'up', 'down', 'logs', 'shell', 'db-shell', 'scaffold', 'install', 'update', 'test', 'lint', 'docs-build:doc', 'docs-build:video', 'reset')]
     [string]$Command,
 
     [Parameter(Position = 1)]
@@ -105,6 +105,19 @@ function Assert-Module {
             throw "Owned module '$Module' was not found under custom_addons/."
         }
     }
+}
+
+function Resolve-HostPython {
+    # docs-build:video shells out to the HyperFrames CLI (npx hyperframes render),
+    # which needs the local ffmpeg/ffprobe/Chrome-Headless-Shell toolchain
+    # installed on the host (see issue #36) - none of that is in the Odoo dev
+    # image, so unlike every other subcommand here, this one runs on the host,
+    # not via Invoke-Compose.
+    foreach ($candidate in @('python3', 'python')) {
+        $command = Get-Command $candidate -ErrorAction SilentlyContinue
+        if ($command) { return $command.Source }
+    }
+    throw 'No Python interpreter (python3/python) found on PATH.'
 }
 
 function Assert-RelativePath {
@@ -291,6 +304,12 @@ switch ($Command) {
     'docs-build:doc' {
         $relativePath = Assert-RelativePath -Path $Argument -Label 'docs-build:doc'
         Invoke-Compose -Arguments @('run', '--rm', '--no-deps', 'odoo', 'python3', '-m', 'scripts.docs_build.cli', $relativePath)
+    }
+    'docs-build:video' {
+        $relativePath = Assert-RelativePath -Path $Argument -Label 'docs-build:video'
+        $python = Resolve-HostPython
+        & $python -m scripts.docs_build.video_cli $relativePath
+        if ($LASTEXITCODE -ne 0) { throw "docs-build:video failed with exit code $LASTEXITCODE." }
     }
     'reset' {
         $project = Get-DevSetting 'COMPOSE_PROJECT_NAME' 'agentic-erp-dev'

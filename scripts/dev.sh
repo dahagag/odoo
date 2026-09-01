@@ -15,7 +15,7 @@ CLEANUP_OPTION="${4:-}"
 COMPOSE=()
 
 usage() {
-    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|docs-build:doc|reset} [argument] [extra] [option]" >&2
+    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|docs-build:doc|docs-build:video|reset} [argument] [extra] [option]" >&2
     exit 2
 }
 
@@ -69,6 +69,22 @@ assert_module() {
     assert_identifier "$module" "Module name"
     if [[ "$must_exist" == true && ! -f "custom_addons/$module/__manifest__.py" ]]; then
         echo "Owned module '$module' was not found under custom_addons/." >&2
+        exit 1
+    fi
+}
+
+resolve_host_python() {
+    # docs-build:video shells out to the HyperFrames CLI (npx hyperframes render),
+    # which needs the local ffmpeg/ffprobe/Chrome-Headless-Shell toolchain
+    # installed on the host (see issue #36) - none of that is in the Odoo dev
+    # image, so unlike every other subcommand here, this one runs on the host,
+    # not via compose.
+    if command -v python3 >/dev/null 2>&1; then
+        echo python3
+    elif command -v python >/dev/null 2>&1; then
+        echo python
+    else
+        echo "No Python interpreter (python3/python) found on PATH." >&2
         exit 1
     fi
 }
@@ -242,6 +258,11 @@ case "$COMMAND" in
     docs-build:doc)
         assert_relative_path "$ARGUMENT" "docs-build:doc"
         compose run --rm --no-deps odoo python3 -m scripts.docs_build.cli "$ARGUMENT"
+        ;;
+    docs-build:video)
+        assert_relative_path "$ARGUMENT" "docs-build:video"
+        host_python="$(resolve_host_python)"
+        "$host_python" -m scripts.docs_build.video_cli "$ARGUMENT"
         ;;
     reset)
         project="$(setting COMPOSE_PROJECT_NAME agentic-erp-dev)"
