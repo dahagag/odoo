@@ -107,6 +107,40 @@ class RenderMarkdownDocumentTests(unittest.TestCase):
         with self.assertRaises(MarkdownSyntaxError):
             render_markdown_document(markdown_text, fallback_title="Doc")
 
+    def test_image_syntax_is_malformed(self):
+        markdown_text = "See this: ![alt text](picture.png)"
+
+        with self.assertRaises(MarkdownSyntaxError):
+            render_markdown_document(markdown_text, fallback_title="Doc")
+
+    def test_image_inside_fenced_code_block_is_not_rejected(self):
+        markdown_text = "```\n![alt text](picture.png)\n```"
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn("![alt text](picture.png)", html)
+
+    def test_renders_table_immediately_following_a_paragraph(self):
+        markdown_text = "Some intro text.\n| A | B |\n| --- | --- |\n| 1 | 2 |"
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn("<p>Some intro text.</p>", html)
+        self.assertIn("<table>", html)
+        self.assertIn("<th>A</th>", html)
+        self.assertIn("<td>1</td>", html)
+
+    def test_does_not_apply_emphasis_to_intraword_underscores(self):
+        html = render_markdown_document("the snake_case_name here", fallback_title="Doc")
+
+        self.assertNotIn("<em>", html)
+        self.assertIn("snake_case_name", html)
+
+    def test_renders_underscore_emphasis_with_word_boundaries(self):
+        html = render_markdown_document("an _italic_ word", fallback_title="Doc")
+
+        self.assertIn("<em>italic</em>", html)
+
     def test_is_deterministic_pure_function(self):
         markdown_text = "# Title\n\nSome **body** text with a [link](https://example.com)."
 

@@ -21,8 +21,9 @@ class MarkdownSyntaxError(ValueError):
 
 _INLINE_CODE_RE = re.compile(r"`([^`]+)`")
 _BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
-_ITALIC_RE = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)|_([^_]+)_")
-_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
+_ITALIC_RE = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)|(?<![\w_])_([^_]+)_(?![\w_])")
+_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)\)")
+_LINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)\)")
 _ORDERED_ITEM_RE = re.compile(r"^\d+\.\s+(.*)$")
 _UNORDERED_ITEM_RE = re.compile(r"^[-*]\s+(.*)$")
 _HORIZONTAL_RULE_RE = re.compile(r"^(-{3,}|\*{3,}|_{3,})$")
@@ -83,9 +84,12 @@ class _HorizontalRule:
     pass
 
 
-def _parse_blocks(markdown_text: str):
+_Block = _Heading | _Paragraph | _CodeBlock | _BlockQuote | _List | _Table | _HorizontalRule
+
+
+def _parse_blocks(markdown_text: str) -> list[_Block]:
     lines = markdown_text.splitlines()
-    blocks = []
+    blocks: list[_Block] = []
     index = 0
     while index < len(lines):
         line = lines[index]
@@ -144,7 +148,7 @@ def _parse_blocks(markdown_text: str):
             blocks.append(_List(ordered=ordered, items=items))
             continue
 
-        if "|" in line and index + 1 < len(lines) and _TABLE_SEPARATOR_RE.match(lines[index + 1].strip()):
+        if _is_table_start(line, lines[index + 1] if index + 1 < len(lines) else None):
             header = _split_table_row(line)
             index += 2
             rows = []
@@ -156,7 +160,10 @@ def _parse_blocks(markdown_text: str):
 
         paragraph_lines = [line]
         index += 1
-        while index < len(lines) and lines[index].strip() and not _starts_new_block(lines[index]):
+        while index < len(lines) and lines[index].strip():
+            next_line = lines[index + 1] if index + 1 < len(lines) else None
+            if _starts_new_block(lines[index], next_line):
+                break
             paragraph_lines.append(lines[index])
             index += 1
         blocks.append(_Paragraph(text=" ".join(paragraph_lines)))
@@ -180,8 +187,19 @@ def _is_list_item(line: str) -> bool:
     return bool(_UNORDERED_ITEM_RE.match(line) or _ORDERED_ITEM_RE.match(line))
 
 
-def _starts_new_block(line: str) -> bool:
-    return bool(_is_fence(line) or _HEADING_RE.match(line) or _is_horizontal_rule(line) or _is_blockquote(line) or _is_list_item(line))
+def _starts_new_block(line: str, next_line: str | None) -> bool:
+    return bool(
+        _is_fence(line)
+        or _HEADING_RE.match(line)
+        or _is_horizontal_rule(line)
+        or _is_blockquote(line)
+        or _is_list_item(line)
+        or _is_table_start(line, next_line),
+    )
+
+
+def _is_table_start(line: str, next_line: str | None) -> bool:
+    return bool("|" in line and next_line is not None and _TABLE_SEPARATOR_RE.match(next_line.strip()))
 
 
 def _split_table_row(line: str) -> list[str]:
@@ -189,14 +207,14 @@ def _split_table_row(line: str) -> list[str]:
     return [cell.strip() for cell in stripped.split("|")]
 
 
-def _find_first_heading_text(blocks) -> str | None:
+def _find_first_heading_text(blocks: list[_Block]) -> str | None:
     for block in blocks:
         if isinstance(block, _Heading):
             return block.text
     return None
 
 
-def _render_block(block) -> str:
+def _render_block(block: _Block) -> str:
     if isinstance(block, _Heading):
         return f"<h{block.level}>{_render_inline(block.text)}</h{block.level}>"
     if isinstance(block, _Paragraph):
@@ -230,6 +248,12 @@ def _render_table(table: _Table) -> str:
 
 
 def _render_inline(text: str) -> str:
+    image_match = _IMAGE_RE.search(text)
+    if image_match:
+        raise MarkdownSyntaxError(
+            f"image syntax {image_match.group(0)!r} is not supported (issue #35 scope excludes images)",
+        )
+
     escaped = html.escape(text, quote=True)
 
     code_spans = []
