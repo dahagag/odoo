@@ -1,8 +1,16 @@
+import base64
+import contextlib
+import io
 import tempfile
 import unittest
 from pathlib import Path
 
 from scripts.docs_build.cli import DocsBuildError, build_doc
+
+_ONE_PIXEL_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+    "+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+)
 
 
 class BuildDocTests(unittest.TestCase):
@@ -190,6 +198,75 @@ class BuildDocLinkClosureTests(unittest.TestCase):
             self.assertTrue((output_dir / "thing.html").is_file())
             context_html = (output_dir / "CONTEXT.html").read_text(encoding="utf-8")
             self.assertIn('<a href="thing.html"', context_html)
+
+
+class BuildDocImageEmbeddingTests(unittest.TestCase):
+    def test_local_image_is_embedded_as_data_uri_with_no_separate_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "doc.md"
+            source.write_text("# Doc\n\n![alt text](picture.png)", encoding="utf-8")
+            (Path(tmp) / "picture.png").write_bytes(_ONE_PIXEL_PNG)
+            output_dir = Path(tmp) / "out"
+
+            output_path = build_doc(source, output_dir)
+
+            html = output_path.read_text(encoding="utf-8")
+            expected_src = f"data:image/png;base64,{base64.b64encode(_ONE_PIXEL_PNG).decode('ascii')}"
+            self.assertIn(f'<img src="{expected_src}"', html)
+            self.assertEqual(list(output_dir.iterdir()), [output_path])
+
+    def test_missing_image_fails_naming_source_and_missing_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "doc.md"
+            source.write_text("# Doc\n\n![alt text](missing.png)", encoding="utf-8")
+            output_dir = Path(tmp) / "out"
+
+            with self.assertRaises(DocsBuildError) as ctx:
+                build_doc(source, output_dir)
+
+            self.assertIn(str(source), str(ctx.exception))
+            self.assertIn("missing.png", str(ctx.exception))
+
+    def test_large_image_still_embeds_but_warns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "doc.md"
+            source.write_text("# Doc\n\n![alt text](big.png)", encoding="utf-8")
+            (Path(tmp) / "big.png").write_bytes(_ONE_PIXEL_PNG + b"\x00" * (400 * 1024))
+            output_dir = Path(tmp) / "out"
+
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                output_path = build_doc(source, output_dir)
+
+            self.assertTrue(output_path.is_file())
+            self.assertIn("big.png", stderr.getvalue())
+            self.assertIn("warning", stderr.getvalue().lower())
+
+    def test_image_with_unrecognized_extension_still_embeds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "doc.md"
+            source.write_text("# Doc\n\n![alt text](data.xyz)", encoding="utf-8")
+            (Path(tmp) / "data.xyz").write_bytes(b"some-bytes")
+            output_dir = Path(tmp) / "out"
+
+            output_path = build_doc(source, output_dir)
+
+            html = output_path.read_text(encoding="utf-8")
+            expected_src = f"data:application/octet-stream;base64,{base64.b64encode(b'some-bytes').decode('ascii')}"
+            self.assertIn(f'<img src="{expected_src}"', html)
+
+    def test_external_image_url_is_left_unembedded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "doc.md"
+            source.write_text(
+                "# Doc\n\n![alt text](https://example.com/picture.png)", encoding="utf-8",
+            )
+            output_dir = Path(tmp) / "out"
+
+            output_path = build_doc(source, output_dir)
+
+            html = output_path.read_text(encoding="utf-8")
+            self.assertIn('<img src="https://example.com/picture.png"', html)
 
 
 if __name__ == "__main__":

@@ -4,11 +4,13 @@ Deliberately dependency-free (stdlib only) and side-effect-free: it never touche
 filesystem or network, so it runs anywhere Python does and is unit-testable without
 Docker, PostgreSQL, or the Odoo registry. See docs/adr/0007 and
 docs/teach/DESIGN-TOKENS.md for the visual system this reproduces, issue #35 for the
-single-document rendering this started as, and issue #38 for the local-`.md`-link
-resolution `render_markdown_document`'s `link_resolver` hook exists to support (the
-filesystem crawl that builds the closure of linked documents lives in
-`scripts.docs_build.cli`, not here — this module still never touches the filesystem).
-Images remain out of scope (rejected outright, see `_IMAGE_RE`).
+single-document rendering this started as, issue #38 for the local-`.md`-link
+resolution `render_markdown_document`'s `link_resolver` hook exists to support, and
+issue #37 for the local-image embedding its `image_resolver` hook exists to support
+(the filesystem crawl and data-URI encoding both live in `scripts.docs_build.cli`,
+not here — this module still never touches the filesystem). A local image reference
+without an `image_resolver` cannot be embedded and is a `MarkdownSyntaxError`; an
+external (http(s)) image reference always passes through unchanged.
 """
 
 from __future__ import annotations
@@ -36,6 +38,7 @@ _TABLE_SEPARATOR_RE = re.compile(r"^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$")
 _EXTERNAL_LINK_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:|^//")
 
 LinkResolver = Callable[[str], str]
+ImageResolver = Callable[[str], str]
 
 
 def is_local_markdown_link(href: str) -> bool:
@@ -45,12 +48,18 @@ def is_local_markdown_link(href: str) -> bool:
     return href.split("#", 1)[0].endswith(".md")
 
 
+def is_local_image_reference(href: str) -> bool:
+    """True if `href` is a local image reference (not an external URL)."""
+    return not _EXTERNAL_LINK_RE.match(href)
+
+
 def extract_local_links(markdown_text: str) -> list[str]:
     """Return every local ``.md`` href referenced by this document's rendered content.
 
-    Skips fenced code blocks (not real links) and image syntax (handled, and
-    rejected, separately). Raises ``MarkdownSyntaxError`` under the same
-    conditions as ``render_markdown_document``.
+    Skips fenced code blocks (not real links) and image syntax (extracted, and
+    resolved, separately by ``extract_local_image_refs``). Raises
+    ``MarkdownSyntaxError`` under the same conditions as
+    ``render_markdown_document``.
     """
     blocks = _parse_blocks(markdown_text)
     hrefs: list[str] = []
@@ -59,6 +68,25 @@ def extract_local_links(markdown_text: str) -> list[str]:
             for match in _LINK_RE.finditer(text):
                 href = match.group(2)
                 if is_local_markdown_link(href):
+                    hrefs.append(href)
+    return hrefs
+
+
+def extract_local_image_refs(markdown_text: str) -> list[str]:
+    """Return every local image href referenced by this document's rendered content.
+
+    Skips fenced code blocks and inline code spans (not real image references).
+    Raises ``MarkdownSyntaxError`` under the same conditions as
+    ``render_markdown_document``.
+    """
+    blocks = _parse_blocks(markdown_text)
+    hrefs: list[str] = []
+    for block in blocks:
+        for text in _inline_texts(block):
+            text = _INLINE_CODE_RE.sub("", text)
+            for match in _IMAGE_RE.finditer(text):
+                href = match.group(2)
+                if is_local_image_reference(href):
                     hrefs.append(href)
     return hrefs
 
@@ -77,6 +105,7 @@ def render_markdown_document(
     markdown_text: str,
     fallback_title: str,
     link_resolver: LinkResolver | None = None,
+    image_resolver: ImageResolver | None = None,
 ) -> str:
     """Render one Markdown document into a self-contained HTML page.
 
@@ -84,15 +113,19 @@ def render_markdown_document(
     (no external stylesheets, fonts, or scripts) so the output has zero network
     dependencies at view time. Raises ``MarkdownSyntaxError`` on Markdown this
     parser cannot resolve unambiguously (for example, an unterminated fenced code
-    block).
+    block), or on a local image reference given no `image_resolver`.
 
     `link_resolver`, when given, rewrites local ``.md`` hrefs (see
     ``is_local_markdown_link``) to their generated-page equivalent; external
     URLs are always passed through unchanged.
+
+    `image_resolver`, when given, rewrites local image hrefs (see
+    ``is_local_image_reference``) to an embeddable ``src`` value (a data URI);
+    external image URLs are always passed through unchanged.
     """
     blocks = _parse_blocks(markdown_text)
     title = _find_first_heading_text(blocks) or fallback_title
-    body_html = "\n".join(_render_block(block, link_resolver) for block in blocks)
+    body_html = "\n".join(_render_block(block, link_resolver, image_resolver) for block in blocks)
     return _TEMPLATE.format(title=html.escape(title, quote=False), body=body_html)
 
 
@@ -264,30 +297,45 @@ def _find_first_heading_text(blocks: list[_Block]) -> str | None:
     return None
 
 
-def _render_block(block: _Block, link_resolver: LinkResolver | None) -> str:
+def _render_block(
+    block: _Block,
+    link_resolver: LinkResolver | None,
+    image_resolver: ImageResolver | None = None,
+) -> str:
     if isinstance(block, _Heading):
-        return f"<h{block.level}>{_render_inline(block.text, link_resolver)}</h{block.level}>"
+        return f"<h{block.level}>{_render_inline(block.text, link_resolver, image_resolver)}</h{block.level}>"
     if isinstance(block, _Paragraph):
-        return f"<p>{_render_inline(block.text, link_resolver)}</p>"
+        return f"<p>{_render_inline(block.text, link_resolver, image_resolver)}</p>"
     if isinstance(block, _CodeBlock):
         return f"<pre><code>{html.escape(block.code, quote=False)}</code></pre>"
     if isinstance(block, _BlockQuote):
-        return f'<blockquote class="callout">{_render_inline(block.text, link_resolver)}</blockquote>'
+        rendered = _render_inline(block.text, link_resolver, image_resolver)
+        return f'<blockquote class="callout">{rendered}</blockquote>'
     if isinstance(block, _List):
         tag = "ol" if block.ordered else "ul"
-        items = "".join(f"<li>{_render_inline(item, link_resolver)}</li>" for item in block.items)
+        items = "".join(
+            f"<li>{_render_inline(item, link_resolver, image_resolver)}</li>" for item in block.items
+        )
         return f"<{tag}>{items}</{tag}>"
     if isinstance(block, _Table):
-        return _render_table(block, link_resolver)
+        return _render_table(block, link_resolver, image_resolver)
     if isinstance(block, _HorizontalRule):
         return "<hr>"
     raise TypeError(f"unknown block type: {block!r}")
 
 
-def _render_table(table: _Table, link_resolver: LinkResolver | None) -> str:
-    header_html = "".join(f"<th>{_render_inline(cell, link_resolver)}</th>" for cell in table.header)
+def _render_table(
+    table: _Table,
+    link_resolver: LinkResolver | None,
+    image_resolver: ImageResolver | None = None,
+) -> str:
+    header_html = "".join(
+        f"<th>{_render_inline(cell, link_resolver, image_resolver)}</th>" for cell in table.header
+    )
     rows_html = "".join(
-        "<tr>" + "".join(f"<td>{_render_inline(cell, link_resolver)}</td>" for cell in row) + "</tr>"
+        "<tr>"
+        + "".join(f"<td>{_render_inline(cell, link_resolver, image_resolver)}</td>" for cell in row)
+        + "</tr>"
         for row in table.rows
     )
     return (
@@ -298,7 +346,11 @@ def _render_table(table: _Table, link_resolver: LinkResolver | None) -> str:
     )
 
 
-def _render_inline(text: str, link_resolver: LinkResolver | None = None) -> str:
+def _render_inline(
+    text: str,
+    link_resolver: LinkResolver | None = None,
+    image_resolver: ImageResolver | None = None,
+) -> str:
     escaped = html.escape(text, quote=True)
 
     code_spans = []
@@ -309,11 +361,19 @@ def _render_inline(text: str, link_resolver: LinkResolver | None = None) -> str:
 
     escaped = _INLINE_CODE_RE.sub(_stash_code, escaped)
 
-    image_match = _IMAGE_RE.search(escaped)
-    if image_match:
-        raise MarkdownSyntaxError(
-            f"image syntax {image_match.group(0)!r} is not supported (issue #35 scope excludes images)",
-        )
+    def _rewrite_image(match: re.Match) -> str:
+        alt, href = match.group(1), match.group(2)
+        raw_href = html.unescape(href)
+        src = href
+        if is_local_image_reference(raw_href):
+            if image_resolver is None:
+                raise MarkdownSyntaxError(
+                    f"image reference {raw_href!r} cannot be embedded without an image_resolver",
+                )
+            src = html.escape(image_resolver(raw_href), quote=True)
+        return f'<img src="{src}" alt="{alt}">'
+
+    escaped = _IMAGE_RE.sub(_rewrite_image, escaped)
 
     def _rewrite_link(match: re.Match) -> str:
         label, href = match.group(1), match.group(2)

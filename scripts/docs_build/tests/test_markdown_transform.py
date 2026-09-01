@@ -2,6 +2,7 @@ import unittest
 
 from scripts.docs_build.markdown_transform import (
     MarkdownSyntaxError,
+    extract_local_image_refs,
     extract_local_links,
     is_local_markdown_link,
     render_markdown_document,
@@ -109,11 +110,52 @@ class RenderMarkdownDocumentTests(unittest.TestCase):
         with self.assertRaises(MarkdownSyntaxError):
             render_markdown_document(markdown_text, fallback_title="Doc")
 
-    def test_image_syntax_is_malformed(self):
+    def test_local_image_without_resolver_is_malformed(self):
         markdown_text = "See this: ![alt text](picture.png)"
 
         with self.assertRaises(MarkdownSyntaxError):
             render_markdown_document(markdown_text, fallback_title="Doc")
+
+    def test_local_image_is_embedded_via_image_resolver(self):
+        markdown_text = "![alt text](picture.png)"
+
+        html = render_markdown_document(
+            markdown_text,
+            fallback_title="Doc",
+            image_resolver=lambda href: f"data:image/png;base64,FAKE-{href}",
+        )
+
+        self.assertIn(
+            '<img src="data:image/png;base64,FAKE-picture.png" alt="alt text">',
+            html,
+        )
+
+    def test_local_image_with_ampersand_in_filename_is_resolved_with_the_raw_href(self):
+        markdown_text = "![alt text](diagram&v2.png)"
+
+        html = render_markdown_document(
+            markdown_text,
+            fallback_title="Doc",
+            image_resolver=lambda href: f"data:image/png;base64,FAKE-{href}",
+        )
+
+        self.assertIn(
+            '<img src="data:image/png;base64,FAKE-diagram&amp;v2.png" alt="alt text">',
+            html,
+        )
+
+    def test_external_image_passes_through_without_calling_resolver(self):
+        markdown_text = "![alt text](https://example.com/picture.png)"
+
+        def resolver(href):
+            raise AssertionError(f"resolver should not be called for external href {href!r}")
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc", image_resolver=resolver)
+
+        self.assertIn(
+            '<img src="https://example.com/picture.png" alt="alt text">',
+            html,
+        )
 
     def test_image_inside_fenced_code_block_is_not_rejected(self):
         markdown_text = "```\n![alt text](picture.png)\n```"
@@ -263,6 +305,44 @@ class ExtractLocalLinksTests(unittest.TestCase):
     def test_unterminated_fence_still_raises(self):
         with self.assertRaises(MarkdownSyntaxError):
             extract_local_links("```\nunterminated\n")
+
+
+class ExtractLocalImageRefsTests(unittest.TestCase):
+    def test_finds_local_image_reference(self):
+        hrefs = extract_local_image_refs("![alt](picture.png)")
+
+        self.assertEqual(hrefs, ["picture.png"])
+
+    def test_ignores_external_image_reference(self):
+        hrefs = extract_local_image_refs("![alt](https://example.com/picture.png)")
+
+        self.assertEqual(hrefs, [])
+
+    def test_finds_image_inside_list_item_and_table_cell(self):
+        markdown_text = (
+            "- ![alt one](one.png)\n\n"
+            "| A | B |\n"
+            "| --- | --- |\n"
+            "| ![alt two](two.png) | plain |"
+        )
+
+        hrefs = extract_local_image_refs(markdown_text)
+
+        self.assertEqual(hrefs, ["one.png", "two.png"])
+
+    def test_ignores_image_syntax_inside_fenced_code_block(self):
+        hrefs = extract_local_image_refs("```\n![alt](fake.png)\n```")
+
+        self.assertEqual(hrefs, [])
+
+    def test_ignores_image_syntax_inside_inline_code_span(self):
+        hrefs = extract_local_image_refs("Use `![alt](img.png)` syntax.")
+
+        self.assertEqual(hrefs, [])
+
+    def test_unterminated_fence_still_raises(self):
+        with self.assertRaises(MarkdownSyntaxError):
+            extract_local_image_refs("```\nunterminated\n")
 
 
 if __name__ == "__main__":
