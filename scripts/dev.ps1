@@ -107,6 +107,19 @@ function Assert-Module {
     }
 }
 
+function Assert-RelativePath {
+    param([string]$Path, [string]$Label)
+    if (-not $Path) { throw "$Label requires a path argument." }
+    $normalized = $Path -replace '\\', '/'
+    if ([IO.Path]::IsPathRooted($Path) -or $normalized -split '/' -contains '..') {
+        throw "$Label path must be a relative path inside the repository."
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $script:RepoRoot $normalized))) {
+        throw "$Label path '$Path' does not exist."
+    }
+    return $normalized
+}
+
 function Start-Database {
     Invoke-Compose -Arguments @('up', '-d', 'db')
     $user = Get-DevSetting 'POSTGRES_USER' 'odoo'
@@ -269,23 +282,14 @@ switch ($Command) {
     'test' { Invoke-ModuleTest $Argument $Extra $CleanupOnFailure.IsPresent }
     'lint' {
         $path = if ($Argument) { $Argument } else { 'custom_addons' }
-        if ([IO.Path]::IsPathRooted($path) -or $path -split '[\\/]' -contains '..') {
-            throw 'Lint path must be a relative path inside the repository.'
-        }
-        if (-not (Test-Path -LiteralPath (Join-Path $script:RepoRoot $path))) {
-            throw "Lint path '$path' does not exist."
-        }
+        $path = Assert-RelativePath -Path $path -Label 'Lint'
         $ruffArguments = @('run', '--rm', '--no-deps', 'odoo', 'ruff', 'check')
         if ($IsWindows) { $ruffArguments += @('--ignore', 'EXE002') }
-        $ruffArguments += "/workspace/$($path -replace '\\','/')"
+        $ruffArguments += "/workspace/$path"
         Invoke-Compose -Arguments $ruffArguments
     }
     'docs-build:doc' {
-        if (-not $Argument) { throw 'docs-build:doc requires a Markdown source file argument.' }
-        $relativePath = $Argument -replace '\\', '/'
-        if ([IO.Path]::IsPathRooted($Argument) -or $relativePath -split '/' -contains '..') {
-            throw 'docs-build:doc source path must be a relative path inside the repository.'
-        }
+        $relativePath = Assert-RelativePath -Path $Argument -Label 'docs-build:doc'
         Invoke-Compose -Arguments @('run', '--rm', '--no-deps', 'odoo', 'python3', '-m', 'scripts.docs_build.cli', $relativePath)
     }
     'reset' {

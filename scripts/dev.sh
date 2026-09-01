@@ -73,6 +73,13 @@ assert_module() {
     fi
 }
 
+assert_relative_path() {
+    local path="$1" label="$2"
+    [[ -n "$path" ]] || { echo "$label requires a path argument." >&2; exit 1; }
+    [[ "$path" != /* && "/$path/" != *"/../"* ]] || { echo "$label path must be a relative path inside the repository." >&2; exit 1; }
+    [[ -e "$path" ]] || { echo "$label path '$path' does not exist." >&2; exit 1; }
+}
+
 start_database() {
     local user attempt consecutive=0
     compose up -d db
@@ -225,8 +232,7 @@ case "$COMMAND" in
     test) module_test "$ARGUMENT" "$EXTRA" "$CLEANUP_OPTION" ;;
     lint)
         lint_path="${ARGUMENT:-custom_addons}"
-        [[ "$lint_path" != /* && "/$lint_path/" != *"/../"* ]] || { echo "Lint path must be relative and inside the repository." >&2; exit 1; }
-        [[ -e "$lint_path" ]] || { echo "Lint path '$lint_path' does not exist." >&2; exit 1; }
+        assert_relative_path "$lint_path" "Lint"
         ruff_options=()
         case "$(uname -s)" in
             CYGWIN*|MINGW*|MSYS*) ruff_options=(--ignore EXE002) ;;
@@ -234,8 +240,7 @@ case "$COMMAND" in
         compose run --rm --no-deps odoo ruff check "${ruff_options[@]}" "/workspace/$lint_path"
         ;;
     docs-build:doc)
-        [[ -n "$ARGUMENT" ]] || { echo "docs-build:doc requires a Markdown source file argument." >&2; exit 1; }
-        [[ "$ARGUMENT" != /* && "/$ARGUMENT/" != *"/../"* ]] || { echo "docs-build:doc source path must be a relative path inside the repository." >&2; exit 1; }
+        assert_relative_path "$ARGUMENT" "docs-build:doc"
         compose run --rm --no-deps odoo python3 -m scripts.docs_build.cli "$ARGUMENT"
         ;;
     reset)

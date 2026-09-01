@@ -21,8 +21,9 @@ class MarkdownSyntaxError(ValueError):
 
 _INLINE_CODE_RE = re.compile(r"`([^`]+)`")
 _BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
-_ITALIC_RE = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)|_([^_]+)_")
-_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
+_ITALIC_RE = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)|(?<![\w_])_([^_]+)_(?![\w_])")
+_IMAGE_RE = re.compile(r"!\[(.*?)\]\(([^)\s]+)\)")
+_LINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)\)")
 _ORDERED_ITEM_RE = re.compile(r"^\d+\.\s+(.*)$")
 _UNORDERED_ITEM_RE = re.compile(r"^[-*]\s+(.*)$")
 _HORIZONTAL_RULE_RE = re.compile(r"^(-{3,}|\*{3,}|_{3,})$")
@@ -97,8 +98,12 @@ class _Ilo:
 
 _ILO_HEADING_TEXT = "Intended Learning Outcomes"
 
+_Block = (
+    _Heading | _Paragraph | _CodeBlock | _BlockQuote | _List | _Table | _HorizontalRule | _Hero | _Ilo
+)
 
-def _apply_component_conventions(blocks: list) -> list:
+
+def _apply_component_conventions(blocks: list[_Block]) -> list[_Block]:
     """Recognize doc-level conventions (issue #46): a leading H1 becomes the hero
     header, and a heading titled "Intended Learning Outcomes" becomes the ILO box.
     Both are inferred from structure and heading text a teach-doc author already
@@ -107,7 +112,7 @@ def _apply_component_conventions(blocks: list) -> list:
     return _extract_ilo(_extract_hero(blocks))
 
 
-def _extract_hero(blocks: list) -> list:
+def _extract_hero(blocks: list[_Block]) -> list[_Block]:
     """Fold the first H1 (+ an immediately-following paragraph, if any) into a _Hero."""
     for index, block in enumerate(blocks):
         if isinstance(block, _Heading) and block.level == 1:
@@ -121,9 +126,9 @@ def _extract_hero(blocks: list) -> list:
     return blocks
 
 
-def _extract_ilo(blocks: list) -> list:
+def _extract_ilo(blocks: list[_Block]) -> list[_Block]:
     """Fold a heading titled "Intended Learning Outcomes" + a following list into an _Ilo."""
-    result = []
+    result: list[_Block] = []
     index = 0
     while index < len(blocks):
         block = blocks[index]
@@ -137,9 +142,9 @@ def _extract_ilo(blocks: list) -> list:
     return result
 
 
-def _parse_blocks(markdown_text: str):
+def _parse_blocks(markdown_text: str) -> list[_Block]:
     lines = markdown_text.splitlines()
-    blocks = []
+    blocks: list[_Block] = []
     index = 0
     while index < len(lines):
         line = lines[index]
@@ -198,7 +203,7 @@ def _parse_blocks(markdown_text: str):
             blocks.append(_List(ordered=ordered, items=items))
             continue
 
-        if "|" in line and index + 1 < len(lines) and _TABLE_SEPARATOR_RE.match(lines[index + 1].strip()):
+        if _is_table_start(line, lines[index + 1] if index + 1 < len(lines) else None):
             header = _split_table_row(line)
             index += 2
             rows = []
@@ -210,7 +215,10 @@ def _parse_blocks(markdown_text: str):
 
         paragraph_lines = [line]
         index += 1
-        while index < len(lines) and lines[index].strip() and not _starts_new_block(lines[index]):
+        while index < len(lines) and lines[index].strip():
+            next_line = lines[index + 1] if index + 1 < len(lines) else None
+            if _starts_new_block(lines[index], next_line):
+                break
             paragraph_lines.append(lines[index])
             index += 1
         blocks.append(_Paragraph(text=" ".join(paragraph_lines)))
@@ -234,8 +242,19 @@ def _is_list_item(line: str) -> bool:
     return bool(_UNORDERED_ITEM_RE.match(line) or _ORDERED_ITEM_RE.match(line))
 
 
-def _starts_new_block(line: str) -> bool:
-    return bool(_is_fence(line) or _HEADING_RE.match(line) or _is_horizontal_rule(line) or _is_blockquote(line) or _is_list_item(line))
+def _starts_new_block(line: str, next_line: str | None) -> bool:
+    return bool(
+        _is_fence(line)
+        or _HEADING_RE.match(line)
+        or _is_horizontal_rule(line)
+        or _is_blockquote(line)
+        or _is_list_item(line)
+        or _is_table_start(line, next_line),
+    )
+
+
+def _is_table_start(line: str, next_line: str | None) -> bool:
+    return bool("|" in line and next_line is not None and _TABLE_SEPARATOR_RE.match(next_line.strip()))
 
 
 def _split_table_row(line: str) -> list[str]:
@@ -243,14 +262,14 @@ def _split_table_row(line: str) -> list[str]:
     return [cell.strip() for cell in stripped.split("|")]
 
 
-def _find_first_heading_text(blocks) -> str | None:
+def _find_first_heading_text(blocks: list[_Block]) -> str | None:
     for block in blocks:
         if isinstance(block, _Heading):
             return block.text
     return None
 
 
-def _render_block(block) -> str:
+def _render_block(block: _Block) -> str:
     if isinstance(block, _Heading):
         return f"<h{block.level}>{_render_inline(block.text)}</h{block.level}>"
     if isinstance(block, _Paragraph):
@@ -307,6 +326,13 @@ def _render_inline(text: str) -> str:
         return f"\x00CODE{len(code_spans) - 1}\x00"
 
     escaped = _INLINE_CODE_RE.sub(_stash_code, escaped)
+
+    image_match = _IMAGE_RE.search(escaped)
+    if image_match:
+        raise MarkdownSyntaxError(
+            f"image syntax {image_match.group(0)!r} is not supported (issue #35 scope excludes images)",
+        )
+
     escaped = _LINK_RE.sub(r'<a href="\2" rel="noopener noreferrer">\1</a>', escaped)
     escaped = _BOLD_RE.sub(r"<strong>\1</strong>", escaped)
     escaped = _ITALIC_RE.sub(lambda m: f"<em>{m.group(1) or m.group(2)}</em>", escaped)
