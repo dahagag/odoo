@@ -180,8 +180,8 @@ finish() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────
-# STAGES: author this section. One stage() per step the human takes.
-# Replace the example below. Set TOTAL_STAGES to match the stages you write.
+# STAGES: mirrors scripts/render-demo-setup.ps1 (the PowerShell port, for
+# terminals without bash/Git Bash). Keep the two in sync.
 # ──────────────────────────────────────────────────────────────────────────
 
 TOTAL_STAGES=5

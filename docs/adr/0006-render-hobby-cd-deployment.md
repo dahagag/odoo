@@ -27,4 +27,6 @@ Dockerfile branching on build args.
 One-time manual setup (creating the Render Postgres instance and web service, setting
 environment variables, connecting `main/19.0` for auto-deploy) requires production credentials
 an agent shouldn't hold, so it's captured as an interactive checklist instead of automated:
-[`scripts/render-demo-setup.sh`](../../scripts/render-demo-setup.sh).
+[`scripts/render-demo-setup.sh`](../../scripts/render-demo-setup.sh) (bash, needs Git Bash/WSL)
+or [`scripts/render-demo-setup.ps1`](../../scripts/render-demo-setup.ps1) (PowerShell). Both
+walk through the same five stages — keep them in sync if either changes.
