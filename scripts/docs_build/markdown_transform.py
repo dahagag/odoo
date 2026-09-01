@@ -22,7 +22,7 @@ class MarkdownSyntaxError(ValueError):
 _INLINE_CODE_RE = re.compile(r"`([^`]+)`")
 _BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
 _ITALIC_RE = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)|(?<![\w_])_([^_]+)_(?![\w_])")
-_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)\)")
+_IMAGE_RE = re.compile(r"!\[(.*?)\]\(([^)\s]+)\)")
 _LINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)\)")
 _ORDERED_ITEM_RE = re.compile(r"^\d+\.\s+(.*)$")
 _UNORDERED_ITEM_RE = re.compile(r"^[-*]\s+(.*)$")
@@ -248,12 +248,6 @@ def _render_table(table: _Table) -> str:
 
 
 def _render_inline(text: str) -> str:
-    image_match = _IMAGE_RE.search(text)
-    if image_match:
-        raise MarkdownSyntaxError(
-            f"image syntax {image_match.group(0)!r} is not supported (issue #35 scope excludes images)",
-        )
-
     escaped = html.escape(text, quote=True)
 
     code_spans = []
@@ -263,6 +257,13 @@ def _render_inline(text: str) -> str:
         return f"\x00CODE{len(code_spans) - 1}\x00"
 
     escaped = _INLINE_CODE_RE.sub(_stash_code, escaped)
+
+    image_match = _IMAGE_RE.search(escaped)
+    if image_match:
+        raise MarkdownSyntaxError(
+            f"image syntax {image_match.group(0)!r} is not supported (issue #35 scope excludes images)",
+        )
+
     escaped = _LINK_RE.sub(r'<a href="\2" rel="noopener noreferrer">\1</a>', escaped)
     escaped = _BOLD_RE.sub(r"<strong>\1</strong>", escaped)
     escaped = _ITALIC_RE.sub(lambda m: f"<em>{m.group(1) or m.group(2)}</em>", escaped)

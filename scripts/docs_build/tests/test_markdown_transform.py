@@ -120,6 +120,19 @@ class RenderMarkdownDocumentTests(unittest.TestCase):
 
         self.assertIn("![alt text](picture.png)", html)
 
+    def test_image_syntax_inside_inline_code_span_is_not_rejected(self):
+        markdown_text = "Use `![alt](img.png)` syntax."
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn("<code>![alt](img.png)</code>", html)
+
+    def test_image_with_bracket_in_alt_text_is_still_detected(self):
+        markdown_text = "See ![a [b] c](picture.png) here."
+
+        with self.assertRaises(MarkdownSyntaxError):
+            render_markdown_document(markdown_text, fallback_title="Doc")
+
     def test_renders_table_immediately_following_a_paragraph(self):
         markdown_text = "Some intro text.\n| A | B |\n| --- | --- |\n| 1 | 2 |"
 
