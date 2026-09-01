@@ -19,6 +19,15 @@ referencing document and the missing file, the same way a broken internal
 still embeds, but prints a build warning, since a large embedded image bloats
 every view of the page it's on.
 
+If a document's own output directory already holds a sibling MP4 (named
+`<stem>.mp4`, matching the generated `<stem>.html`) — written there by a prior
+`docs-build:video` run, mechanically re-rendering an already-authored
+HyperFrames project (see docs/adr/0008 and issue #40) — the generated page
+embeds it as a `<video>` tag at the top of the page. It is never base64-encoded
+like an image: video doesn't compress usefully into a data URI and can't
+stream or seek from one. A document with no sibling MP4 renders with no video
+tag at all.
+
 A document is only rendered because something in the closure links to it —
 this is not a whole-repo Markdown build.
 """
@@ -76,6 +85,9 @@ def build_doc(source: Path, output_dir: Path) -> Path:
 
     for doc_path, document in closure.items():
         fallback_title = _title_from_filename(doc_path.stem)
+        output_path = output_paths[doc_path]
+        video_path = output_path.with_suffix(".mp4")
+        video_src = video_path.name if video_path.is_file() else None
 
         def resolve_href(href: str, _local_links: dict[str, Path] = document.local_links) -> str:
             target = _local_links[href]
@@ -92,6 +104,7 @@ def build_doc(source: Path, output_dir: Path) -> Path:
                 fallback_title=fallback_title,
                 link_resolver=resolve_href,
                 image_resolver=resolve_image,
+                video_src=video_src,
             )
         except MarkdownSyntaxError as exc:
             raise DocsBuildError(f"{doc_path}: {exc}") from exc

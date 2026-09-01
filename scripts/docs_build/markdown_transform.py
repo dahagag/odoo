@@ -106,6 +106,7 @@ def render_markdown_document(
     fallback_title: str,
     link_resolver: LinkResolver | None = None,
     image_resolver: ImageResolver | None = None,
+    video_src: str | None = None,
 ) -> str:
     """Render one Markdown document into a self-contained HTML page.
 
@@ -122,11 +123,24 @@ def render_markdown_document(
     `image_resolver`, when given, rewrites local image hrefs (see
     ``is_local_image_reference``) to an embeddable ``src`` value (a data URI);
     external image URLs are always passed through unchanged.
+
+    `video_src`, when given, embeds a `<video>` tag at the top of the page
+    pointing at that (relative) src — the sibling MP4 `docs-build:video`
+    renders next to this document's generated HTML (see issue #40). Omitted
+    cleanly when `video_src` is `None`.
     """
     blocks = _parse_blocks(markdown_text)
     title = _find_first_heading_text(blocks) or fallback_title
     body_html = "\n".join(_render_block(block, link_resolver, image_resolver) for block in blocks)
-    return _TEMPLATE.format(title=html.escape(title, quote=False), body=body_html)
+    video_html = ""
+    if video_src is not None:
+        escaped_src = html.escape(video_src, quote=True)
+        video_html = (
+            '<div class="video-embed">'
+            f'<video src="{escaped_src}" controls preload="metadata"></video>'
+            "</div>"
+        )
+    return _TEMPLATE.format(title=html.escape(title, quote=False), body=body_html, video=video_html)
 
 
 @dataclass
@@ -482,6 +496,15 @@ hr{{
   box-shadow: var(--shadow);
   margin: 1rem 0;
 }}
+.video-embed{{
+  margin: 0 0 2rem;
+}}
+.video-embed video{{
+  display: block;
+  width: 100%;
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow);
+}}
 table{{
   border-collapse: collapse;
   width: 100%;
@@ -507,6 +530,7 @@ td{{
 </head>
 <body>
 <main class="shell">
+{video}
 {body}
 </main>
 </body>
