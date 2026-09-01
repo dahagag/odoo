@@ -94,13 +94,13 @@ def _parse_blocks(markdown_text: str):
             index += 1
             continue
 
-        if line.strip().startswith("```"):
+        if _is_fence(line):
             fence_start = index + 1
             code_lines = []
             index += 1
             closed = False
             while index < len(lines):
-                if lines[index].strip().startswith("```"):
+                if _is_fence(lines[index]):
                     closed = True
                     index += 1
                     break
@@ -119,20 +119,20 @@ def _parse_blocks(markdown_text: str):
             index += 1
             continue
 
-        if _HORIZONTAL_RULE_RE.match(line.strip()):
+        if _is_horizontal_rule(line):
             blocks.append(_HorizontalRule())
             index += 1
             continue
 
-        if line.lstrip().startswith(">"):
+        if _is_blockquote(line):
             quote_lines = []
-            while index < len(lines) and lines[index].lstrip().startswith(">"):
+            while index < len(lines) and _is_blockquote(lines[index]):
                 quote_lines.append(re.sub(r"^\s*>\s?", "", lines[index]))
                 index += 1
             blocks.append(_BlockQuote(text=" ".join(quote_lines).strip()))
             continue
 
-        if _UNORDERED_ITEM_RE.match(line) or _ORDERED_ITEM_RE.match(line):
+        if _is_list_item(line):
             ordered = bool(_ORDERED_ITEM_RE.match(line))
             items = []
             while index < len(lines):
@@ -164,15 +164,24 @@ def _parse_blocks(markdown_text: str):
     return blocks
 
 
+def _is_fence(line: str) -> bool:
+    return line.strip().startswith("```")
+
+
+def _is_horizontal_rule(line: str) -> bool:
+    return bool(_HORIZONTAL_RULE_RE.match(line.strip()))
+
+
+def _is_blockquote(line: str) -> bool:
+    return line.lstrip().startswith(">")
+
+
+def _is_list_item(line: str) -> bool:
+    return bool(_UNORDERED_ITEM_RE.match(line) or _ORDERED_ITEM_RE.match(line))
+
+
 def _starts_new_block(line: str) -> bool:
-    return bool(
-        line.strip().startswith("```")
-        or _HEADING_RE.match(line)
-        or _HORIZONTAL_RULE_RE.match(line.strip())
-        or line.lstrip().startswith(">")
-        or _UNORDERED_ITEM_RE.match(line)
-        or _ORDERED_ITEM_RE.match(line),
-    )
+    return bool(_is_fence(line) or _HEADING_RE.match(line) or _is_horizontal_rule(line) or _is_blockquote(line) or _is_list_item(line))
 
 
 def _split_table_row(line: str) -> list[str]:
@@ -293,12 +302,12 @@ body{{
   padding: 0 clamp(1.25rem, 4vw, 2rem) 6rem;
 }}
 h1, h2, h3, h4, h5, h6{{
-  font-family: Georgia, "Source Serif 4", serif;
+  font-family: "Source Serif 4", Georgia, serif;
   font-weight: 600;
   color: var(--ink-900);
 }}
 code, pre{{
-  font-family: ui-monospace, "IBM Plex Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }}
 pre{{
   background: var(--paper-1);
@@ -341,7 +350,7 @@ th, td{{
   border-bottom: 1px solid var(--line);
 }}
 th{{
-  font-family: ui-monospace, "IBM Plex Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   text-transform: uppercase;
   font-size: 0.75rem;
   background: var(--paper-0);
