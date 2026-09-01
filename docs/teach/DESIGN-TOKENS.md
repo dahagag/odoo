@@ -192,7 +192,16 @@ Small IBM Plex Mono text in `--ink-500`, top-bordered in `--line` — used for a
 
 ## Mermaid diagrams
 
-The main teach doc's Artifact embeds two flowcharts as `<pre class="mermaid">…</pre>` blocks (plain Mermaid flowchart syntax as text content, rendered client-side by a Mermaid `<script>` the Artifact sandbox loads — not present in either source file's own `<style>`/inline CSS). Nothing in either Artifact documents how these should look once rendered (no color-token mapping for node fill/stroke/text, no explicit light/dark variant), and per docs/adr/0007 the pipeline output must have zero network requests and no external `<script>` at view time, so the same "load a CDN script" approach these Artifacts use isn't available as-is. Whether `docs-build:doc` pre-renders Mermaid to inline SVG at build time, bundles the Mermaid runtime as an embedded (non-CDN) script, or drops diagram support for its initial scope is an open implementation decision — resolve it against a real ticket, not here.
+Verified directly against the live Artifact's page source (not just the two source `.md`/`.html` files): the main teach doc author only writes `<pre class="mermaid">…flowchart syntax as plain text…</pre>` twice — nothing else. There is no Mermaid `<script>` or `<link>` in the Artifact's own authored markup. The rendering is done entirely by a runtime the Claude Artifacts *platform* injects after the author's content (bounded by an explicit `<!--claude-mermaid-runtime-end-->` marker in the page source), bundling the full Mermaid library inline (not fetched from a CDN at view time) and scanning the page for `pre.mermaid` elements to replace with rendered SVG.
+
+That platform runtime uses its **own hardcoded color palette**, entirely independent of this doc's `--ink`/`--paper`/`--amber`/`--teal`/`--violet`/`--block` tokens:
+
+```js
+{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},
+ "dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}
+```
+
+So today, inside the Artifact, the two flowcharts do **not** visually match the surrounding design system at all — there's no existing color-token mapping to copy. Reproducing Mermaid diagrams for `docs-build:doc` isn't a matter of finding and porting the artifact's diagram styling; that styling doesn't participate in this design system and would need to be invented from scratch (e.g. mapping `surface`/`text`/`line`/`border` to this doc's own tokens) if diagrams are ever in scope. Per docs/adr/0007, the pipeline output must also have zero network requests and no external `<script>` at view time, so even the *mechanism* (bundle Mermaid inline vs. pre-render to static SVG at build time vs. drop diagram support for the initial scope) is a separate, still-open implementation decision — resolve it against a real ticket, not here.
 
 ## What this file deliberately omits
 
