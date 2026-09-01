@@ -7,16 +7,11 @@ ARG HOST_GID=1000
 USER root
 
 COPY requirements.txt /tmp/odoo-requirements.txt
+COPY --chmod=0755 docker/pip-install-requirements.sh /tmp/pip-install-requirements.sh
 
-# Some base-image environments ship an apt-installed cryptography/pyopenssl pip can't
-# account for (no RECORD file), so a plain upgrade fails with "Cannot uninstall ...
-# installed by debian". --ignore-installed forces a clean pip-tracked reinstall of just
-# those two (version-pinned via -c against requirements.txt, not hardcoded here) before
-# the bulk install runs normally for everything else.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs npm \
-    && python3 -m pip install --no-cache-dir --break-system-packages --ignore-installed -c /tmp/odoo-requirements.txt cryptography pyopenssl \
-    && python3 -m pip install --no-cache-dir --break-system-packages -r /tmp/odoo-requirements.txt \
+    && /tmp/pip-install-requirements.sh \
     && python3 -m pip install --no-cache-dir --break-system-packages ruff==0.16.1 \
     && npm install --global rtlcss \
     && wkhtmltopdf --version | grep -E '0\.12\.6' \
@@ -25,7 +20,7 @@ RUN apt-get update \
     && groupmod --non-unique --gid "${HOST_GID}" odoo \
     && usermod --non-unique --uid "${HOST_UID}" --gid "${HOST_GID}" odoo \
     && chown -R odoo:odoo /var/lib/odoo \
-    && rm -rf /var/lib/apt/lists/* /root/.cache /tmp/odoo-requirements.txt
+    && rm -rf /var/lib/apt/lists/* /root/.cache /tmp/odoo-requirements.txt /tmp/pip-install-requirements.sh
 
 # Ubuntu's own "chromium" package is a snap-only stub on this base image (no real binary,
 # and snap doesn't work in a minimal container), so HttpCase browser/tour tests need Google
