@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [dev/19.0, main/19.0]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   changes:
     name: Detect lint/test-relevant changes
@@ -139,7 +143,7 @@ jobs:
         run: bash scripts/dev.sh lint custom_addons
 
   test:
-    name: Test (informational)
+    name: Test (${{ matrix.module }})
     needs: [changes, build-image]
     if: needs.changes.outputs.relevant == 'true' && needs.changes.outputs.test_modules != '[]'
     runs-on: ubuntu-latest
@@ -149,6 +153,10 @@ jobs:
     # Non-blocking by design: see docs/agents/sdlc.md#continuous-integration.
     # Do not add this job to the branch's required status checks.
     continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJson(needs.changes.outputs.test_modules) }}
     steps:
       - uses: actions/checkout@v4
       - name: Configure environment
@@ -160,13 +168,5 @@ jobs:
       - uses: ./.github/actions/ghcr-login
       - name: Pull cached development image
         run: docker compose pull odoo
-      - name: Run tests for changed modules
-        env:
-          TEST_MODULES: ${{ needs.changes.outputs.test_modules }}
-        run: |
-          set -euo pipefail
-          for module in $(jq -r '.[]' <<<"$TEST_MODULES"); do
-            echo "::group::Testing $module"
-            bash scripts/dev.sh test "$module"
-            echo "::endgroup::"
-          done
+      - name: Run tests for ${{ matrix.module }}
+        run: bash scripts/dev.sh test "${{ matrix.module }}"
