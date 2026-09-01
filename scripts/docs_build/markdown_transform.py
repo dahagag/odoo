@@ -3,15 +3,19 @@
 Deliberately dependency-free (stdlib only) and side-effect-free: it never touches the
 filesystem or network, so it runs anywhere Python does and is unit-testable without
 Docker, PostgreSQL, or the Odoo registry. See docs/adr/0007 and
-docs/teach/DESIGN-TOKENS.md for the visual system this reproduces, and issue #35 for
-scope: a single input file with no images or internal links, rendered as one
-self-contained HTML page.
+docs/teach/DESIGN-TOKENS.md for the visual system this reproduces, issue #35 for the
+single-document rendering this started as, and issue #38 for the local-`.md`-link
+resolution `render_markdown_document`'s `link_resolver` hook exists to support (the
+filesystem crawl that builds the closure of linked documents lives in
+`scripts.docs_build.cli`, not here — this module still never touches the filesystem).
+Images remain out of scope (rejected outright, see `_IMAGE_RE`).
 """
 
 from __future__ import annotations
 
 import html
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 
@@ -29,9 +33,51 @@ _UNORDERED_ITEM_RE = re.compile(r"^[-*]\s+(.*)$")
 _HORIZONTAL_RULE_RE = re.compile(r"^(-{3,}|\*{3,}|_{3,})$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _TABLE_SEPARATOR_RE = re.compile(r"^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$")
+_EXTERNAL_LINK_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:|^//")
+
+LinkResolver = Callable[[str], str]
 
 
-def render_markdown_document(markdown_text: str, fallback_title: str) -> str:
+def is_local_markdown_link(href: str) -> bool:
+    """True if `href` is a link to a local ``.md`` file (not an external URL)."""
+    if _EXTERNAL_LINK_RE.match(href):
+        return False
+    return href.split("#", 1)[0].endswith(".md")
+
+
+def extract_local_links(markdown_text: str) -> list[str]:
+    """Return every local ``.md`` href referenced by this document's rendered content.
+
+    Skips fenced code blocks (not real links) and image syntax (handled, and
+    rejected, separately). Raises ``MarkdownSyntaxError`` under the same
+    conditions as ``render_markdown_document``.
+    """
+    blocks = _parse_blocks(markdown_text)
+    hrefs: list[str] = []
+    for block in blocks:
+        for text in _inline_texts(block):
+            for match in _LINK_RE.finditer(text):
+                href = match.group(2)
+                if is_local_markdown_link(href):
+                    hrefs.append(href)
+    return hrefs
+
+
+def _inline_texts(block: _Block) -> list[str]:
+    if isinstance(block, (_Heading, _Paragraph, _BlockQuote)):
+        return [block.text]
+    if isinstance(block, _List):
+        return list(block.items)
+    if isinstance(block, _Table):
+        return [*block.header, *(cell for row in block.rows for cell in row)]
+    return []
+
+
+def render_markdown_document(
+    markdown_text: str,
+    fallback_title: str,
+    link_resolver: LinkResolver | None = None,
+) -> str:
     """Render one Markdown document into a self-contained HTML page.
 
     Returns a full ``<!doctype html>`` document with the shared template inlined
@@ -39,10 +85,14 @@ def render_markdown_document(markdown_text: str, fallback_title: str) -> str:
     dependencies at view time. Raises ``MarkdownSyntaxError`` on Markdown this
     parser cannot resolve unambiguously (for example, an unterminated fenced code
     block).
+
+    `link_resolver`, when given, rewrites local ``.md`` hrefs (see
+    ``is_local_markdown_link``) to their generated-page equivalent; external
+    URLs are always passed through unchanged.
     """
     blocks = _parse_blocks(markdown_text)
     title = _find_first_heading_text(blocks) or fallback_title
-    body_html = "\n".join(_render_block(block) for block in blocks)
+    body_html = "\n".join(_render_block(block, link_resolver) for block in blocks)
     return _TEMPLATE.format(title=html.escape(title, quote=False), body=body_html)
 
 
@@ -214,30 +264,31 @@ def _find_first_heading_text(blocks: list[_Block]) -> str | None:
     return None
 
 
-def _render_block(block: _Block) -> str:
+def _render_block(block: _Block, link_resolver: LinkResolver | None) -> str:
     if isinstance(block, _Heading):
-        return f"<h{block.level}>{_render_inline(block.text)}</h{block.level}>"
+        return f"<h{block.level}>{_render_inline(block.text, link_resolver)}</h{block.level}>"
     if isinstance(block, _Paragraph):
-        return f"<p>{_render_inline(block.text)}</p>"
+        return f"<p>{_render_inline(block.text, link_resolver)}</p>"
     if isinstance(block, _CodeBlock):
         return f"<pre><code>{html.escape(block.code, quote=False)}</code></pre>"
     if isinstance(block, _BlockQuote):
-        return f'<blockquote class="callout">{_render_inline(block.text)}</blockquote>'
+        return f'<blockquote class="callout">{_render_inline(block.text, link_resolver)}</blockquote>'
     if isinstance(block, _List):
         tag = "ol" if block.ordered else "ul"
-        items = "".join(f"<li>{_render_inline(item)}</li>" for item in block.items)
+        items = "".join(f"<li>{_render_inline(item, link_resolver)}</li>" for item in block.items)
         return f"<{tag}>{items}</{tag}>"
     if isinstance(block, _Table):
-        return _render_table(block)
+        return _render_table(block, link_resolver)
     if isinstance(block, _HorizontalRule):
         return "<hr>"
     raise TypeError(f"unknown block type: {block!r}")
 
 
-def _render_table(table: _Table) -> str:
-    header_html = "".join(f"<th>{_render_inline(cell)}</th>" for cell in table.header)
+def _render_table(table: _Table, link_resolver: LinkResolver | None) -> str:
+    header_html = "".join(f"<th>{_render_inline(cell, link_resolver)}</th>" for cell in table.header)
     rows_html = "".join(
-        "<tr>" + "".join(f"<td>{_render_inline(cell)}</td>" for cell in row) + "</tr>" for row in table.rows
+        "<tr>" + "".join(f"<td>{_render_inline(cell, link_resolver)}</td>" for cell in row) + "</tr>"
+        for row in table.rows
     )
     return (
         '<div class="table-wrap"><table>'
@@ -247,7 +298,7 @@ def _render_table(table: _Table) -> str:
     )
 
 
-def _render_inline(text: str) -> str:
+def _render_inline(text: str, link_resolver: LinkResolver | None = None) -> str:
     escaped = html.escape(text, quote=True)
 
     code_spans = []
@@ -264,7 +315,13 @@ def _render_inline(text: str) -> str:
             f"image syntax {image_match.group(0)!r} is not supported (issue #35 scope excludes images)",
         )
 
-    escaped = _LINK_RE.sub(r'<a href="\2" rel="noopener noreferrer">\1</a>', escaped)
+    def _rewrite_link(match: re.Match) -> str:
+        label, href = match.group(1), match.group(2)
+        if link_resolver is not None and is_local_markdown_link(href):
+            href = link_resolver(href)
+        return f'<a href="{href}" rel="noopener noreferrer">{label}</a>'
+
+    escaped = _LINK_RE.sub(_rewrite_link, escaped)
     escaped = _BOLD_RE.sub(r"<strong>\1</strong>", escaped)
     escaped = _ITALIC_RE.sub(lambda m: f"<em>{m.group(1) or m.group(2)}</em>", escaped)
 

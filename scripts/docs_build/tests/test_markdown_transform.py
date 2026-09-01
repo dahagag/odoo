@@ -2,6 +2,8 @@ import unittest
 
 from scripts.docs_build.markdown_transform import (
     MarkdownSyntaxError,
+    extract_local_links,
+    is_local_markdown_link,
     render_markdown_document,
 )
 
@@ -161,6 +163,106 @@ class RenderMarkdownDocumentTests(unittest.TestCase):
         second = render_markdown_document(markdown_text, fallback_title="Doc")
 
         self.assertEqual(first, second)
+
+    def test_local_md_link_is_rewritten_via_resolver(self):
+        markdown_text = "See [ADR 5](../adr/0005-thing.md) for details."
+
+        html = render_markdown_document(
+            markdown_text,
+            fallback_title="Doc",
+            link_resolver=lambda href: "0005-thing.html",
+        )
+
+        self.assertIn('<a href="0005-thing.html"', html)
+        self.assertNotIn("../adr/0005-thing.md", html)
+
+    def test_external_link_is_never_passed_to_resolver(self):
+        markdown_text = "See [Odoo](https://www.odoo.com)."
+
+        def resolver(href):
+            raise AssertionError(f"resolver should not be called for external href {href!r}")
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc", link_resolver=resolver)
+
+        self.assertIn('<a href="https://www.odoo.com"', html)
+
+    def test_local_md_link_without_resolver_is_left_unchanged(self):
+        markdown_text = "See [Sibling](sibling.md)."
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('<a href="sibling.md"', html)
+
+    def test_local_md_link_fragment_is_preserved_by_the_caller(self):
+        # The resolver receives the raw href (fragment included) and decides how to
+        # rewrite it; markdown_transform itself does not special-case fragments.
+        markdown_text = "See [Section](sibling.md#section)."
+
+        captured = []
+
+        def resolver(href):
+            captured.append(href)
+            return "sibling.html#section"
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc", link_resolver=resolver)
+
+        self.assertEqual(captured, ["sibling.md#section"])
+        self.assertIn('<a href="sibling.html#section"', html)
+
+
+class IsLocalMarkdownLinkTests(unittest.TestCase):
+    def test_relative_md_path_is_local(self):
+        self.assertTrue(is_local_markdown_link("../adr/0005-thing.md"))
+
+    def test_relative_md_path_with_fragment_is_local(self):
+        self.assertTrue(is_local_markdown_link("sibling.md#section"))
+
+    def test_https_url_is_not_local(self):
+        self.assertFalse(is_local_markdown_link("https://example.com/doc.md"))
+
+    def test_mailto_is_not_local(self):
+        self.assertFalse(is_local_markdown_link("mailto:someone@example.com"))
+
+    def test_protocol_relative_url_is_not_local(self):
+        self.assertFalse(is_local_markdown_link("//example.com/doc.md"))
+
+    def test_non_markdown_local_path_is_not_a_local_markdown_link(self):
+        self.assertFalse(is_local_markdown_link("picture.png"))
+
+
+class ExtractLocalLinksTests(unittest.TestCase):
+    def test_finds_local_link_in_paragraph(self):
+        hrefs = extract_local_links("See [ADR 5](../adr/0005-thing.md) for details.")
+
+        self.assertEqual(hrefs, ["../adr/0005-thing.md"])
+
+    def test_ignores_external_link(self):
+        hrefs = extract_local_links("See [Odoo](https://www.odoo.com).")
+
+        self.assertEqual(hrefs, [])
+
+    def test_finds_link_inside_list_item_and_table_cell(self):
+        markdown_text = (
+            "- [ADR 5](adr-5.md)\n\n"
+            "| A | B |\n"
+            "| --- | --- |\n"
+            "| [ADR 6](adr-6.md) | plain |"
+        )
+
+        hrefs = extract_local_links(markdown_text)
+
+        self.assertEqual(hrefs, ["adr-5.md", "adr-6.md"])
+
+    def test_ignores_link_like_text_inside_fenced_code_block(self):
+        markdown_text = "```\n[not a link](fake.md)\n```"
+
+        hrefs = extract_local_links(markdown_text)
+
+        self.assertEqual(hrefs, [])
+
+    def test_unterminated_fence_still_raises(self):
+        with self.assertRaises(MarkdownSyntaxError):
+            extract_local_links("```\nunterminated\n")
 
 
 if __name__ == "__main__":
