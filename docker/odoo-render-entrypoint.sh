@@ -121,6 +121,68 @@ if ! init_module_installed; then
     python3 /workspace/odoo-bin -i "$ODOO_INIT_MODULE" --with-demo --stop-after-init --config="$runtime_config"
 fi
 
+# Render's free web service has no persistent disk, so every deploy is a brand-new
+# container with an empty ephemeral filesystem while Postgres (and the attachments
+# recorded in it) persists. Force new/migrated attachments into DB-backed storage
+# (see odoo/addons/base/models/ir_attachment.py's _storage()/force_storage()) and
+# purge any existing row whose file storage is unreadable on this container, so it
+# regenerates into DB storage on next request instead of 500ing forever.
+heal_attachment_storage() {
+    python3 - <<'PY'
+import os
+import sys
+
+import psycopg2
+
+try:
+    conn = psycopg2.connect(
+        dbname=os.environ["ODOO_DB"],
+        host=os.environ["POSTGRES_HOST"],
+        port=os.environ["POSTGRES_PORT"],
+        user=os.environ["POSTGRES_USER"],
+        password=os.environ["POSTGRES_PASSWORD"],
+    )
+except psycopg2.OperationalError as exc:
+    print(f"heal_attachment_storage: could not connect to Postgres, skipping: {exc}", file=sys.stderr)
+    sys.exit(0)
+
+with conn:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'ir_attachment'"
+        )
+        if cur.fetchone() is None:
+            sys.exit(0)
+
+        cur.execute(
+            """
+            INSERT INTO ir_config_parameter (key, value)
+            VALUES ('ir_attachment.location', 'db')
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+            """
+        )
+
+        filestore = os.path.join("/var/lib/odoo", "filestore", os.environ["ODOO_DB"])
+        cur.execute(
+            "SELECT id, store_fname FROM ir_attachment WHERE store_fname IS NOT NULL"
+        )
+        stale_ids = [
+            attachment_id
+            for attachment_id, store_fname in cur.fetchall()
+            if not os.path.isfile(os.path.join(filestore, store_fname))
+        ]
+        if stale_ids:
+            cur.execute("DELETE FROM ir_attachment WHERE id = ANY(%s)", (stale_ids,))
+            print(
+                f"Purged {len(stale_ids)} stale file-backed attachment row(s) "
+                "missing from this container's filestore.",
+                file=sys.stderr,
+            )
+PY
+}
+
+heal_attachment_storage
+
 case "${1:-}" in
     ''|-*)
         exec python3 /workspace/odoo-bin server --config="$runtime_config" "$@"

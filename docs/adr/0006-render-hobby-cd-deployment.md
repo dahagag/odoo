@@ -22,6 +22,18 @@ We accepted two real costs of the free tier to keep this a zero-recurring-cost P
   request). We accepted this rather than adding a keep-alive pinger: warming the tab before a
   client call is simpler than maintaining an always-on workaround for a POC.
 
+A known failure mode of "every boot heals a stale database" is that it only checks whether the
+*database* looks right, not whether the *container's local disk* does. Free web services have
+no persistent disk, so each deploy is a brand-new container with an empty ephemeral filesystem,
+while Postgres — and Odoo's attachment metadata in it — persists across deploys. Odoo splits
+attachment storage: `ir_attachment` rows (metadata + checksum) live in Postgres, but by default
+the binary content lives on that local disk (the "filestore"). Asset bundles compiled by one
+container are unreadable by the next, 500ing every static asset request despite the module
+still showing as installed. The entrypoint now also forces `ir_attachment.location` to `db` on
+every boot and purges any attachment row whose file-backed content is missing on the current
+container, so storage survives container replacement and stale rows regenerate instead of
+500ing forever — see `docker/odoo-render-entrypoint.sh`'s `heal_attachment_storage`.
+
 The production image is a new `docker/odoo-render.Dockerfile`, kept separate from
 `docker/odoo-dev.Dockerfile` per [ADR 0003](0003-standardize-local-development-on-containers.md),
 which established that dev and non-dev environments stay explicitly separate rather than one

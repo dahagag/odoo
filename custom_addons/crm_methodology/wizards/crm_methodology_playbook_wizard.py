@@ -68,10 +68,12 @@ class CrmMethodologyPlaybookWizard(models.TransientModel):
 
     def action_confirm(self):
         self.ensure_one()
-        answered = "\n".join(
-            _("- %(question)s: %(answer)s", question=line.question, answer=line.answer or _("(no answer)"))
-            for line in self.line_ids
-        )
+        answered_lines = []
+        for line in self.line_ids:
+            answered_lines.append(
+                _("- %(question)s: %(answer)s", question=line.question, answer=line.answer or _("(no answer)")),
+            )
+        answered = "\n".join(answered_lines)
         return self._complete_activity(_("Playbook answered:\n%(answers)s", answers=answered))
 
     def action_skip(self):
