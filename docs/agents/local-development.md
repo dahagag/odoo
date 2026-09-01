@@ -77,6 +77,7 @@ Use `./scripts/dev.ps1 <command>` on PowerShell or `bash scripts/dev.sh <command
 | `update <module>` | Upgrades an owned module with `--stop-after-init`, then restarts the development server. |
 | `test <module> [tags] [cleanup option]` | Runs focused tests in a unique database. Passing databases are dropped; failed databases are preserved and named unless exact cleanup is requested. |
 | `lint [path]` | Runs Ruff, defaulting to `custom_addons/`. The path must stay inside the repository. |
+| `docs-build:doc <file>` | Renders one `docs/teach/*.md` file into a self-contained static HTML page under `custom_addons/crm_methodology/static/docs/` (see docs/adr/0007 and [#35](https://github.com/dahagag/odoo/issues/35)). |
 | `reset` | Displays exact project volume names and requires the project name before deleting local data. |
 
 Examples:
@@ -89,6 +90,7 @@ Examples:
 ./scripts/dev.ps1 test service_dispatch '/service_dispatch:TestDispatch.test_assignment'
 ./scripts/dev.ps1 test service_dispatch '/service_dispatch' -CleanupOnFailure
 ./scripts/dev.ps1 lint custom_addons/service_dispatch
+./scripts/dev.ps1 docs-build:doc docs/teach/methodologies.md
 ```
 
 ```bash
@@ -99,6 +101,7 @@ bash scripts/dev.sh test service_dispatch
 bash scripts/dev.sh test service_dispatch '/service_dispatch:TestDispatch.test_assignment'
 bash scripts/dev.sh test service_dispatch '/service_dispatch' --cleanup-on-failure
 bash scripts/dev.sh lint custom_addons/service_dispatch
+bash scripts/dev.sh docs-build:doc docs/teach/methodologies.md
 ```
 
 ## Module lifecycle
@@ -108,6 +111,10 @@ Owned addons live under `custom_addons/`; read `docs/agents/odoo-19-development.
 Odoo's generic scaffold is a starting point and may need formatting before its first successful lint run. On Windows Docker Desktop, bind-mounted files appear executable inside Linux containers regardless of their Git mode. The wrappers therefore ignore only Ruff `EXE002` on Windows hosts; other executable-file rules and all substantive lint checks remain active.
 
 Tests use a database named from `ODOO_TEST_DB_PREFIX`, a UTC timestamp, and the wrapper process identifier. A passing run removes that exact database. A failing run preserves it for `shell` or `db-shell` investigation and prints its name. Use `-CleanupOnFailure` in PowerShell or pass `--cleanup-on-failure` as the fourth Bash token to remove that exact test database after a failure. Otherwise, delete a preserved database explicitly from `db-shell` when investigation is complete.
+
+## Docs build pipeline
+
+`docs-build:doc` renders one `docs/teach/*.md` file into a self-contained static HTML page via `scripts/docs_build/`. The Markdown-to-HTML transform (`scripts/docs_build/markdown_transform.py`) is a pure function — no filesystem or network access — and is unit-tested directly with `python -m unittest discover -s scripts/docs_build/tests`, independent of the Docker/PostgreSQL stack; `scripts/docs_build/cli.py` is the thin wrapper the `dev.ps1`/`dev.sh` subcommand invokes inside the Odoo container (via `python3 -m scripts.docs_build.cli`, no database required). The shared template's color tokens and component patterns match `docs/teach/DESIGN-TOKENS.md`; fonts use system-font fallback stacks rather than the Google Fonts `<link>` shown there, since the acceptance criteria for [#35](https://github.com/dahagag/odoo/issues/35) require zero network requests at view time. Output is written to `custom_addons/crm_methodology/static/docs/`, the publishing path fixed by docs/adr/0007.
 
 ## Browser tests
 
