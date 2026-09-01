@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teach-doc design system</title>
+<style>
+:root{
+  --ink-900:#1B2430; --ink-700:#3E4A59; --ink-500:#6B7688;
+  --paper-0:#F3F4EF; --paper-1:#FFFFFF; --line:#D3D6CC;
+  --amber:#B96A22; --amber-soft:#F0DFC7;
+  --teal:#2E6B60; --teal-soft:#D9E8E3;
+  --violet:#5B5285; --violet-soft:#E5E2F0;
+  --block:#A23B3B; --block-soft:#F3DBDB;
+  --shadow: 0 1px 2px rgba(27,36,48,.06), 0 8px 24px rgba(27,36,48,.05);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ink-900:#ECEAE2; --ink-700:#C7CCC0; --ink-500:#93998C;
+    --paper-0:#181B17; --paper-1:#20241F; --line:#3A3F35;
+    --amber:#E0954C; --amber-soft:#3B2C18;
+    --teal:#6FBBAC; --teal-soft:#1D332E;
+    --violet:#B0A6E0; --violet-soft:#2A2540;
+    --block:#E28080; --block-soft:#3A2222;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ink-900:#ECEAE2; --ink-700:#C7CCC0; --ink-500:#93998C;
+  --paper-0:#181B17; --paper-1:#20241F; --line:#3A3F35;
+  --amber:#E0954C; --amber-soft:#3B2C18;
+  --teal:#6FBBAC; --teal-soft:#1D332E;
+  --violet:#B0A6E0; --violet-soft:#2A2540;
+  --block:#E28080; --block-soft:#3A2222;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  color-scheme: dark;
+}
+*{ box-sizing: border-box; }
+body{
+  margin: 0;
+  background: var(--paper-0);
+  color: var(--ink-900);
+  font-family: Karla, system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.6;
+}
+.shell{
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 0 clamp(1.25rem, 4vw, 2rem) 6rem;
+}
+h1, h2, h3, h4, h5, h6{
+  font-family: "Source Serif 4", Georgia, serif;
+  font-weight: 600;
+  color: var(--ink-900);
+}
+code, pre{
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+pre{
+  background: var(--paper-1);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+}
+a{ color: var(--teal); }
+a:focus-visible, button:focus-visible{
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+blockquote.callout{
+  border-left: 3px solid var(--amber);
+  background: var(--amber-soft);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+}
+hr{
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 2rem 0;
+}
+.table-wrap{
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow);
+  margin: 1rem 0;
+}
+table{
+  border-collapse: collapse;
+  width: 100%;
+}
+th, td{
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+th{
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  background: var(--paper-0);
+}
+td{
+  background: var(--paper-1);
+}
+@media (prefers-reduced-motion: reduce){
+  *{ transition: none !important; }
+}
+</style>
+</head>
+<body>
+<main class="shell">
+<h1>Teach-doc design system</h1>
+<p>Ground truth for <code>docs-build:doc</code>&#x27;s shared HTML/CSS template (<a href="https://github.com/dahagag/odoo/issues/35" rel="noopener noreferrer">#35</a>). Extracted from the two hand-authored Claude Artifacts stakeholders already reviewed (published from <code>docs/teach/sales-methodology-vs-odoo-crm.md</code> and <code>docs/teach/methodologies.md</code> — see <a href="adr/0007-self-contained-teach-docs-served-from-static.md" rel="noopener noreferrer">ADR 0007</a>). This file is a reference for implementation, not itself rendered output — do not treat it as a third teach doc.</p>
+<h2>Fonts</h2>
+<pre><code>&lt;link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&amp;family=Karla:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap"&gt;</code></pre>
+<ul><li><strong>Display/headings</strong>: <code>&#x27;Source Serif 4&#x27;, Georgia, serif</code> — weight 600 for <code>h1</code>/<code>h2</code>.</li><li><strong>Body</strong>: <code>&#x27;Karla&#x27;, system-ui, sans-serif</code>.</li><li><strong>Labels, data, code, eyebrows</strong>: <code>&#x27;IBM Plex Mono&#x27;, monospace</code>.</li></ul>
+<p>Per #35&#x27;s Implementation Decisions, whether these load via the Google Fonts <code>&lt;link&gt;</code> above (fine inside a Claude Artifact&#x27;s sandbox, not fine for a truly self-contained/offline static file) or get embedded as data URIs / replaced with a system-font fallback is still open — resolve it there, not here.</p>
+<h2>Color tokens</h2>
+<pre><code>:root{
+  --ink-900:#1B2430; --ink-700:#3E4A59; --ink-500:#6B7688;
+  --paper-0:#F3F4EF; --paper-1:#FFFFFF; --line:#D3D6CC;
+  --amber:#B96A22; --amber-soft:#F0DFC7;
+  --teal:#2E6B60; --teal-soft:#D9E8E3;
+  --violet:#5B5285; --violet-soft:#E5E2F0;
+  --block:#A23B3B; --block-soft:#F3DBDB;
+  --shadow: 0 1px 2px rgba(27,36,48,.06), 0 8px 24px rgba(27,36,48,.05);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ink-900:#ECEAE2; --ink-700:#C7CCC0; --ink-500:#93998C;
+    --paper-0:#181B17; --paper-1:#20241F; --line:#3A3F35;
+    --amber:#E0954C; --amber-soft:#3B2C18;
+    --teal:#6FBBAC; --teal-soft:#1D332E;
+    --violet:#B0A6E0; --violet-soft:#2A2540;
+    --block:#E28080; --block-soft:#3A2222;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{ /* same values as the dark media block above, for an explicit toggle */ }</code></pre>
+<p>Roles: <code>ink-*</code> = text (900 primary, 700 secondary, 500 tertiary/labels). <code>paper-0</code>/<code>paper-1</code> = page background / card background. <code>line</code> = hairline borders. <code>amber</code> = primary accent (links-on-hover, eyebrows, active states). <code>teal</code> = links, &quot;Sales&quot;-tagged content. <code>violet</code> = &quot;R&amp;D&quot;-tagged content. <code>block</code> = error/blocker semantic color (distinct from the accent hues). <code>-soft</code> variants = tinted backgrounds for badges/callouts at low opacity-equivalent lightness.</p>
+<p><code>--block</code> was only defined on the main teach doc (it has status pills: New/Extended/Unchanged); the methodologies page omits it since it doesn&#x27;t need that semantic. Include it in the shared template regardless — the &quot;used in our demo&quot; badges and any future status pill need it.</p>
+<h2>Layout conventions</h2>
+<ul><li><code>.shell { max-width: 1180px }</code> for the main multi-section page (with a sidebar TOC); <code>840px</code> for a single-column deep-dive page (no TOC needed).</li><li>Responsive padding: <code>padding: 0 clamp(1.25rem, 4vw, 3rem) 6rem</code> (main page) / <code>clamp(1.25rem, 4vw, 2rem)</code> (deep-dive page).</li><li>Sidebar TOC: <code>230px</code> fixed column + <code>minmax(0,1fr)</code> content, collapsing to a single column under <code>860px</code> via <code>grid-template-columns: 1fr</code>.</li></ul>
+<h2>Component patterns</h2>
+<ul><li><strong>Audience tags</strong>: small circular badges (<code>.tag.s/.r/.c</code>, 1.4rem circle, IBM Plex Mono, background = the role&#x27;s accent color, white text).</li><li><strong>Callouts</strong> (<code>blockquote.callout</code>): left border in <code>--amber</code> (3px), tinted <code>--amber-soft</code> background, small uppercase IBM Plex Mono label (<code>&lt;b&gt;</code> child) above the body text, 0.5rem border radius.</li><li><strong>Tables</strong> (<code>.table-wrap &gt; table</code>): wrapped in <code>overflow-x:auto</code> + bordered container with <code>box-shadow: var(--shadow)</code>; header row uses IBM Plex Mono uppercase labels on <code>--paper-0</code> background; body rows on <code>--paper-1</code>; <code>tabular-nums</code> implied by IBM Plex Mono&#x27;s monospace digits.</li><li><strong>Status pills</strong> (<code>.pill.new/.ext/.same</code>): small rounded-pill badges, IBM Plex Mono, background = the status&#x27;s <code>-soft</code> color, text = the full-saturation color (<code>new</code>→teal, <code>ext</code>→violet, <code>same</code>→block).</li><li><strong>Focus state</strong>: <code>a:focus-visible, button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px }</code> — applied uniformly, not per-component.</li><li><strong><code>prefers-reduced-motion</code></strong>: any transition/animation added to the shared template must be guarded with <code>@media (prefers-reduced-motion: reduce) { *{ transition:none !important; } }</code>, per the two source Artifacts.</li></ul>
+<h2>What this file deliberately omits</h2>
+<p>Full markup, the audience-filter JavaScript, and the sticky-TOC scroll-spy logic from the main teach doc&#x27;s Artifact — those are page-specific interactive behavior from a single-page design, not necessarily what the generated multi-page pipeline output should do. #35 should treat this file as the <em>visual</em> system to reproduce, and make its own call on interactivity within the pipeline&#x27;s own constraints (e.g. determinism, no embedded per-view JS state).</p>
+</main>
+</body>
+</html>

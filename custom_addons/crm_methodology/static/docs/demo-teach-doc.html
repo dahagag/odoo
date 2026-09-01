@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sales Methodology, Explained</title>
+<style>
+:root{
+  --ink-900:#1B2430; --ink-700:#3E4A59; --ink-500:#6B7688;
+  --paper-0:#F3F4EF; --paper-1:#FFFFFF; --line:#D3D6CC;
+  --amber:#B96A22; --amber-soft:#F0DFC7;
+  --teal:#2E6B60; --teal-soft:#D9E8E3;
+  --violet:#5B5285; --violet-soft:#E5E2F0;
+  --block:#A23B3B; --block-soft:#F3DBDB;
+  --shadow: 0 1px 2px rgba(27,36,48,.06), 0 8px 24px rgba(27,36,48,.05);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ink-900:#ECEAE2; --ink-700:#C7CCC0; --ink-500:#93998C;
+    --paper-0:#181B17; --paper-1:#20241F; --line:#3A3F35;
+    --amber:#E0954C; --amber-soft:#3B2C18;
+    --teal:#6FBBAC; --teal-soft:#1D332E;
+    --violet:#B0A6E0; --violet-soft:#2A2540;
+    --block:#E28080; --block-soft:#3A2222;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ink-900:#ECEAE2; --ink-700:#C7CCC0; --ink-500:#93998C;
+  --paper-0:#181B17; --paper-1:#20241F; --line:#3A3F35;
+  --amber:#E0954C; --amber-soft:#3B2C18;
+  --teal:#6FBBAC; --teal-soft:#1D332E;
+  --violet:#B0A6E0; --violet-soft:#2A2540;
+  --block:#E28080; --block-soft:#3A2222;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  color-scheme: dark;
+}
+*{ box-sizing: border-box; }
+body{
+  margin: 0;
+  background: var(--paper-0);
+  color: var(--ink-900);
+  font-family: Karla, system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.6;
+}
+.shell{
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 0 clamp(1.25rem, 4vw, 2rem) 6rem;
+}
+h1, h2, h3, h4, h5, h6{
+  font-family: "Source Serif 4", Georgia, serif;
+  font-weight: 600;
+  color: var(--ink-900);
+}
+header.hero{
+  padding: 1rem 0 2rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 2rem;
+}
+h1.title{
+  font-size: clamp(1.9rem, 4.4vw, 2.8rem);
+  line-height: 1.1;
+  margin: 0 0 0.9rem;
+  text-wrap: balance;
+}
+.dek{
+  font-size: 1.05rem;
+  color: var(--ink-700);
+  max-width: 60ch;
+  line-height: 1.55;
+  margin: 0;
+}
+.ilo{
+  background: var(--paper-1);
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  padding: 1.4rem 1.6rem;
+  margin-bottom: 2.5rem;
+  box-shadow: var(--shadow);
+}
+.ilo h2{
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--amber);
+  margin: 0 0 0.8rem;
+}
+.ilo ul{
+  margin: 0;
+  padding-left: 1.2rem;
+}
+.ilo li{
+  color: var(--ink-700);
+  line-height: 1.6;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+.ilo li:last-child{ margin-bottom: 0; }
+code, pre{
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+pre{
+  background: var(--paper-1);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+}
+a{ color: var(--teal); }
+a:focus-visible, button:focus-visible{
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+blockquote.callout{
+  border-left: 3px solid var(--amber);
+  background: var(--amber-soft);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+}
+hr{
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 2rem 0;
+}
+.table-wrap{
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow);
+  margin: 1rem 0;
+}
+table{
+  border-collapse: collapse;
+  width: 100%;
+}
+th, td{
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+th{
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  background: var(--paper-0);
+}
+td{
+  background: var(--paper-1);
+}
+@media (prefers-reduced-motion: reduce){
+  *{ transition: none !important; }
+}
+</style>
+</head>
+<body>
+<main class="shell">
+<header class="hero"><h1 class="title">Sales Methodology, Explained</h1><p class="dek">What the custom <code>crm.methodology</code> addon does, why it exists, and exactly how it differs from stock Odoo 19 CRM.</p></header>
+<div class="ilo"><h2>Intended Learning Outcomes</h2><ul><li>Name the core framework of each methodology the addon can model.</li><li>Explain what problem each methodology claims to solve.</li><li>Identify which methodologies are pre-seeded in the demo data.</li></ul></div>
+<h2>TL;DR</h2>
+<p>The <code>crm.methodology</code> addon lets a Sales Manager define named qualification frameworks — MEDDIC, Sandler, or an in-house one — and attach them per client.</p>
+<blockquote class="callout"><strong>For consultants</strong> None of this touches the kanban pipeline.</blockquote>
+<h2>Model by model</h2>
+<div class="table-wrap"><table><thead><tr><th>Model</th><th>What the addon adds</th><th>OOTB status</th></tr></thead><tbody><tr><td>crm.methodology</td><td>Named framework</td><td>New</td></tr><tr><td>crm.lead</td><td>Adds methodology field</td><td>Extended</td></tr></tbody></table></div>
+</main>
+</body>
+</html>
