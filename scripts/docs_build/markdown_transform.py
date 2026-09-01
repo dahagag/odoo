@@ -363,13 +363,14 @@ def _render_inline(
 
     def _rewrite_image(match: re.Match) -> str:
         alt, href = match.group(1), match.group(2)
+        raw_href = html.unescape(href)
         src = href
-        if is_local_image_reference(href):
+        if is_local_image_reference(raw_href):
             if image_resolver is None:
                 raise MarkdownSyntaxError(
-                    f"image reference {href!r} cannot be embedded without an image_resolver",
+                    f"image reference {raw_href!r} cannot be embedded without an image_resolver",
                 )
-            src = image_resolver(href)
+            src = html.escape(image_resolver(raw_href), quote=True)
         return f'<img src="{src}" alt="{alt}">'
 
     escaped = _IMAGE_RE.sub(_rewrite_image, escaped)

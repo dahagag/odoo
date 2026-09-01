@@ -130,6 +130,20 @@ class RenderMarkdownDocumentTests(unittest.TestCase):
             html,
         )
 
+    def test_local_image_with_ampersand_in_filename_is_resolved_with_the_raw_href(self):
+        markdown_text = "![alt text](diagram&v2.png)"
+
+        html = render_markdown_document(
+            markdown_text,
+            fallback_title="Doc",
+            image_resolver=lambda href: f"data:image/png;base64,FAKE-{href}",
+        )
+
+        self.assertIn(
+            '<img src="data:image/png;base64,FAKE-diagram&amp;v2.png" alt="alt text">',
+            html,
+        )
+
     def test_external_image_passes_through_without_calling_resolver(self):
         markdown_text = "![alt text](https://example.com/picture.png)"
 
