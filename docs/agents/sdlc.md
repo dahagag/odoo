@@ -12,10 +12,21 @@ for the one decision here recorded as an ADR.
 
 ## Trunk
 
-`dev/19.0` is the only long-lived branch. There is no separate `master`/
-stable split — this repo does not maintain multiple Odoo versions in
-parallel, so freezing a "stable" branch against feature work has no
-target to protect.
+`dev/19.0` is the integration trunk: all feature/fix/chore work merges here
+first, same as before. There is no separate `master`/stable split for
+parallel Odoo versions — that's not what `main/19.0` is for.
+
+`main/19.0` is the protected deploy branch Render watches for auto-deploy of
+the client-demo instance (see
+[ADR 0006](../adr/0006-render-hobby-cd-deployment.md)). It only moves via a
+release PR from `dev/19.0` with passing CI; no direct pushes. This repo has
+no external contributors (see the top of this doc), so there's no separate
+reviewer to require — the protection matches `dev/19.0`'s own (required
+`lint` check, no reviewer count, `enforce_admins: false` so the solo
+maintainer can merge once CI passes). Promoting a change to the demo
+instance means opening and merging a `dev/19.0` → `main/19.0` PR — that
+merge *is* the deploy gate, since Render's own git integration handles the
+rest with no separate approval step.
 
 ## Branch naming
 
@@ -75,7 +86,20 @@ which cover issue triage, not PR review.
 
 Two GitHub Actions jobs, both scoped to PRs touching `custom_addons/**`,
 `docker/**`, `requirements.txt`, or the workflow file itself — a docs-only
-or research-only PR doesn't need to rebuild the Odoo image.
+or research-only PR doesn't need to rebuild the Odoo image. The workflow
+triggers on PRs targeting either `dev/19.0` (regular feature work) or
+`main/19.0` (release PRs promoting `dev/19.0` to the demo instance), so
+`main/19.0`'s branch protection has a real `lint` check to require. There is
+no separate deploy workflow — Render's native branch auto-deploy handles
+promotion once a release PR merges.
+
+Caveat: a release PR touching only paths outside that filter (e.g.
+docs-only) would never run `lint`, and `main/19.0`'s branch protection
+requires that check — such a PR would stay blocked pending a status that
+never reports. In practice a release PR bundles everything merged into
+`dev/19.0` since the last release, which will touch `custom_addons/**` or
+`docker/**` almost always; if it ever doesn't, add a trivial touch to a
+covered path rather than loosening the filter.
 
 | Job | Trigger scope | Gate |
 |---|---|---|
