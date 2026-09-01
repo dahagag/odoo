@@ -12,7 +12,7 @@ Ground truth for `docs-build:doc`'s shared HTML/CSS template ([#35](https://gith
 - **Body**: `'Karla', system-ui, sans-serif`.
 - **Labels, data, code, eyebrows**: `'IBM Plex Mono', monospace`.
 
-**Resolved by [ADR 0009](adr/0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.md)**: load these via the Google Fonts `<link>` above, exactly as the source Artifacts do. An earlier version of this note framed the choice as blocked on a "zero network requests" constraint from #35; that constraint itself was judged invalid and reversed — self-hosting the fonts as data URIs was considered and rejected (real measurements put it at ~160–260 KB added per page, with no size advantage over the CDN, which already serves the same subsetted files). Self-contained means no unresolved *local* images/links, not no network access at all.
+Load these via the Google Fonts `<link>` above, exactly as the source Artifacts do — see [ADR 0009](adr/0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.md), which reversed #35's "zero network requests" constraint and rejected self-hosting the fonts as data URIs (real measurements put that at ~160–260 KB added per page, with no size advantage over the CDN, which already serves the same subsetted files). Self-contained means no unresolved *local* images/links, not no network access at all.
 
 ## Color tokens
 
@@ -79,6 +79,25 @@ A bordered, shadowed card (`--paper-1` background, `--line` border, `box-shadow:
     <li>Name the core framework of each methodology the addon can model.</li>
     <li>Explain what problem each methodology claims to solve.</li>
   </ul>
+</div>
+```
+
+### Section header row
+
+Both pages wrap each `h2` in a flex row (`display:flex; align-items:center` or `baseline`, `gap:.7–.8rem`, `flex-wrap:wrap`) rather than using a bare heading, so a leading marker and trailing badges can sit inline with the title. The two source Artifacts use this for different purposes: the main teach doc's `.sec-head` prefixes each section with a two-digit `.sec-num` counter (IBM Plex Mono, `--ink-500`) and trails it with the audience-tags cluster; the methodologies page's `.method-head` has no counter and instead trails the title with an optional `.demo-badge`. Same layout idea, different contents — treat as one pattern with an optional leading and optional trailing slot, not two unrelated components.
+
+```html
+<div class="sec-head">
+  <span class="sec-num">04</span>
+  <h2>The workflow story</h2>
+  <span class="tags"><span class="tag s">S</span><span class="tag c">C</span></span>
+</div>
+```
+
+```html
+<div class="method-head">
+  <h2 class="method-title">MEDDIC / MEDDPICC</h2>
+  <span class="demo-badge">Used in our demo</span>
 </div>
 ```
 
@@ -180,10 +199,16 @@ Small rounded-pill badges, IBM Plex Mono, background = the status's `-soft` colo
 
 ### Footer note
 
-Small IBM Plex Mono text in `--ink-500`, top-bordered in `--line` — used for a closing "verified against code as of…" provenance line or a single back-link.
+Small IBM Plex Mono text in `--ink-500`, top-bordered in `--line` — used for a closing "verified against code as of…" provenance line or a single back-link. The main teach doc uses `footer.verify` for the provenance-line variant; the deep-dive page uses `footer.reading` wrapping a single `a.backlink` (same font/size/color, hover brightens to `--amber`, leading `←` glyph) instead.
 
 ```html
 <footer class="verify">Verified against code as of 2026-09-01 — six of seven technical claims checked directly.</footer>
+```
+
+```html
+<footer class="reading">
+  <a class="backlink" href="https://claude.ai/code/artifact/34b9bfe1-df69-41f9-a912-adf3d73c50d3">&larr; Back to Sales Methodology, Explained</a>
+</footer>
 ```
 
 ### Focus state and reduced motion
@@ -203,7 +228,7 @@ That platform runtime uses its **own hardcoded color palette**, entirely indepen
 
 So today, inside the Artifact, the two flowcharts do **not** visually match the surrounding design system at all — there's no existing color-token mapping to copy.
 
-**Resolved, correcting an earlier version of this section**: `docs-build:doc` never renders Mermaid at all, at view time or build time — issue #33 rejects pipeline-rendered Mermaid outright (parser complexity, a required headless-browser step), and [ADR 0009](adr/0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.md)'s zero-network reversal doesn't touch that reasoning (a stray claim to the contrary was struck from ADR 0009 as a mistake). The two Mermaid blocks in the source Markdown are a **content sketch** only — see #56, which tracks a Claude Code session authoring them as finished SVG image assets using this design system's actual color tokens (not the hardcoded palette above), then embedding them through the pipeline's ordinary image-embedding mechanism like any screenshot.
+`docs-build:doc` never renders Mermaid at all, at view time or build time — issue #33 rejects pipeline-rendered Mermaid outright (parser complexity, a required headless-browser step), a constraint [ADR 0009](adr/0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.md)'s zero-network reversal doesn't touch. The two Mermaid blocks in the source Markdown are a **content sketch** only — see #56, which tracks a Claude Code session authoring them as finished SVG image assets using this design system's actual color tokens (not the hardcoded palette above), then embedding them through the pipeline's ordinary image-embedding mechanism like any screenshot.
 
 ## What this file deliberately omits
 
