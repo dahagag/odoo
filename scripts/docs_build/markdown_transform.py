@@ -284,12 +284,12 @@ def _render_block(block: _Block) -> str:
         return f"<{tag}>{items}</{tag}>"
     if isinstance(block, _Table):
         return _render_table(block)
+    if isinstance(block, _HorizontalRule):
+        return "<hr>"
     if isinstance(block, _Hero):
         return _render_hero(block)
     if isinstance(block, _Ilo):
         return _render_ilo(block)
-    if isinstance(block, _HorizontalRule):
-        return "<hr>"
     raise TypeError(f"unknown block type: {block!r}")
 
 
