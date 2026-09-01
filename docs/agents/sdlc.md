@@ -89,6 +89,14 @@ triggers on PRs targeting either `dev/19.0` (regular feature work) or
 no separate deploy workflow — Render's native branch auto-deploy handles
 promotion once a release PR merges.
 
+Caveat: a release PR touching only paths outside that filter (e.g.
+docs-only) would never run `lint`, and `main/19.0`'s branch protection
+requires that check — such a PR would stay blocked pending a status that
+never reports. In practice a release PR bundles everything merged into
+`dev/19.0` since the last release, which will touch `custom_addons/**` or
+`docker/**` almost always; if it ever doesn't, add a trivial touch to a
+covered path rather than loosening the filter.
+
 | Job | Trigger scope | Gate |
 |---|---|---|
 | `lint` | as above | **Required** status check — must pass, no override |

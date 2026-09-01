@@ -195,7 +195,11 @@ say "main/19.0. Nothing here is written to .env or GitHub secrets — every"
 say "value goes straight into Render's own dashboard, since that's the only"
 say "place production config for this instance lives."
 note "Prerequisite: the main/19.0 branch must already exist in GitHub and be"
-note "protected (reviewed PR + passing CI required, no direct pushes)."
+note "protected (reviewed PR + passing CI required, no direct pushes). This"
+note "is a one-time repo-admin step done via 'gh api .../branches/main%2F19.0/protection'"
+note "(see docs/agents/sdlc.md) — it doesn't need production credentials, so"
+note "it isn't a stage in this wizard. Verify it before continuing:"
+note "  gh api repos/<owner>/<repo>/branches/main%2F19.0/protection"
 
 # ── Stage 1: Postgres database ─────────────────────────────────────────────
 stage "Render: create the free Postgres database"
@@ -235,9 +239,9 @@ note "is on the same page — fill those in first, then create."
 
 # ── Stage 3: Environment variables ─────────────────────────────────────────
 stage "Render: set the web service's environment variables"
-say "Odoo's entrypoint (docker/odoo-render-entrypoint.sh) requires all five"
-say "of these to boot; it validates each and refuses to start if one is"
-say "missing or malformed."
+say "Odoo's entrypoint (docker/odoo-render-entrypoint.sh) requires the five"
+say "starred below to boot — it validates each and refuses to start if one"
+say "is missing or malformed. POSTGRES_PORT is optional (defaults to 5432)."
 step "In the web service's Environment tab, add each variable below."
 ODOO_ADMIN_PASSWORD=$(openssl rand -base64 24 2>/dev/null | tr -d '/+=\n' | cut -c1-32 || true)
 if [[ -n "$ODOO_ADMIN_PASSWORD" ]]; then
@@ -246,13 +250,13 @@ if [[ -n "$ODOO_ADMIN_PASSWORD" ]]; then
 else
   ask_secret ODOO_ADMIN_PASSWORD "openssl unavailable — paste an admin master password:"
 fi
-step "ODOO_ADMIN_PASSWORD = the value above (this is the master/admin_passwd,"
-step "not a login password — needed for db management operations)."
-step "ODOO_DB = $ODOO_DB"
-step "POSTGRES_HOST = $POSTGRES_HOST"
-step "POSTGRES_PORT = $POSTGRES_PORT"
-step "POSTGRES_USER = $POSTGRES_USER"
-step "POSTGRES_PASSWORD = (the database password from Stage 1)"
+step "* ODOO_ADMIN_PASSWORD = the value above (this is the master/admin_passwd,"
+step "  not a login password — needed for db management operations)."
+step "* ODOO_DB = $ODOO_DB"
+step "* POSTGRES_HOST = $POSTGRES_HOST"
+step "  POSTGRES_PORT = $POSTGRES_PORT (optional — omit to default to 5432)"
+step "* POSTGRES_USER = $POSTGRES_USER"
+step "* POSTGRES_PASSWORD = (the database password from Stage 1)"
 step "Save changes, then click 'Create Web Service' (or 'Save, rebuild, and"
 step "deploy' if the service already exists)."
 SKIPPED+=("store ODOO_ADMIN_PASSWORD somewhere durable (e.g. a password manager) — it is not saved anywhere by this script")

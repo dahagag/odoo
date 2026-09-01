@@ -1,4 +1,4 @@
-# Demo instance deploys to Render's free tier via a `main/19.0` branch, self-healing on every start
+# Render Hobby CD deployment
 
 The client-demo instance runs on Render's free web service + free Postgres, promoted by
 merging a reviewed release PR from `dev/19.0` into a new `main/19.0` branch, which Render
