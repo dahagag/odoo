@@ -9,23 +9,43 @@ under custom_addons/crm_methodology/static/docs/ (see docs/adr/0007 for why
 that directory is the publishing path). Internal links are rewritten to point
 at the generated page; external URLs pass through unchanged. See issue #38.
 
+Every local image a rendered document references (a product screenshot, a
+pre-authored diagram — never a pipeline-rendered Mermaid diagram, see issue
+#33) is read from disk and embedded into that document's HTML as a data URI,
+so the generated page has no separate file dependency. See issue #37. A local
+image that doesn't resolve to a readable file fails the build, naming both the
+referencing document and the missing file, the same way a broken internal
+`.md` link does. A source image at or above `_LARGE_IMAGE_WARNING_BYTES`
+still embeds, but prints a build warning, since a large embedded image bloats
+every view of the page it's on.
+
 A document is only rendered because something in the closure links to it —
 this is not a whole-repo Markdown build.
 """
 
 from __future__ import annotations
 
+import base64
+import mimetypes
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.docs_build.markdown_transform import (
     MarkdownSyntaxError,
+    extract_local_image_refs,
     extract_local_links,
     render_markdown_document,
 )
 
 DEFAULT_OUTPUT_DIR = Path("custom_addons/crm_methodology/static/docs")
+
+# A generated page embeds every local image inline as a base64 data URI (roughly a
+# third larger than the source file). This is a per-image guideline, not an
+# enforced cap: crossing it still embeds the image, but prints a build warning,
+# since a single oversized screenshot would otherwise bloat every view of its page
+# silently.
+_LARGE_IMAGE_WARNING_BYTES = 300 * 1024
 
 
 class DocsBuildError(Exception):
@@ -36,6 +56,7 @@ class DocsBuildError(Exception):
 class _Document:
     markdown_text: str
     local_links: dict[str, Path]  # raw href -> resolved source path, both as found in this doc
+    local_images: dict[str, Path]  # raw href -> resolved source path, both as found in this doc
 
 
 def build_doc(source: Path, output_dir: Path) -> Path:
@@ -62,11 +83,15 @@ def build_doc(source: Path, output_dir: Path) -> Path:
             html_href = output_paths[target].name
             return f"{html_href}#{fragment}" if fragment is not None else html_href
 
+        def resolve_image(href: str, _local_images: dict[str, Path] = document.local_images) -> str:
+            return _embed_image_as_data_uri(_local_images[href], referencing_doc=doc_path)
+
         try:
             rendered_html = render_markdown_document(
                 document.markdown_text,
                 fallback_title=fallback_title,
                 link_resolver=resolve_href,
+                image_resolver=resolve_image,
             )
         except MarkdownSyntaxError as exc:
             raise DocsBuildError(f"{doc_path}: {exc}") from exc
@@ -76,13 +101,39 @@ def build_doc(source: Path, output_dir: Path) -> Path:
     return output_paths[source]
 
 
+def _embed_image_as_data_uri(image_path: Path, *, referencing_doc: Path) -> str:
+    """Read `image_path` and return a base64 data URI suitable for an `<img src>`.
+
+    Prints a build warning (not a failure) to stderr for an oversized source
+    image; see `_LARGE_IMAGE_WARNING_BYTES`.
+    """
+    try:
+        image_bytes = image_path.read_bytes()
+    except OSError as exc:
+        raise DocsBuildError(f"{referencing_doc}: could not read image {image_path} ({exc})") from exc
+
+    if len(image_bytes) >= _LARGE_IMAGE_WARNING_BYTES:
+        sys.stderr.write(
+            f"docs-build:doc warning: {referencing_doc}: image {image_path} is "
+            f"{len(image_bytes) / 1024:.0f} KiB, at or above the "
+            f"{_LARGE_IMAGE_WARNING_BYTES // 1024} KiB embedding guideline\n",
+        )
+
+    mime_type, _ = mimetypes.guess_type(image_path.name)
+    mime_type = mime_type or "application/octet-stream"
+
+    encoded = base64.b64encode(image_bytes).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
 def _discover_closure(entry: Path) -> dict[Path, _Document]:
     """Walk the local-`.md`-link graph reachable from `entry`.
 
     Returns a map of every reachable document (including `entry`) to its parsed
-    text and its own `{raw_href: resolved_target_path}` links, in the order
-    first discovered. Raises ``DocsBuildError`` for a link that doesn't resolve
-    to a real file, naming both the linking document and the broken reference.
+    text and its own `{raw_href: resolved_target_path}` links and image
+    references, in the order first discovered. Raises ``DocsBuildError`` for a
+    link or image reference that doesn't resolve to a real file, naming both
+    the referencing document and the missing reference.
     """
     closure: dict[Path, _Document] = {}
     queue = [entry]
@@ -98,6 +149,7 @@ def _discover_closure(entry: Path) -> dict[Path, _Document]:
 
         try:
             hrefs = extract_local_links(markdown_text)
+            image_hrefs = extract_local_image_refs(markdown_text)
         except MarkdownSyntaxError as exc:
             raise DocsBuildError(f"{doc_path}: {exc}") from exc
 
@@ -114,7 +166,20 @@ def _discover_closure(entry: Path) -> dict[Path, _Document]:
                 queued.add(target)
                 queue.append(target)
 
-        closure[doc_path] = _Document(markdown_text=markdown_text, local_links=local_links)
+        local_images: dict[str, Path] = {}
+        for href in image_hrefs:
+            target = doc_path.parent / href
+            if not target.is_file():
+                raise DocsBuildError(
+                    f"{doc_path}: missing image {href!r} does not resolve to an existing file",
+                )
+            local_images[href] = target
+
+        closure[doc_path] = _Document(
+            markdown_text=markdown_text,
+            local_links=local_links,
+            local_images=local_images,
+        )
 
     return closure
 
