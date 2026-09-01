@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       relevant: ${{ steps.check.outputs.relevant }}
+      test_modules: ${{ steps.plan.outputs.modules }}
     steps:
       - name: Check for changes under custom_addons/, docker/, scripts/, etc.
         id: check
@@ -23,11 +24,101 @@ jobs:
               - 'requirements.txt'
               - 'compose.yaml'
               - '.github/workflows/ci.yml'
+      - uses: actions/checkout@v4
+      - name: Build per-module change filters
+        run: |
+          {
+            echo "shared:"
+            echo "  - 'docker/**'"
+            echo "  - 'scripts/**'"
+            echo "  - 'requirements.txt'"
+            echo "  - 'compose.yaml'"
+            echo "  - '.github/workflows/ci.yml'"
+            for manifest in custom_addons/*/__manifest__.py; do
+              module="$(basename "$(dirname "$manifest")")"
+              echo "module_${module}:"
+              echo "  - 'custom_addons/${module}/**'"
+            done
+          } > "$RUNNER_TEMP/module-filters.yml"
+      - name: Detect which modules changed
+        id: modules
+        uses: dorny/paths-filter@v3
+        with:
+          filters: "${{ runner.temp }}/module-filters.yml"
+      - name: Plan which owned modules need testing
+        id: plan
+        env:
+          SHARED_CHANGED: ${{ steps.modules.outputs.shared }}
+          CHANGED_FILTERS: ${{ steps.modules.outputs.changes }}
+        run: |
+          # A change outside a specific module's own directory (docker/, scripts/, a
+          # shared file directly under custom_addons/, the Dockerfile, etc.) can affect
+          # every module's test run, so fall back to testing all of them. Only when
+          # every changed path falls under a single module's own directory do we narrow
+          # the run to just those modules.
+          if [[ "$SHARED_CHANGED" == "true" ]]; then
+            modules=()
+            for manifest in custom_addons/*/__manifest__.py; do
+              modules+=("$(basename "$(dirname "$manifest")")")
+            done
+          else
+            mapfile -t matched < <(jq -r '.[]' <<<"$CHANGED_FILTERS")
+            modules=()
+            for filter in "${matched[@]}"; do
+              [[ "$filter" == module_* ]] && modules+=("${filter#module_}")
+            done
+          fi
+
+          printf '%s\n' "${modules[@]:-}" | jq -R . | jq -sc 'map(select(length > 0))' | { read -r json; echo "modules=$json" >> "$GITHUB_OUTPUT"; }
+
+  build-image:
+    name: Build development image
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ env.DEV_IMAGE }}
+    env:
+      DEV_IMAGE: ghcr.io/${{ github.repository }}/odoo-dev:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read defaults shared with local dev (.env.example)
+        id: defaults
+        run: |
+          echo "odoo_image=$(sed -n -E 's/^ODOO_IMAGE=(.*)$/\1/p' .env.example)" >> "$GITHUB_OUTPUT"
+          echo "uid=$(id -u)" >> "$GITHUB_OUTPUT"
+          echo "gid=$(id -g)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: ./.github/actions/ghcr-login
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/odoo-dev.Dockerfile
+          build-args: |
+            ODOO_IMAGE=${{ steps.defaults.outputs.odoo_image }}
+            HOST_UID=${{ steps.defaults.outputs.uid }}
+            HOST_GID=${{ steps.defaults.outputs.gid }}
+          push: true
+          tags: ${{ env.DEV_IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   lint:
     name: Lint (required)
-    needs: changes
+    needs: [changes, build-image]
+    # build-image is skipped (not failed) when nothing relevant changed; without
+    # this, GitHub's default skip-propagation would skip this required check
+    # entirely instead of letting it no-op via the steps' own `if` guards below.
+    # Still require `changes` to have actually succeeded, and don't proceed if
+    # build-image genuinely failed (as opposed to being skipped).
+    if: ${{ needs.changes.result == 'success' && needs.build-image.result != 'failure' && needs.build-image.result != 'cancelled' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v4
         if: needs.changes.outputs.relevant == 'true'
@@ -37,18 +128,24 @@ jobs:
           cp .env.example .env
           echo "HOST_UID=$(id -u)" >> .env
           echo "HOST_GID=$(id -g)" >> .env
-      - name: Build development image
+          echo "ODOO_DEV_IMAGE=${{ needs.build-image.outputs.image }}" >> .env
+      - uses: ./.github/actions/ghcr-login
         if: needs.changes.outputs.relevant == 'true'
-        run: bash scripts/dev.sh build
+      - name: Pull cached development image
+        if: needs.changes.outputs.relevant == 'true'
+        run: docker compose pull odoo
       - name: Run ruff
         if: needs.changes.outputs.relevant == 'true'
         run: bash scripts/dev.sh lint custom_addons
 
   test:
     name: Test (informational)
-    needs: changes
-    if: needs.changes.outputs.relevant == 'true'
+    needs: [changes, build-image]
+    if: needs.changes.outputs.relevant == 'true' && needs.changes.outputs.test_modules != '[]'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     # Non-blocking by design: see docs/agents/sdlc.md#continuous-integration.
     # Do not add this job to the branch's required status checks.
     continue-on-error: true
@@ -59,13 +156,16 @@ jobs:
           cp .env.example .env
           echo "HOST_UID=$(id -u)" >> .env
           echo "HOST_GID=$(id -g)" >> .env
-      - name: Build development image
-        run: bash scripts/dev.sh build
-      - name: Run tests for every owned module
+          echo "ODOO_DEV_IMAGE=${{ needs.build-image.outputs.image }}" >> .env
+      - uses: ./.github/actions/ghcr-login
+      - name: Pull cached development image
+        run: docker compose pull odoo
+      - name: Run tests for changed modules
+        env:
+          TEST_MODULES: ${{ needs.changes.outputs.test_modules }}
         run: |
           set -euo pipefail
-          for manifest in custom_addons/*/__manifest__.py; do
-            module="$(basename "$(dirname "$manifest")")"
+          for module in $(jq -r '.[]' <<<"$TEST_MODULES"); do
             echo "::group::Testing $module"
             bash scripts/dev.sh test "$module"
             echo "::endgroup::"

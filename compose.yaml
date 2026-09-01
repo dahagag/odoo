@@ -18,6 +18,7 @@ services:
     restart: unless-stopped
 
   odoo:
+    image: ${ODOO_DEV_IMAGE:-agentic-erp-dev-odoo:local}
     build:
       context: .
       dockerfile: docker/odoo-dev.Dockerfile
