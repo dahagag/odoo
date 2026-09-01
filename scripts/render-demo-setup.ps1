@@ -103,10 +103,17 @@ function Read-AskSecret {
 }
 
 # New-RandomPassword: a random alphanumeric password, no external tool needed.
+# Uses RNGCryptoServiceProvider rather than RandomNumberGenerator.Fill (.NET 6+
+# only) so this also runs under Windows PowerShell 5.1 / older pwsh.
 function New-RandomPassword {
     param([int]$Length = 32)
     $bytes = [byte[]]::new(32)
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $rng = [System.Security.Cryptography.RNGCryptoServiceProvider]::new()
+    try {
+        $rng.GetBytes($bytes)
+    } finally {
+        $rng.Dispose()
+    }
     $encoded = [Convert]::ToBase64String($bytes) -replace '[/+=]', ''
     if ($encoded.Length -ge $Length) { return $encoded.Substring(0, $Length) }
     return $encoded
