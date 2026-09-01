@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Self-contained teach docs served from crm_methodology's own static folder</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=Karla:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ink-900:#1B2430; --ink-700:#3E4A59; --ink-500:#6B7688;
+  --paper-0:#F3F4EF; --paper-1:#FFFFFF; --line:#D3D6CC;
+  --amber:#B96A22; --amber-soft:#F0DFC7;
+  --teal:#2E6B60; --teal-soft:#D9E8E3;
+  --violet:#5B5285; --violet-soft:#E5E2F0;
+  --block:#A23B3B; --block-soft:#F3DBDB;
+  --shadow: 0 1px 2px rgba(27,36,48,.06), 0 8px 24px rgba(27,36,48,.05);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ink-900:#ECEAE2; --ink-700:#C7CCC0; --ink-500:#93998C;
+    --paper-0:#181B17; --paper-1:#20241F; --line:#3A3F35;
+    --amber:#E0954C; --amber-soft:#3B2C18;
+    --teal:#6FBBAC; --teal-soft:#1D332E;
+    --violet:#B0A6E0; --violet-soft:#2A2540;
+    --block:#E28080; --block-soft:#3A2222;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ink-900:#ECEAE2; --ink-700:#C7CCC0; --ink-500:#93998C;
+  --paper-0:#181B17; --paper-1:#20241F; --line:#3A3F35;
+  --amber:#E0954C; --amber-soft:#3B2C18;
+  --teal:#6FBBAC; --teal-soft:#1D332E;
+  --violet:#B0A6E0; --violet-soft:#2A2540;
+  --block:#E28080; --block-soft:#3A2222;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  color-scheme: dark;
+}
+*{ box-sizing: border-box; }
+body{
+  margin: 0;
+  background: var(--paper-0);
+  color: var(--ink-900);
+  font-family: Karla, system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.6;
+}
+.shell{
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 0 clamp(1.25rem, 4vw, 2rem) 6rem;
+}
+h1, h2, h3, h4, h5, h6{
+  font-family: "Source Serif 4", Georgia, serif;
+  font-weight: 600;
+  color: var(--ink-900);
+}
+code, pre{
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+pre{
+  background: var(--paper-1);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+}
+a{ color: var(--teal); }
+a:focus-visible, button:focus-visible{
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+blockquote.callout{
+  border-left: 3px solid var(--amber);
+  background: var(--amber-soft);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+}
+hr{
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 2rem 0;
+}
+.table-wrap{
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow);
+  margin: 1rem 0;
+}
+table{
+  border-collapse: collapse;
+  width: 100%;
+}
+th, td{
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+th{
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  background: var(--paper-0);
+}
+td{
+  background: var(--paper-1);
+}
+@media (prefers-reduced-motion: reduce){
+  *{ transition: none !important; }
+}
+</style>
+</head>
+<body>
+<main class="shell">
+<hr>
+<p>status: accepted</p>
+<hr>
+<h1>Self-contained teach docs served from crm_methodology&#x27;s own static folder</h1>
+<p><code>docs/teach/*.md</code> is the stakeholder-facing source of truth for the CRM methodology teach workspace, but had no repeatable rendering — the only polished version stakeholders saw was a hand-authored Claude Artifact that drifted from the committed Markdown (surfaced when PR #32 shipped an older draft than what stakeholders had reviewed). We&#x27;re building a <code>docs-build:doc</code> pipeline that renders <code>docs/teach/*.md</code>, plus every local document reachable by a link from them (ADRs, <code>CONTEXT.md</code>, the research doc), into self-contained static HTML — images embedded as data URIs, internal links resolved to sibling generated pages — written to <code>custom_addons/crm_methodology/static/docs/</code>. Odoo serves any addon&#x27;s <code>static/</code> tree automatically and publicly at <code>/&lt;module&gt;/static/**</code> with zero controller code (confirmed against <code>odoo/http.py</code>), so this output directory doubles as the public serving path and is committed to git rather than gitignored: committing it is what publishes it.</p>
+<p><strong>Considered Options:</strong> a custom <code>auth=&#x27;public&#x27;</code> controller — rejected, pure overhead when Odoo&#x27;s built-in static route already does this for free. Hosting the rendered pages outside Odoo (a static site, GitHub Pages) — rejected, adds a second deploy surface when the addon is already deployed via the Render demo (ADR 0006). Keeping the hand-authored Claude Artifacts as the source of truth — rejected, that&#x27;s exactly the drift PR #32 exposed.</p>
+<p><strong>Consequences:</strong> the served pages are unauthenticated by construction, not by a configurable choice — gating them later requires an explicit controller-based alternative to the static route, not a flag.</p>
+</main>
+</body>
+</html>

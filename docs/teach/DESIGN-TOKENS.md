@@ -1,6 +1,6 @@
 # Teach-doc design system
 
-Ground truth for `docs-build:doc`'s shared HTML/CSS template ([#35](https://github.com/dahagag/odoo/issues/35)). Extracted from the two hand-authored Claude Artifacts stakeholders already reviewed (published from `docs/teach/sales-methodology-vs-odoo-crm.md` and `docs/teach/methodologies.md` — see [ADR 0007](adr/0007-self-contained-teach-docs-served-from-static.md)). This file is a reference for implementation, not itself rendered output — do not treat it as a third teach doc.
+Ground truth for `docs-build:doc`'s shared HTML/CSS template ([#35](https://github.com/dahagag/odoo/issues/35)). Extracted from the two hand-authored Claude Artifacts stakeholders already reviewed (published from `docs/teach/sales-methodology-vs-odoo-crm.md` and `docs/teach/methodologies.md` — see [ADR 0007](../adr/0007-self-contained-teach-docs-served-from-static.md)). This file is a reference for implementation, not itself rendered output — do not treat it as a third teach doc.
 
 ## Fonts
 
@@ -12,7 +12,7 @@ Ground truth for `docs-build:doc`'s shared HTML/CSS template ([#35](https://gith
 - **Body**: `'Karla', system-ui, sans-serif`.
 - **Labels, data, code, eyebrows**: `'IBM Plex Mono', monospace`.
 
-Load these via the Google Fonts `<link>` above, exactly as the source Artifacts do — see [ADR 0009](adr/0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.md), which reversed #35's "zero network requests" constraint and rejected self-hosting the fonts as data URIs (real measurements put that at ~160–260 KB added per page, with no size advantage over the CDN, which already serves the same subsetted files). Self-contained means no unresolved *local* images/links, not no network access at all.
+Load these via the Google Fonts `<link>` above, exactly as the source Artifacts do — see [ADR 0009](../adr/0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.md), which reversed #35's "zero network requests" constraint and rejected self-hosting the fonts as data URIs (real measurements put that at ~160–260 KB added per page, with no size advantage over the CDN, which already serves the same subsetted files). Self-contained means no unresolved *local* images/links, not no network access at all.
 
 ## Color tokens
 
@@ -228,10 +228,10 @@ That platform runtime uses its **own hardcoded color palette**, entirely indepen
 
 So today, inside the Artifact, the two flowcharts do **not** visually match the surrounding design system at all — there's no existing color-token mapping to copy.
 
-`docs-build:doc` never renders Mermaid at all, at view time or build time — issue #33 rejects pipeline-rendered Mermaid outright (parser complexity, a required headless-browser step), a constraint [ADR 0009](adr/0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.md)'s zero-network reversal doesn't touch. The two Mermaid blocks in the source Markdown are a **content sketch** only — see #56, which tracks a Claude Code session authoring them as finished SVG image assets using this design system's actual color tokens (not the hardcoded palette above), then embedding them through the pipeline's ordinary image-embedding mechanism like any screenshot.
+`docs-build:doc` never renders Mermaid at all, at view time or build time — issue #33 rejects pipeline-rendered Mermaid outright (parser complexity, a required headless-browser step), a constraint [ADR 0009](../adr/0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.md)'s zero-network reversal doesn't touch. The two Mermaid blocks in the source Markdown are a **content sketch** only — see #56, which tracks a Claude Code session authoring them as finished SVG image assets using this design system's actual color tokens (not the hardcoded palette above), then embedding them through the pipeline's ordinary image-embedding mechanism like any screenshot.
 
 ## What this file deliberately omits
 
-Full markup. This file documents the *visual* system, not a copy-pasteable source — the audience-filter JavaScript (`.chip`/`.legend`/`#reset-filter` and their click handlers) and the TOC's scroll-spy *highlighting* logic (`IntersectionObserver` over `nav.toc`, which toggles `.current` as sections scroll past) exist verbatim in the source Artifact and should be re-embedded as-is per [ADR 0009](adr/0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.md), not reproduced from this description. (An earlier version of this section called these "page-specific interactive behavior" the pipeline should make its own call on, favoring determinism over embedded JS — that framing is reversed by ADR 0009 in favor of matching the reviewed Artifacts.) The TOC's `position: sticky` itself is captured above (Layout conventions) since that's pure CSS, not JS.
+Full markup. This file documents the *visual* system, not a copy-pasteable source — the audience-filter JavaScript (`.chip`/`.legend`/`#reset-filter` and their click handlers) and the TOC's scroll-spy *highlighting* logic (`IntersectionObserver` over `nav.toc`, which toggles `.current` as sections scroll past) exist verbatim in the source Artifact and should be re-embedded as-is per [ADR 0009](../adr/0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.md), not reproduced from this description. (An earlier version of this section called these "page-specific interactive behavior" the pipeline should make its own call on, favoring determinism over embedded JS — that framing is reversed by ADR 0009 in favor of matching the reviewed Artifacts.) The TOC's `position: sticky` itself is captured above (Layout conventions) since that's pure CSS, not JS.
 
 Also omitted: `.keyword-grid`/`.keyword-card`, defined in the main teach doc Artifact's stylesheet but never referenced by its markup — dead CSS in the source Artifact itself, not a rendered design element to reproduce.

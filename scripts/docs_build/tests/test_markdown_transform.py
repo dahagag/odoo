@@ -10,11 +10,13 @@ from scripts.docs_build.markdown_transform import (
 
 
 class RenderMarkdownDocumentTests(unittest.TestCase):
-    def test_is_self_contained_with_no_network_dependencies(self):
+    def test_loads_the_approved_google_fonts_stylesheet(self):
+        # Per ADR 0009, "self-contained" means no unresolved local images/links,
+        # not zero network requests: the shared template loads the same Google
+        # Fonts the hand-authored source Artifacts use.
         html = render_markdown_document("Body text.", fallback_title="Doc")
 
-        self.assertNotIn("http://", html)
-        self.assertNotIn("https://", html)
+        self.assertIn('href="https://fonts.googleapis.com/', html)
         self.assertNotIn("<script", html)
 
     def test_uses_fallback_title_when_no_heading_present(self):
