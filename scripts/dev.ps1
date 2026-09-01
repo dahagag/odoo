@@ -1,6 +1,6 @@
 param(
     [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateSet('doctor', 'build', 'init', 'up', 'down', 'logs', 'shell', 'db-shell', 'scaffold', 'install', 'update', 'test', 'lint', 'reset')]
+    [ValidateSet('doctor', 'build', 'init', 'up', 'down', 'logs', 'shell', 'db-shell', 'scaffold', 'install', 'update', 'test', 'lint', 'docs-build:doc', 'reset')]
     [string]$Command,
 
     [Parameter(Position = 1)]
@@ -105,6 +105,19 @@ function Assert-Module {
             throw "Owned module '$Module' was not found under custom_addons/."
         }
     }
+}
+
+function Assert-RelativePath {
+    param([string]$Path, [string]$Label)
+    if (-not $Path) { throw "$Label requires a path argument." }
+    $normalized = $Path -replace '\\', '/'
+    if ([IO.Path]::IsPathRooted($Path) -or $normalized -split '/' -contains '..') {
+        throw "$Label path must be a relative path inside the repository."
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $script:RepoRoot $normalized))) {
+        throw "$Label path '$Path' does not exist."
+    }
+    return $normalized
 }
 
 function Start-Database {
@@ -269,16 +282,15 @@ switch ($Command) {
     'test' { Invoke-ModuleTest $Argument $Extra $CleanupOnFailure.IsPresent }
     'lint' {
         $path = if ($Argument) { $Argument } else { 'custom_addons' }
-        if ([IO.Path]::IsPathRooted($path) -or $path -split '[\\/]' -contains '..') {
-            throw 'Lint path must be a relative path inside the repository.'
-        }
-        if (-not (Test-Path -LiteralPath (Join-Path $script:RepoRoot $path))) {
-            throw "Lint path '$path' does not exist."
-        }
+        $path = Assert-RelativePath -Path $path -Label 'Lint'
         $ruffArguments = @('run', '--rm', '--no-deps', 'odoo', 'ruff', 'check')
         if ($IsWindows) { $ruffArguments += @('--ignore', 'EXE002') }
-        $ruffArguments += "/workspace/$($path -replace '\\','/')"
+        $ruffArguments += "/workspace/$path"
         Invoke-Compose -Arguments $ruffArguments
+    }
+    'docs-build:doc' {
+        $relativePath = Assert-RelativePath -Path $Argument -Label 'docs-build:doc'
+        Invoke-Compose -Arguments @('run', '--rm', '--no-deps', 'odoo', 'python3', '-m', 'scripts.docs_build.cli', $relativePath)
     }
     'reset' {
         $project = Get-DevSetting 'COMPOSE_PROJECT_NAME' 'agentic-erp-dev'

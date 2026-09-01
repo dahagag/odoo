@@ -84,27 +84,32 @@ which cover issue triage, not PR review.
 
 ## Continuous integration
 
-Two GitHub Actions jobs, both scoped to PRs touching `custom_addons/**`,
-`docker/**`, `requirements.txt`, or the workflow file itself — a docs-only
-or research-only PR doesn't need to rebuild the Odoo image. The workflow
-triggers on PRs targeting either `dev/19.0` (regular feature work) or
-`main/19.0` (release PRs promoting `dev/19.0` to the demo instance), so
-`main/19.0`'s branch protection has a real `lint` check to require. There is
-no separate deploy workflow — Render's native branch auto-deploy handles
+Three GitHub Actions jobs. The workflow itself triggers on every PR
+targeting either `dev/19.0` (regular feature work) or `main/19.0` (release
+PRs promoting `dev/19.0` to the demo instance) — no path filter at the
+trigger level. A preliminary `changes` job diffs the PR against its base for
+`custom_addons/**`, `docker/**`, `scripts/**`, `requirements.txt`,
+`compose.yaml`, or the workflow file itself, and both other jobs read its
+`relevant` output to decide whether to actually do anything. There is no
+separate deploy workflow — Render's native branch auto-deploy handles
 promotion once a release PR merges.
 
-Caveat: a release PR touching only paths outside that filter (e.g.
-docs-only) would never run `lint`, and `main/19.0`'s branch protection
-requires that check — such a PR would stay blocked pending a status that
-never reports. In practice a release PR bundles everything merged into
-`dev/19.0` since the last release, which will touch `custom_addons/**` or
-`docker/**` almost always; if it ever doesn't, add a trivial touch to a
-covered path rather than loosening the filter.
+This replaced an earlier design where the whole workflow was gated by a
+`paths:` filter on the trigger itself: docs-only PRs (regular feature PRs
+into `dev/19.0`, not just rare release PRs) never got a `lint` run at all,
+so they could never satisfy `dev/19.0`'s required status check and stayed
+permanently `BLOCKED` short of an admin bypass (`enforce_admins` is off for
+this repo, so the repo owner can merge past it, but that shouldn't be the
+routine path for an ordinary docs PR). The `lint` job now always completes
+— its steps are individually skipped when `changes.outputs.relevant` is
+`false`, so a docs-only PR gets a fast, real "success" for the required
+check instead of no check at all.
 
 | Job | Trigger scope | Gate |
 |---|---|---|
-| `lint` | as above | **Required** status check — must pass, no override |
-| `test` | as above | Visible, **non-blocking** for now — the full `custom_addons/` suite via the `compose.yaml` stack; revisit once the suite has proven itself over time |
+| `changes` | every PR | Not a check anyone gates on — feeds `relevant` to the other two jobs |
+| `lint` | every PR; steps run only when `relevant` | **Required** status check — must pass, no override |
+| `test` | every PR; whole job skipped when not `relevant` | Visible, **non-blocking** for now — the full `custom_addons/` suite via the `compose.yaml` stack; revisit once the suite has proven itself over time |
 
 Lint blocks because it's cheap and deterministic (`ruff`, no services
 needed). Tests don't block yet because they're the newer, less-proven gate

@@ -15,7 +15,7 @@ CLEANUP_OPTION="${4:-}"
 COMPOSE=()
 
 usage() {
-    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|reset} [argument] [extra] [option]" >&2
+    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|docs-build:doc|reset} [argument] [extra] [option]" >&2
     exit 2
 }
 
@@ -71,6 +71,13 @@ assert_module() {
         echo "Owned module '$module' was not found under custom_addons/." >&2
         exit 1
     fi
+}
+
+assert_relative_path() {
+    local path="$1" label="$2"
+    [[ -n "$path" ]] || { echo "$label requires a path argument." >&2; exit 1; }
+    [[ "$path" != /* && "/$path/" != *"/../"* ]] || { echo "$label path must be a relative path inside the repository." >&2; exit 1; }
+    [[ -e "$path" ]] || { echo "$label path '$path' does not exist." >&2; exit 1; }
 }
 
 start_database() {
@@ -225,13 +232,16 @@ case "$COMMAND" in
     test) module_test "$ARGUMENT" "$EXTRA" "$CLEANUP_OPTION" ;;
     lint)
         lint_path="${ARGUMENT:-custom_addons}"
-        [[ "$lint_path" != /* && "/$lint_path/" != *"/../"* ]] || { echo "Lint path must be relative and inside the repository." >&2; exit 1; }
-        [[ -e "$lint_path" ]] || { echo "Lint path '$lint_path' does not exist." >&2; exit 1; }
+        assert_relative_path "$lint_path" "Lint"
         ruff_options=()
         case "$(uname -s)" in
             CYGWIN*|MINGW*|MSYS*) ruff_options=(--ignore EXE002) ;;
         esac
         compose run --rm --no-deps odoo ruff check "${ruff_options[@]}" "/workspace/$lint_path"
+        ;;
+    docs-build:doc)
+        assert_relative_path "$ARGUMENT" "docs-build:doc"
+        compose run --rm --no-deps odoo python3 -m scripts.docs_build.cli "$ARGUMENT"
         ;;
     reset)
         project="$(setting COMPOSE_PROJECT_NAME agentic-erp-dev)"
