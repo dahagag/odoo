@@ -41,6 +41,7 @@ def render_markdown_document(markdown_text: str, fallback_title: str) -> str:
     """
     blocks = _parse_blocks(markdown_text)
     title = _find_first_heading_text(blocks) or fallback_title
+    blocks = _apply_component_conventions(blocks)
     body_html = "\n".join(_render_block(block) for block in blocks)
     return _TEMPLATE.format(title=html.escape(title, quote=False), body=body_html)
 
@@ -81,6 +82,60 @@ class _Table:
 @dataclass
 class _HorizontalRule:
     pass
+
+
+@dataclass
+class _Hero:
+    title: str
+    dek: str | None
+
+
+@dataclass
+class _Ilo:
+    items: list[str]
+
+
+_ILO_HEADING_TEXT = "intended learning outcomes"
+
+
+def _apply_component_conventions(blocks: list) -> list:
+    """Recognize doc-level conventions (issue #46): a leading H1 (+ optional following
+    paragraph) becomes the hero header; a heading literally titled "Intended Learning
+    Outcomes" followed by a list becomes the ILO box. Both are inferred from structure
+    and heading text a teach-doc author already writes naturally — no new Markdown
+    syntax is introduced.
+    """
+    result = []
+    hero_applied = False
+    index = 0
+    while index < len(blocks):
+        block = blocks[index]
+
+        if not hero_applied and isinstance(block, _Heading) and block.level == 1:
+            dek = None
+            consumed = 1
+            if index + 1 < len(blocks) and isinstance(blocks[index + 1], _Paragraph):
+                dek = blocks[index + 1].text
+                consumed = 2
+            result.append(_Hero(title=block.text, dek=dek))
+            hero_applied = True
+            index += consumed
+            continue
+
+        if (
+            isinstance(block, _Heading)
+            and block.text.strip().lower() == _ILO_HEADING_TEXT
+            and index + 1 < len(blocks)
+            and isinstance(blocks[index + 1], _List)
+        ):
+            result.append(_Ilo(items=blocks[index + 1].items))
+            index += 2
+            continue
+
+        result.append(block)
+        index += 1
+
+    return result
 
 
 def _parse_blocks(markdown_text: str):
@@ -211,6 +266,10 @@ def _render_block(block) -> str:
         return f"<{tag}>{items}</{tag}>"
     if isinstance(block, _Table):
         return _render_table(block)
+    if isinstance(block, _Hero):
+        return _render_hero(block)
+    if isinstance(block, _Ilo):
+        return _render_ilo(block)
     if isinstance(block, _HorizontalRule):
         return "<hr>"
     raise TypeError(f"unknown block type: {block!r}")
@@ -227,6 +286,16 @@ def _render_table(table: _Table) -> str:
         f"<tbody>{rows_html}</tbody>"
         "</table></div>"
     )
+
+
+def _render_hero(hero: _Hero) -> str:
+    dek_html = f"<p class=\"dek\">{_render_inline(hero.dek)}</p>" if hero.dek else ""
+    return f'<header class="hero"><h1 class="title">{_render_inline(hero.title)}</h1>{dek_html}</header>'
+
+
+def _render_ilo(ilo: _Ilo) -> str:
+    items = "".join(f"<li>{_render_inline(item)}</li>" for item in ilo.items)
+    return f'<div class="ilo"><h2>Intended Learning Outcomes</h2><ul>{items}</ul></div>'
 
 
 def _render_inline(text: str) -> str:
@@ -306,6 +375,51 @@ h1, h2, h3, h4, h5, h6{{
   font-weight: 600;
   color: var(--ink-900);
 }}
+header.hero{{
+  padding: 1rem 0 2rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 2rem;
+}}
+h1.title{{
+  font-size: clamp(1.9rem, 4.4vw, 2.8rem);
+  line-height: 1.1;
+  margin: 0 0 0.9rem;
+  text-wrap: balance;
+}}
+.dek{{
+  font-size: 1.05rem;
+  color: var(--ink-700);
+  max-width: 60ch;
+  line-height: 1.55;
+  margin: 0;
+}}
+.ilo{{
+  background: var(--paper-1);
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  padding: 1.4rem 1.6rem;
+  margin-bottom: 2.5rem;
+  box-shadow: var(--shadow);
+}}
+.ilo h2{{
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--amber);
+  margin: 0 0 0.8rem;
+}}
+.ilo ul{{
+  margin: 0;
+  padding-left: 1.2rem;
+}}
+.ilo li{{
+  color: var(--ink-700);
+  line-height: 1.6;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}}
+.ilo li:last-child{{ margin-bottom: 0; }}
 code, pre{{
   font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }}

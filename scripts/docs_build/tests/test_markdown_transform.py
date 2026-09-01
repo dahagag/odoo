@@ -23,7 +23,56 @@ class RenderMarkdownDocumentTests(unittest.TestCase):
         html = render_markdown_document("# Real Title\n\nBody.", fallback_title="Fallback")
 
         self.assertIn("<title>Real Title</title>", html)
-        self.assertIn("<h1>Real Title</h1>", html)
+
+    def test_first_h1_and_following_paragraph_become_hero_header(self):
+        markdown_text = "# Sales Methodology, Explained\n\nWhat the addon does."
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('<header class="hero">', html)
+        self.assertIn('<h1 class="title">Sales Methodology, Explained</h1>', html)
+        self.assertIn('<p class="dek">What the addon does.</p>', html)
+
+    def test_first_h1_without_following_paragraph_becomes_hero_with_no_dek(self):
+        markdown_text = "# Title Only\n\n## Next Section"
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('<header class="hero">', html)
+        self.assertIn('<h1 class="title">Title Only</h1>', html)
+        self.assertNotIn('class="dek"', html)
+
+    def test_only_first_h1_becomes_hero(self):
+        markdown_text = "# First\n\nDek.\n\n# Second"
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertEqual(html.count('<header class="hero">'), 1)
+        self.assertIn("<h1>Second</h1>", html)
+
+    def test_ilo_heading_followed_by_list_becomes_ilo_box(self):
+        markdown_text = "## Intended Learning Outcomes\n\n- Outcome one\n- Outcome two"
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('<div class="ilo"><h2>Intended Learning Outcomes</h2><ul>', html)
+        self.assertIn("<li>Outcome one</li>", html)
+        self.assertEqual(html.count("<ul>"), 1)
+
+    def test_ilo_heading_match_is_case_insensitive(self):
+        markdown_text = "## intended learning OUTCOMES\n\n- Outcome one"
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('<div class="ilo">', html)
+
+    def test_ilo_heading_without_following_list_is_a_plain_heading(self):
+        markdown_text = "## Intended Learning Outcomes\n\nJust a paragraph, not a list."
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertNotIn('<div class="ilo">', html)
+        self.assertIn("<h2>Intended Learning Outcomes</h2>", html)
 
     def test_supports_light_and_dark_theme_tokens(self):
         html = render_markdown_document("Body.", fallback_title="Doc")
