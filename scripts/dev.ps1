@@ -1,6 +1,6 @@
 param(
     [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateSet('doctor', 'build', 'init', 'up', 'down', 'logs', 'shell', 'db-shell', 'scaffold', 'install', 'update', 'test', 'lint', 'reset')]
+    [ValidateSet('doctor', 'build', 'init', 'up', 'down', 'logs', 'shell', 'db-shell', 'scaffold', 'install', 'update', 'test', 'lint', 'docs-build:doc', 'reset')]
     [string]$Command,
 
     [Parameter(Position = 1)]
@@ -279,6 +279,14 @@ switch ($Command) {
         if ($IsWindows) { $ruffArguments += @('--ignore', 'EXE002') }
         $ruffArguments += "/workspace/$($path -replace '\\','/')"
         Invoke-Compose -Arguments $ruffArguments
+    }
+    'docs-build:doc' {
+        if (-not $Argument) { throw 'docs-build:doc requires a Markdown source file argument.' }
+        $relativePath = $Argument -replace '\\', '/'
+        if ([IO.Path]::IsPathRooted($Argument) -or $relativePath -split '/' -contains '..') {
+            throw 'docs-build:doc source path must be a relative path inside the repository.'
+        }
+        Invoke-Compose -Arguments @('run', '--rm', '--no-deps', 'odoo', 'python3', '-m', 'scripts.docs_build.cli', $relativePath)
     }
     'reset' {
         $project = Get-DevSetting 'COMPOSE_PROJECT_NAME' 'agentic-erp-dev'

@@ -15,7 +15,7 @@ CLEANUP_OPTION="${4:-}"
 COMPOSE=()
 
 usage() {
-    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|reset} [argument] [extra] [option]" >&2
+    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|docs-build:doc|reset} [argument] [extra] [option]" >&2
     exit 2
 }
 
@@ -232,6 +232,11 @@ case "$COMMAND" in
             CYGWIN*|MINGW*|MSYS*) ruff_options=(--ignore EXE002) ;;
         esac
         compose run --rm --no-deps odoo ruff check "${ruff_options[@]}" "/workspace/$lint_path"
+        ;;
+    docs-build:doc)
+        [[ -n "$ARGUMENT" ]] || { echo "docs-build:doc requires a Markdown source file argument." >&2; exit 1; }
+        [[ "$ARGUMENT" != /* && "/$ARGUMENT/" != *"/../"* ]] || { echo "docs-build:doc source path must be a relative path inside the repository." >&2; exit 1; }
+        compose run --rm --no-deps odoo python3 -m scripts.docs_build.cli "$ARGUMENT"
         ;;
     reset)
         project="$(setting COMPOSE_PROJECT_NAME agentic-erp-dev)"
