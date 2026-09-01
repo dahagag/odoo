@@ -115,11 +115,11 @@ td{
 <body>
 <main class="shell">
 <h1>Teach-doc design system</h1>
-<p>Ground truth for <code>docs-build:doc</code>&#x27;s shared HTML/CSS template (<a href="https://github.com/dahagag/odoo/issues/35" rel="noopener noreferrer">#35</a>). Extracted from the two hand-authored Claude Artifacts stakeholders already reviewed (published from <code>docs/teach/sales-methodology-vs-odoo-crm.md</code> and <code>docs/teach/methodologies.md</code> — see <a href="adr/0007-self-contained-teach-docs-served-from-static.md" rel="noopener noreferrer">ADR 0007</a>). This file is a reference for implementation, not itself rendered output — do not treat it as a third teach doc.</p>
+<p>Ground truth for <code>docs-build:doc</code>&#x27;s shared HTML/CSS template (<a href="https://github.com/dahagag/odoo/issues/35" rel="noopener noreferrer">#35</a>). Extracted from the two hand-authored Claude Artifacts stakeholders already reviewed (published from <code>docs/teach/sales-methodology-vs-odoo-crm.md</code> and <code>docs/teach/methodologies.md</code> — see <a href="0007-self-contained-teach-docs-served-from-static.html" rel="noopener noreferrer">ADR 0007</a>). This file is a reference for implementation, not itself rendered output — do not treat it as a third teach doc.</p>
 <h2>Fonts</h2>
 <pre><code>&lt;link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&amp;family=Karla:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap"&gt;</code></pre>
 <ul><li><strong>Display/headings</strong>: <code>&#x27;Source Serif 4&#x27;, Georgia, serif</code> — weight 600 for <code>h1</code>/<code>h2</code>.</li><li><strong>Body</strong>: <code>&#x27;Karla&#x27;, system-ui, sans-serif</code>.</li><li><strong>Labels, data, code, eyebrows</strong>: <code>&#x27;IBM Plex Mono&#x27;, monospace</code>.</li></ul>
-<p>Per #35&#x27;s Implementation Decisions, whether these load via the Google Fonts <code>&lt;link&gt;</code> above (fine inside a Claude Artifact&#x27;s sandbox, not fine for a truly self-contained/offline static file) or get embedded as data URIs / replaced with a system-font fallback is still open — resolve it there, not here.</p>
+<p>Load these via the Google Fonts <code>&lt;link&gt;</code> above, exactly as the source Artifacts do — see <a href="0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.html" rel="noopener noreferrer">ADR 0009</a>, which reversed #35&#x27;s &quot;zero network requests&quot; constraint and rejected self-hosting the fonts as data URIs (real measurements put that at ~160–260 KB added per page, with no size advantage over the CDN, which already serves the same subsetted files). Self-contained means no unresolved <em>local</em> images/links, not no network access at all.</p>
 <h2>Color tokens</h2>
 <pre><code>:root{
   --ink-900:#1B2430; --ink-700:#3E4A59; --ink-500:#6B7688;
@@ -147,11 +147,105 @@ td{
 <p>Roles: <code>ink-*</code> = text (900 primary, 700 secondary, 500 tertiary/labels). <code>paper-0</code>/<code>paper-1</code> = page background / card background. <code>line</code> = hairline borders. <code>amber</code> = primary accent (links-on-hover, eyebrows, active states). <code>teal</code> = links, &quot;Sales&quot;-tagged content. <code>violet</code> = &quot;R&amp;D&quot;-tagged content. <code>block</code> = error/blocker semantic color (distinct from the accent hues). <code>-soft</code> variants = tinted backgrounds for badges/callouts at low opacity-equivalent lightness.</p>
 <p><code>--block</code> was only defined on the main teach doc (it has status pills: New/Extended/Unchanged); the methodologies page omits it since it doesn&#x27;t need that semantic. Include it in the shared template regardless — the &quot;used in our demo&quot; badges and any future status pill need it.</p>
 <h2>Layout conventions</h2>
-<ul><li><code>.shell { max-width: 1180px }</code> for the main multi-section page (with a sidebar TOC); <code>840px</code> for a single-column deep-dive page (no TOC needed).</li><li>Responsive padding: <code>padding: 0 clamp(1.25rem, 4vw, 3rem) 6rem</code> (main page) / <code>clamp(1.25rem, 4vw, 2rem)</code> (deep-dive page).</li><li>Sidebar TOC: <code>230px</code> fixed column + <code>minmax(0,1fr)</code> content, collapsing to a single column under <code>860px</code> via <code>grid-template-columns: 1fr</code>.</li></ul>
+<ul><li><code>.shell { max-width: 1180px }</code> for the main multi-section page (with a sidebar TOC); <code>840px</code> for a single-column deep-dive page (no TOC needed).</li><li>Responsive padding: <code>padding: 0 clamp(1.25rem, 4vw, 3rem) 6rem</code> (main page) / <code>clamp(1.25rem, 4vw, 2rem)</code> (deep-dive page).</li><li>Sidebar TOC: <code>230px</code> fixed column + <code>minmax(0,1fr)</code> content, collapsing to a single column under <code>860px</code> via <code>grid-template-columns: 1fr</code>. The TOC column itself is <code>position: sticky; top: 1.5rem</code> — pure CSS, no script — so it stays in view while the main column scrolls past it; this is distinct from (and required even without) the scroll-spy JS noted below, which only handles highlighting the <em>current</em> section as you scroll, not the sticking itself.</li></ul>
 <h2>Component patterns</h2>
-<ul><li><strong>Audience tags</strong>: small circular badges (<code>.tag.s/.r/.c</code>, 1.4rem circle, IBM Plex Mono, background = the role&#x27;s accent color, white text).</li><li><strong>Callouts</strong> (<code>blockquote.callout</code>): left border in <code>--amber</code> (3px), tinted <code>--amber-soft</code> background, small uppercase IBM Plex Mono label (<code>&lt;b&gt;</code> child) above the body text, 0.5rem border radius.</li><li><strong>Tables</strong> (<code>.table-wrap &gt; table</code>): wrapped in <code>overflow-x:auto</code> + bordered container with <code>box-shadow: var(--shadow)</code>; header row uses IBM Plex Mono uppercase labels on <code>--paper-0</code> background; body rows on <code>--paper-1</code>; <code>tabular-nums</code> implied by IBM Plex Mono&#x27;s monospace digits.</li><li><strong>Status pills</strong> (<code>.pill.new/.ext/.same</code>): small rounded-pill badges, IBM Plex Mono, background = the status&#x27;s <code>-soft</code> color, text = the full-saturation color (<code>new</code>→teal, <code>ext</code>→violet, <code>same</code>→block).</li><li><strong>Focus state</strong>: <code>a:focus-visible, button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px }</code> — applied uniformly, not per-component.</li><li><strong><code>prefers-reduced-motion</code></strong>: any transition/animation added to the shared template must be guarded with <code>@media (prefers-reduced-motion: reduce) { *{ transition:none !important; } }</code>, per the two source Artifacts.</li></ul>
+<p>Each pattern below is a trimmed, illustrative sample of the actual markup from the source Artifacts — not the full page. It won&#x27;t render live in a plain Markdown viewer (GitHub strips <code>&lt;style&gt;</code> from rendered Markdown), but it documents the exact HTML shape a generator should produce; pair it with the CSS in each source Artifact for the full rule.</p>
+<h3>Page header</h3>
+<p>Both source Artifacts open with the same block — a small uppercase IBM Plex Mono &quot;eyebrow&quot; label in <code>--amber</code>, a serif <code>h1.title</code> (<code>&#x27;Source Serif 4&#x27;, Georgia, serif</code>, weight 600, <code>text-wrap: balance</code>), and a <code>.dek</code> subtitle paragraph in <code>--ink-700</code> capped to a readable measure (<code>max-width: 52–60ch</code>). Bottom-bordered in <code>--line</code> and bottom-margined 2–2.5rem to separate it from the body.</p>
+<pre><code>&lt;header class="hero"&gt;
+  &lt;p class="eyebrow"&gt;Teach doc · custom_addons/crm_methodology&lt;/p&gt;
+  &lt;h1 class="title"&gt;Sales Methodology, Explained&lt;/h1&gt;
+  &lt;p class="dek"&gt;What the addon does, why it exists, and how it differs from stock Odoo CRM.&lt;/p&gt;
+&lt;/header&gt;</code></pre>
+<h3>Intended Learning Outcomes box</h3>
+<p>A bordered, shadowed card (<code>--paper-1</code> background, <code>--line</code> border, <code>box-shadow: var(--shadow)</code>, ~0.7rem radius) opening with a small uppercase IBM Plex Mono heading in <code>--amber</code>, then a plain <code>&lt;ul&gt;</code> of outcomes in <code>--ink-700</code>. Appears on the deep-dive page; treat as a required component for that page type, not optional decoration.</p>
+<pre><code>&lt;div class="ilo"&gt;
+  &lt;h2&gt;Intended Learning Outcomes&lt;/h2&gt;
+  &lt;ul&gt;
+    &lt;li&gt;Name the core framework of each methodology the addon can model.&lt;/li&gt;
+    &lt;li&gt;Explain what problem each methodology claims to solve.&lt;/li&gt;
+  &lt;/ul&gt;
+&lt;/div&gt;</code></pre>
+<h3>Section header row</h3>
+<p>Both pages wrap each <code>h2</code> in a flex row (<code>display:flex; align-items:center</code> or <code>baseline</code>, <code>gap:.7–.8rem</code>, <code>flex-wrap:wrap</code>) rather than using a bare heading, so a leading marker and trailing badges can sit inline with the title. The two source Artifacts use this for different purposes: the main teach doc&#x27;s <code>.sec-head</code> prefixes each section with a two-digit <code>.sec-num</code> counter (IBM Plex Mono, <code>--ink-500</code>) and trails it with the audience-tags cluster; the methodologies page&#x27;s <code>.method-head</code> has no counter and instead trails the title with an optional <code>.demo-badge</code>. Same layout idea, different contents — treat as one pattern with an optional leading and optional trailing slot, not two unrelated components.</p>
+<pre><code>&lt;div class="sec-head"&gt;
+  &lt;span class="sec-num"&gt;04&lt;/span&gt;
+  &lt;h2&gt;The workflow story&lt;/h2&gt;
+  &lt;span class="tags"&gt;&lt;span class="tag s"&gt;S&lt;/span&gt;&lt;span class="tag c"&gt;C&lt;/span&gt;&lt;/span&gt;
+&lt;/div&gt;</code></pre>
+<pre><code>&lt;div class="method-head"&gt;
+  &lt;h2 class="method-title"&gt;MEDDIC / MEDDPICC&lt;/h2&gt;
+  &lt;span class="demo-badge"&gt;Used in our demo&lt;/span&gt;
+&lt;/div&gt;</code></pre>
+<h3>Audience tags</h3>
+<p>Small circular badges (<code>.tag.s/.r/.c</code>, 1.4rem circle, IBM Plex Mono, background = the role&#x27;s accent color, white text).</p>
+<pre><code>&lt;span class="tags"&gt;
+  &lt;span class="tag s" title="Sales"&gt;S&lt;/span&gt;
+  &lt;span class="tag r" title="R&amp;amp;D"&gt;R&lt;/span&gt;
+  &lt;span class="tag c" title="Consultants"&gt;C&lt;/span&gt;
+&lt;/span&gt;</code></pre>
+<h3>&quot;Used in X&quot; badge</h3>
+<p>Visually a status pill — rounded, IBM Plex Mono, uppercase, <code>--teal-soft</code> background with <code>--teal</code> text — but a different semantic than the New/Extended/Unchanged status pill below (it flags &quot;this item is exercised by the demo data,&quot; not a code-change status). Share the same pill CSS shape; do not conflate the two meanings when generating markup.</p>
+<pre><code>&lt;span class="demo-badge"&gt;Used in our demo&lt;/span&gt;</code></pre>
+<h3>Per-item label</h3>
+<p>A small uppercase IBM Plex Mono label in <code>--ink-500</code>, displayed as a block above a value — used to caption an inline fact (e.g. &quot;Origin&quot;, &quot;The framework&quot;) without a full heading.</p>
+<pre><code>&lt;p&gt;&lt;span class="label"&gt;Origin&lt;/span&gt;Developed inside PTC in the early 1990s.&lt;/p&gt;</code></pre>
+<h3>Callouts</h3>
+<p>Left border in <code>--amber</code> (3px), tinted <code>--amber-soft</code> background, small uppercase IBM Plex Mono label (<code>&lt;b&gt;</code> child) above the body text, 0.5rem border radius.</p>
+<pre><code>&lt;blockquote class="callout"&gt;
+  &lt;b&gt;For consultants&lt;/b&gt;
+  None of this touches the kanban pipeline.
+&lt;/blockquote&gt;</code></pre>
+<h3>Numbered step list</h3>
+<p>Steps rendered without native list markers; each <code>&lt;li&gt;</code> gets a circular IBM Plex Mono index badge (<code>counter(step)</code>, <code>--amber</code> border and text, 1.6rem circle) positioned left of the text, connected to the next step by a 1px <code>--line</code> vertical connector (omitted after the last item).</p>
+<pre><code>&lt;ol class="steps"&gt;
+  &lt;li&gt;A client has a default methodology; every new opportunity inherits it.&lt;/li&gt;
+  &lt;li&gt;The opportunity's Qualification tab shows live completion.&lt;/li&gt;
+&lt;/ol&gt;</code></pre>
+<h3>Definition list / glossary</h3>
+<p>A two-column grid (<code>grid-template-columns: max-content 1fr</code>), <code>dt</code> in bold IBM Plex Mono (<code>--ink-900</code>, <code>white-space: nowrap</code>), <code>dd</code> in <code>--ink-700</code> — used for a short list of must-use-consistently vocabulary terms.</p>
+<pre><code>&lt;dl class="terms"&gt;
+  &lt;dt&gt;Sales Methodology&lt;/dt&gt;
+  &lt;dd&gt;A named qualification framework, owning Requirements and Playbook Questions.&lt;/dd&gt;
+&lt;/dl&gt;</code></pre>
+<h3>Reading list links</h3>
+<p>Unstyled <code>&lt;li&gt;</code> rows, each wrapping an <code>&lt;a&gt;</code> styled as a bordered card (<code>--line</code> border, 0.5rem radius, <code>--paper-1</code> background) with a trailing <code>→</code> glyph (<code>content: &quot;→&quot;</code> in <code>--amber</code>, IBM Plex Mono) pushed to the row&#x27;s end; hover brightens the border to <code>--amber</code> and nudges the row right 2px.</p>
+<pre><code>&lt;ul class="reading"&gt;
+  &lt;li&gt;&lt;a href="../adr/0005-methodology-requirements-reference-properties-by-key.md"&gt;ADR 0005 — Requirements reference Properties by key&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</code></pre>
+<h3>Tables</h3>
+<p>Wrapped in <code>overflow-x:auto</code> + bordered container with <code>box-shadow: var(--shadow)</code>; header row uses IBM Plex Mono uppercase labels on <code>--paper-0</code> background; body rows on <code>--paper-1</code>; <code>tabular-nums</code> implied by IBM Plex Mono&#x27;s monospace digits.</p>
+<pre><code>&lt;div class="table-wrap"&gt;
+  &lt;table&gt;
+    &lt;thead&gt;&lt;tr&gt;&lt;th class="model"&gt;Model&lt;/th&gt;&lt;th&gt;What the addon adds&lt;/th&gt;&lt;th&gt;OOTB status&lt;/th&gt;&lt;/tr&gt;&lt;/thead&gt;
+    &lt;tbody&gt;
+      &lt;tr&gt;&lt;td class="model"&gt;crm.methodology&lt;/td&gt;&lt;td&gt;Named framework.&lt;/td&gt;&lt;td&gt;&lt;span class="pill new"&gt;New&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+    &lt;/tbody&gt;
+  &lt;/table&gt;
+&lt;/div&gt;</code></pre>
+<h3>Status pills</h3>
+<p>Small rounded-pill badges, IBM Plex Mono, background = the status&#x27;s <code>-soft</code> color, text = the full-saturation color (<code>new</code>→teal, <code>ext</code>→violet, <code>same</code>→block).</p>
+<pre><code>&lt;span class="pill new"&gt;New&lt;/span&gt;
+&lt;span class="pill ext"&gt;Extended&lt;/span&gt;
+&lt;span class="pill same"&gt;Unchanged&lt;/span&gt;</code></pre>
+<h3>Footer note</h3>
+<p>Small IBM Plex Mono text in <code>--ink-500</code>, top-bordered in <code>--line</code> — used for a closing &quot;verified against code as of…&quot; provenance line or a single back-link. The main teach doc uses <code>footer.verify</code> for the provenance-line variant; the deep-dive page uses <code>footer.reading</code> wrapping a single <code>a.backlink</code> (same font/size/color, hover brightens to <code>--amber</code>, leading <code>←</code> glyph) instead.</p>
+<pre><code>&lt;footer class="verify"&gt;Verified against code as of 2026-09-01 — six of seven technical claims checked directly.&lt;/footer&gt;</code></pre>
+<pre><code>&lt;footer class="reading"&gt;
+  &lt;a class="backlink" href="https://claude.ai/code/artifact/34b9bfe1-df69-41f9-a912-adf3d73c50d3"&gt;&amp;larr; Back to Sales Methodology, Explained&lt;/a&gt;
+&lt;/footer&gt;</code></pre>
+<h3>Focus state and reduced motion</h3>
+<p><code>a:focus-visible, button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px }</code> — applied uniformly, not per-component. Any transition/animation added to the shared template must be guarded with <code>@media (prefers-reduced-motion: reduce) { *{ transition:none !important; } }</code>, per the two source Artifacts. Neither has a markup sample — they&#x27;re global CSS rules, not components with their own HTML shape.</p>
+<h2>Mermaid diagrams</h2>
+<p>Verified directly against the live Artifact&#x27;s page source (not just the two source <code>.md</code>/<code>.html</code> files): the main teach doc author only writes <code>&lt;pre class=&quot;mermaid&quot;&gt;…flowchart syntax as plain text…&lt;/pre&gt;</code> twice — nothing else. There is no Mermaid <code>&lt;script&gt;</code> or <code>&lt;link&gt;</code> in the Artifact&#x27;s own authored markup. The rendering is done entirely by a runtime the Claude Artifacts <em>platform</em> injects after the author&#x27;s content (bounded by an explicit <code>&lt;!--claude-mermaid-runtime-end--&gt;</code> marker in the page source), bundling the full Mermaid library inline (not fetched from a CDN at view time) and scanning the page for <code>pre.mermaid</code> elements to replace with rendered SVG.</p>
+<p>That platform runtime uses its <strong>own hardcoded color palette</strong>, entirely independent of this doc&#x27;s <code>--ink</code>/<code>--paper</code>/<code>--amber</code>/<code>--teal</code>/<code>--violet</code>/<code>--block</code> tokens:</p>
+<pre><code>{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},
+ "dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}</code></pre>
+<p>So today, inside the Artifact, the two flowcharts do <strong>not</strong> visually match the surrounding design system at all — there&#x27;s no existing color-token mapping to copy.</p>
+<p><code>docs-build:doc</code> never renders Mermaid at all, at view time or build time — issue #33 rejects pipeline-rendered Mermaid outright (parser complexity, a required headless-browser step), a constraint <a href="0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.html" rel="noopener noreferrer">ADR 0009</a>&#x27;s zero-network reversal doesn&#x27;t touch. The two Mermaid blocks in the source Markdown are a <strong>content sketch</strong> only — see #56, which tracks a Claude Code session authoring them as finished SVG image assets using this design system&#x27;s actual color tokens (not the hardcoded palette above), then embedding them through the pipeline&#x27;s ordinary image-embedding mechanism like any screenshot.</p>
 <h2>What this file deliberately omits</h2>
-<p>Full markup, the audience-filter JavaScript, and the sticky-TOC scroll-spy logic from the main teach doc&#x27;s Artifact — those are page-specific interactive behavior from a single-page design, not necessarily what the generated multi-page pipeline output should do. #35 should treat this file as the <em>visual</em> system to reproduce, and make its own call on interactivity within the pipeline&#x27;s own constraints (e.g. determinism, no embedded per-view JS state).</p>
+<p>Full markup. This file documents the <em>visual</em> system, not a copy-pasteable source — the audience-filter JavaScript (<code>.chip</code>/<code>.legend</code>/<code>#reset-filter</code> and their click handlers) and the TOC&#x27;s scroll-spy <em>highlighting</em> logic (<code>IntersectionObserver</code> over <code>nav.toc</code>, which toggles <code>.current</code> as sections scroll past) exist verbatim in the source Artifact and should be re-embedded as-is per <a href="0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.html" rel="noopener noreferrer">ADR 0009</a>, not reproduced from this description. (An earlier version of this section called these &quot;page-specific interactive behavior&quot; the pipeline should make its own call on, favoring determinism over embedded JS — that framing is reversed by ADR 0009 in favor of matching the reviewed Artifacts.) The TOC&#x27;s <code>position: sticky</code> itself is captured above (Layout conventions) since that&#x27;s pure CSS, not JS.</p>
+<p>Also omitted: <code>.keyword-grid</code>/<code>.keyword-card</code>, defined in the main teach doc Artifact&#x27;s stylesheet but never referenced by its markup — dead CSS in the source Artifact itself, not a rendered design element to reproduce.</p>
 </main>
 </body>
 </html>
