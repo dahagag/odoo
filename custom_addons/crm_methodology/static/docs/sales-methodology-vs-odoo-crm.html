@@ -84,6 +84,17 @@
   }
 
   /* ---------- Header ---------- */
+  /* Hero walkthrough video. Rules copied verbatim from docs-build:doc's template
+     (scripts/docs_build/markdown_transform.py) so a regeneration under #74 matches. */
+  .video-embed{
+    margin:0 0 2rem;
+  }
+  .video-embed video{
+    display:block;
+    width:100%;
+    border-radius:.5rem;
+    box-shadow:var(--shadow);
+  }
   header.hero{
     padding:clamp(2.5rem,6vw,4rem) 0 2rem;
     border-bottom:1px solid var(--line);
@@ -432,6 +443,7 @@
 <body>
 
 <div class="shell">
+  <div class="video-embed"><video src="sales-methodology-vs-odoo-crm.mp4" controls preload="metadata"></video></div>
   <header class="hero">
     <p class="eyebrow">Teach doc &middot; custom_addons/crm_methodology</p>
     <h1 class="title">Sales Methodology, Explained</h1>
