@@ -10,23 +10,23 @@ _BASELINE_COMMIT = "35222a314d3b0e4fd94ae8249c2abd995d796e59"
 _APPROVED_OUTPUTS = {
     "custom_addons/crm_methodology/static/docs/0005-methodology-requirements-reference-properties-by-key.html": (
         "docs/adr/0005-methodology-requirements-reference-properties-by-key.md",
-        "9a2eceaa5f9541754f7aca2dea1c9d0af2fc46b62ac406599355bd3a13779ec2",
+        "71d71732cd080dd85317752d5b5619227e6df388faca552b366d142afbbdaedd",
     ),
     "custom_addons/crm_methodology/static/docs/CONTEXT.html": (
         "docs/contexts/crm/CONTEXT.md",
-        "93a2ef7131a785e93b741fa0dc18ac270c5cd4bed9dc8739e8543c72909dc5a7",
+        "5a606d8f29d8304fe77297826db37366c0a2ce0dd287a20ba20543bd5791bb8d",
     ),
     "custom_addons/crm_methodology/static/docs/b2b-sales-methodologies-odoo.html": (
         "docs/research/b2b-sales-methodologies-odoo.md",
-        "64abde08dd501c6b180a3ac7cf609f19bf10b1db3aa50cff56a474f55a1dda93",
+        "5faa79a19f921b18544cbcfe802cdb5bac3fae63f1a172bc6d48bcf2f1f5ef92",
     ),
     "custom_addons/crm_methodology/static/docs/methodologies.html": (
         "docs/teach/methodologies.md",
-        "f46b5b3bee49b74872c83f6277c3e4e1ffdf501513ed81e41646546a876d8dc2",
+        "03a37302b396e8a174ab1dcd981e08cf90633b4b3e53d2a11704c30b801d487f",
     ),
     "custom_addons/crm_methodology/static/docs/sales-methodology-vs-odoo-crm.html": (
         "docs/teach/sales-methodology-vs-odoo-crm.md",
-        "89b1d31c012b149240156ca7ead42fa2ce210459994ed44890f949ba797c7e36",
+        "c341e577a8971eb789ae9ca425cdcabf9da333cb6f3b31bfc867fd1926291142",
     ),
 }
 _STALE_OUTPUTS = {
