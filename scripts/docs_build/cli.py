@@ -20,6 +20,13 @@ byte-identical output; a failure on any entry or any document in the closure
 exits non-zero naming that specific file, exactly as the single-file mode
 does. See issue #41.
 
+This whole-directory build also owns the complete managed HTML output set: any
+`*.html` file already sitting in the output directory that this run didn't
+(re)write is stale — no longer reachable from any current entry — and is
+deleted. Non-HTML files (most notably a `docs-build:video`-rendered `.mp4`,
+independently governed per docs/adr/0008) are never touched by this cleanup.
+See issue #85.
+
 Every local image a rendered document references (a product screenshot, a
 pre-authored diagram — never a pipeline-rendered Mermaid diagram, see issue
 #33) is read from disk and embedded into that document's HTML as a data URI,
@@ -30,14 +37,19 @@ referencing document and the missing file, the same way a broken internal
 still embeds, but prints a build warning, since a large embedded image bloats
 every view of the page it's on.
 
-If a document's own output directory already holds a sibling MP4 (named
-`<stem>.mp4`, matching the generated `<stem>.html`) — written there by a prior
-`docs-build:video` run, mechanically re-rendering an already-authored
-HyperFrames project (see docs/adr/0008 and issue #40) — the generated page
-embeds it as a `<video>` tag at the top of the page. It is never base64-encoded
-like an image: video doesn't compress usefully into a data URI and can't
-stream or seek from one. A document with no sibling MP4 renders with no video
-tag at all.
+If a teach doc has an authored HyperFrames project at
+`docs/teach/videos/<stem>/` (a `hyperframes.json`, storyboard, script, and
+composition committed by a prior authoring session — see docs/adr/0008 and
+issue #40), the generated page embeds a sibling `<stem>.mp4` as a `<video>` tag
+at the top of the page, regardless of whether that MP4 has actually been
+rendered yet in the output directory. Video presence and placement is decided
+from this declared authoring input, not from output-directory state: a clean
+build reaches its final HTML in one invocation whether `docs-build:video` runs
+before or after it, and re-running `docs-build:doc` never changes a document's
+video markup just because the output directory did or didn't already hold the
+MP4. See issue #87. It is never base64-encoded like an image: video doesn't
+compress usefully into a data URI and can't stream or seek from one. A teach
+doc with no authored project renders with no video tag at all.
 
 A document is only rendered because something in the closure links to it —
 this is not a whole-repo Markdown build.
@@ -60,6 +72,16 @@ from scripts.docs_build.markdown_transform import (
 
 DEFAULT_OUTPUT_DIR = Path("custom_addons/crm_methodology/static/docs")
 TEACH_DIR = Path("docs/teach")
+
+# Authored HyperFrames video projects live at docs/teach/videos/<stem>/ (see
+# scripts/docs_build/video_cli.py and docs/adr/0008), one per teach doc that has a
+# walkthrough video authored for it. Whether a rendered page gets a <video> tag is
+# decided from this declared authoring input, not from whether an MP4 already
+# happens to sit in the output directory — the latter would make HTML output
+# depend on what a previous build (or none at all) left behind, so a clean build
+# could need a second run to converge and an unchanged build's output could vary
+# with unrelated output-directory history. See issue #87.
+DEFAULT_VIDEOS_DIR = Path("docs/teach/videos")
 
 # docs/teach/DESIGN-TOKENS.md documents itself as implementation reference for this
 # pipeline's own template, not stakeholder-facing content — "do not treat it as a
@@ -86,7 +108,7 @@ class _Document:
     local_images: dict[str, Path]  # raw href -> resolved source path, both as found in this doc
 
 
-def build_doc(source: Path, output_dir: Path) -> Path:
+def build_doc(source: Path, output_dir: Path, *, videos_dir: Path = DEFAULT_VIDEOS_DIR) -> Path:
     """Render `source` and its closure of local `.md` links under `output_dir`.
 
     Returns the path written for `source` itself.
@@ -97,7 +119,7 @@ def build_doc(source: Path, output_dir: Path) -> Path:
         raise DocsBuildError(f"{source}: source file not found")
 
     closure = _discover_closure([source])
-    output_paths = _render_closure(closure, output_dir)
+    output_paths = _render_closure(closure, output_dir, videos_dir=videos_dir)
     return output_paths[source]
 
 
@@ -114,7 +136,9 @@ def discover_teach_entries(teach_dir: Path) -> list[Path]:
     )
 
 
-def build_all(teach_dir: Path, output_dir: Path) -> list[Path]:
+def build_all(
+    teach_dir: Path, output_dir: Path, *, videos_dir: Path = DEFAULT_VIDEOS_DIR,
+) -> list[Path]:
     """Render every `teach_dir/*.md` entry and their combined link closure.
 
     Two runs against unchanged input produce byte-identical output: entries are
@@ -122,17 +146,37 @@ def build_all(teach_dir: Path, output_dir: Path) -> list[Path]:
     depends only on its own text and the (order-independent) map of resolved
     link/image targets. Returns the output paths written for the entries
     themselves, in the same sorted order.
+
+    Also removes stale managed HTML: any `*.html` file already in `output_dir`
+    that this build did not (re)write. Non-HTML files — most notably a
+    `docs-build:video`-rendered `.mp4` — are never touched by this cleanup, since
+    they're independently governed (see docs/adr/0008 and issue #85).
     """
     entries = discover_teach_entries(teach_dir)
     if not entries:
         raise DocsBuildError(f"{teach_dir}: no renderable *.md files found")
 
     closure = _discover_closure(entries)
-    output_paths = _render_closure(closure, output_dir)
+    output_paths = _render_closure(closure, output_dir, videos_dir=videos_dir)
+    _remove_stale_managed_html(output_dir, managed=set(output_paths.values()))
     return [output_paths[entry] for entry in entries]
 
 
-def _render_closure(closure: dict[Path, _Document], output_dir: Path) -> dict[Path, Path]:
+def _remove_stale_managed_html(output_dir: Path, *, managed: set[Path]) -> None:
+    """Delete every `*.html` in `output_dir` not in `managed`.
+
+    Only `.html` files are considered stale-managed output; every other file
+    (e.g. a sibling `.mp4`) is left untouched regardless of whether anything in
+    this build referenced it.
+    """
+    for existing in output_dir.glob("*.html"):
+        if existing not in managed:
+            existing.unlink()
+
+
+def _render_closure(
+    closure: dict[Path, _Document], output_dir: Path, *, videos_dir: Path = DEFAULT_VIDEOS_DIR,
+) -> dict[Path, Path]:
     """Write every document in `closure` as self-contained HTML under `output_dir`.
 
     Returns the map of source path to written output path.
@@ -142,9 +186,7 @@ def _render_closure(closure: dict[Path, _Document], output_dir: Path) -> dict[Pa
 
     for doc_path, document in closure.items():
         fallback_title = _title_from_filename(doc_path.stem)
-        output_path = output_paths[doc_path]
-        video_path = output_path.with_suffix(".mp4")
-        video_src = video_path.name if video_path.is_file() else None
+        video_src = f"{doc_path.stem}.mp4" if _has_authored_video(doc_path.stem, videos_dir) else None
 
         def resolve_href(href: str, _local_links: dict[str, Path] = document.local_links) -> str:
             target = _local_links[href]
@@ -169,6 +211,18 @@ def _render_closure(closure: dict[Path, _Document], output_dir: Path) -> dict[Pa
         output_paths[doc_path].write_text(rendered_html, encoding="utf-8")
 
     return output_paths
+
+
+def _has_authored_video(stem: str, videos_dir: Path) -> bool:
+    """Return whether `stem` has an authored HyperFrames project under `videos_dir`.
+
+    This is the declared build input `docs-build:video` renders from (see
+    `scripts.docs_build.video_cli`) — checking it, rather than whether a
+    `<stem>.mp4` already happens to exist in the output directory, means a
+    document's HTML never depends on unrelated prior output-directory state or
+    on build ordering relative to `docs-build:video`. See issue #87.
+    """
+    return (videos_dir / stem / "hyperframes.json").is_file()
 
 
 def _embed_image_as_data_uri(image_path: Path, *, referencing_doc: Path) -> str:

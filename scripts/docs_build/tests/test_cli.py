@@ -275,31 +275,51 @@ class BuildDocImageEmbeddingTests(unittest.TestCase):
 
 
 class BuildDocVideoEmbedTests(unittest.TestCase):
-    def test_embeds_sibling_video_that_already_exists_in_the_output_dir(self):
+    def test_embeds_sibling_video_for_a_declared_hyperframes_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "doc.md"
+            source.write_text("# Doc\n\nBody.", encoding="utf-8")
+            output_dir = Path(tmp) / "out"
+            videos_dir = Path(tmp) / "videos"
+            (videos_dir / "doc").mkdir(parents=True)
+            (videos_dir / "doc" / "hyperframes.json").write_text("{}", encoding="utf-8")
+
+            output_path = build_doc(source, output_dir, videos_dir=videos_dir)
+
+            html = output_path.read_text(encoding="utf-8")
+            self.assertIn('<video src="doc.mp4" controls', html)
+
+    def test_omits_video_tag_when_no_hyperframes_project_is_declared(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "doc.md"
+            source.write_text("# Doc\n\nBody.", encoding="utf-8")
+            output_dir = Path(tmp) / "out"
+            videos_dir = Path(tmp) / "videos"
+
+            output_path = build_doc(source, output_dir, videos_dir=videos_dir)
+
+            html = output_path.read_text(encoding="utf-8")
+            self.assertNotIn("<video", html)
+
+    def test_video_tag_is_unaffected_by_an_already_rendered_mp4_in_the_output_dir(self):
+        # The output directory may already hold a previously rendered MP4 (or a
+        # stale one from an unrelated project) - that alone must not add or
+        # remove a <video> tag. Only the declared docs/teach/videos/<stem>/
+        # authoring input decides.
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "doc.md"
             source.write_text("# Doc\n\nBody.", encoding="utf-8")
             output_dir = Path(tmp) / "out"
             output_dir.mkdir()
             (output_dir / "doc.mp4").write_bytes(b"fake-mp4-bytes")
+            videos_dir = Path(tmp) / "videos"
 
-            output_path = build_doc(source, output_dir)
-
-            html = output_path.read_text(encoding="utf-8")
-            self.assertIn('<video src="doc.mp4" controls', html)
-
-    def test_omits_video_tag_when_no_sibling_video_exists(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "doc.md"
-            source.write_text("# Doc\n\nBody.", encoding="utf-8")
-            output_dir = Path(tmp) / "out"
-
-            output_path = build_doc(source, output_dir)
+            output_path = build_doc(source, output_dir, videos_dir=videos_dir)
 
             html = output_path.read_text(encoding="utf-8")
             self.assertNotIn("<video", html)
 
-    def test_each_closure_member_gets_its_own_sibling_video_lookup(self):
+    def test_each_closure_member_gets_its_own_declared_video_lookup(self):
         with tempfile.TemporaryDirectory() as tmp:
             teach_dir = Path(tmp) / "docs" / "teach"
             teach_dir.mkdir(parents=True)
@@ -308,10 +328,11 @@ class BuildDocVideoEmbedTests(unittest.TestCase):
             )
             (teach_dir / "other.md").write_text("# Other\n\nBody.", encoding="utf-8")
             output_dir = Path(tmp) / "out"
-            output_dir.mkdir()
-            (output_dir / "other.mp4").write_bytes(b"fake-mp4-bytes")
+            videos_dir = Path(tmp) / "videos"
+            (videos_dir / "other").mkdir(parents=True)
+            (videos_dir / "other" / "hyperframes.json").write_text("{}", encoding="utf-8")
 
-            output_path = build_doc(teach_dir / "main.md", output_dir)
+            output_path = build_doc(teach_dir / "main.md", output_dir, videos_dir=videos_dir)
 
             main_html = output_path.read_text(encoding="utf-8")
             other_html = (output_dir / "other.html").read_text(encoding="utf-8")
@@ -427,6 +448,53 @@ class BuildAllTests(unittest.TestCase):
             self.assertEqual([p.name for p in first_files], [p.name for p in second_files])
             for first_file, second_file in zip(first_files, second_files):
                 self.assertEqual(first_file.read_bytes(), second_file.read_bytes())
+
+    def test_running_the_same_build_twice_is_a_no_op(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            teach_dir = Path(tmp) / "docs" / "teach"
+            teach_dir.mkdir(parents=True)
+            (teach_dir / "alpha.md").write_text("# Alpha\n\nBody.", encoding="utf-8")
+            output_dir = Path(tmp) / "out"
+
+            build_all(teach_dir, output_dir)
+            before = {p.name: p.read_bytes() for p in output_dir.iterdir()}
+            build_all(teach_dir, output_dir)
+            after = {p.name: p.read_bytes() for p in output_dir.iterdir()}
+
+            self.assertEqual(before, after)
+
+    def test_stale_managed_html_no_longer_reachable_is_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            teach_dir = Path(tmp) / "docs" / "teach"
+            teach_dir.mkdir(parents=True)
+            (teach_dir / "alpha.md").write_text("# Alpha\n\nBody.", encoding="utf-8")
+            output_dir = Path(tmp) / "out"
+            output_dir.mkdir()
+            (output_dir / "deleted-doc.html").write_text("<html>stale</html>", encoding="utf-8")
+
+            build_all(teach_dir, output_dir)
+
+            self.assertFalse((output_dir / "deleted-doc.html").is_file())
+            self.assertTrue((output_dir / "alpha.html").is_file())
+
+    def test_stale_html_cleanup_preserves_non_html_media(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            teach_dir = Path(tmp) / "docs" / "teach"
+            teach_dir.mkdir(parents=True)
+            (teach_dir / "alpha.md").write_text("# Alpha\n\nBody.", encoding="utf-8")
+            output_dir = Path(tmp) / "out"
+            output_dir.mkdir()
+            (output_dir / "deleted-doc.html").write_text("<html>stale</html>", encoding="utf-8")
+            (output_dir / "alpha.mp4").write_bytes(b"fake-mp4-bytes")
+            (output_dir / "unrelated-media.mp4").write_bytes(b"other-fake-mp4-bytes")
+
+            build_all(teach_dir, output_dir)
+
+            self.assertFalse((output_dir / "deleted-doc.html").is_file())
+            self.assertEqual((output_dir / "alpha.mp4").read_bytes(), b"fake-mp4-bytes")
+            self.assertEqual(
+                (output_dir / "unrelated-media.mp4").read_bytes(), b"other-fake-mp4-bytes",
+            )
 
 
 class MainWholeDirectoryTests(unittest.TestCase):
