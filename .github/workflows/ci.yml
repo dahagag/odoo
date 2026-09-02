@@ -34,7 +34,7 @@ jobs:
           {
             echo "shared:"
             echo "  - 'docker/**'"
-            echo "  - 'scripts/**'"
+            echo "  - 'scripts/dev.sh'"
             echo "  - 'requirements.txt'"
             echo "  - 'compose.yaml'"
             echo "  - '.github/workflows/ci.yml'"
