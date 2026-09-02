@@ -128,6 +128,21 @@ Per docs/adr/0008 and [#40](https://github.com/dahagag/odoo/issues/40), a narrat
 
 Bare `docs-build` (no `:doc`/`:video` suffix) runs both pieces in one invocation: the whole-directory `docs-build:doc` build, then `docs-build:video` for every authored HyperFrames project it finds by scanning `docs/teach/videos/*/` for a `hyperframes.json`, in sorted order. A teach doc with no authored project simply gets no video re-render — authoring is the occasional, Claude-assisted step above, not something bare `docs-build` can or does trigger. `docs-build:doc` and `docs-build:video` stay callable on their own for a quick doc-only fix that shouldn't pay the video re-render cost ([#42](https://github.com/dahagag/odoo/issues/42)).
 
+### Docs authoring directives
+
+The renderer accepts only small HTML-comment directives, so the Markdown remains ordinary readable source. Put document-level directives before the first Markdown heading:
+
+```markdown
+<!-- layout: main -->
+<!-- dependencies: ../adr/0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.md -->
+```
+
+- Omit `layout` for the normal deep-dive page. `<!-- layout: main -->` selects the approved multi-section sales page layout. It requires a title followed by a dek paragraph; when every H2 has an explicit `section` directive, the renderer uses the approved numbered/tagged sales structure. `<!-- layout: methodologies -->` selects the approved methodologies card layout.
+- `<!-- section: section-id s c -->` applies only when it immediately precedes an H2. It fixes that section's lowercase slug and assigns zero or more audience tags: `s` (Sales), `r` (R&D), and `c` (Consultants). Use `<!-- tags: s c -->` when the generated heading slug is sufficient and only the audience tags need to be set.
+- `<!-- dependencies: relative/path.md ... -->` makes local Markdown documents part of the render closure without placing a visible link in the page. Paths are whitespace-separated and resolved relative to the authored file; they are validated like ordinary local Markdown links.
+
+Directives are input semantics, not presentation text: they never appear in generated HTML. Keep the exact approved source structure for a managed page; its committed HTML is the byte-level contract and must not be reformatted or regenerated as a design exercise.
+
 ## Browser tests
 
 The development image installs Google Chrome (`google-chrome-stable`) specifically for `odoo.tests.HttpCase.start_tour` — Ubuntu's own `chromium`/`chromium-browser` packages are snap-only stubs with no real binary in a container, so Odoo's own browser detection (which looks for `google-chrome`/`chromium`/etc. on `PATH`) would otherwise skip every tour test with "Chrome executable not found". `requirements.txt` also pins `websocket-client`, which `HttpCase` needs to drive Chrome over the DevTools protocol; without it, tour tests are silently skipped ("websocket-client module is not installed") rather than run. `custom_addons/dev_e2e_smoke_test` holds a minimal tour with no dependency on any other addon; run `./scripts/dev.ps1 test dev_e2e_smoke_test` to confirm this seam works in a given environment.

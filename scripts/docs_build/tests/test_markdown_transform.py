@@ -445,6 +445,22 @@ class RenderMarkdownDocumentMainLayoutTests(unittest.TestCase):
 
 
 class RenderMarkdownDocumentSectionTagsTests(unittest.TestCase):
+    def test_section_directive_sets_explicit_id_and_audience_tags(self):
+        markdown_text = (
+            "<!-- layout: main -->\n"
+            "# Title\n\n"
+            "Approved-layout dek.\n\n"
+            "<!-- section: short-id s c -->\n"
+            "## A Much Longer Heading\n\nBody."
+        )
+
+        html_out = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('<section id="short-id" data-tags="s c">', html_out)
+        self.assertIn('<span class="tag s" title="Sales">S</span>', html_out)
+        self.assertIn('<span class="tag c" title="Consultants">C</span>', html_out)
+        self.assertNotIn("section: short-id", html_out)
+
     def test_tags_directive_produces_badges_and_data_tags_attribute(self):
         markdown_text = (
             "<!-- layout: main -->\n"
@@ -535,6 +551,19 @@ class IsLocalMarkdownLinkTests(unittest.TestCase):
 
 
 class ExtractLocalLinksTests(unittest.TestCase):
+    def test_finds_explicit_non_rendered_dependencies(self):
+        markdown_text = (
+            "<!-- dependencies: ../research/source.md ../contexts/crm/CONTEXT.md -->\n"
+            "# Document\n\nBody."
+        )
+
+        hrefs = extract_local_links(markdown_text)
+
+        self.assertEqual(
+            hrefs,
+            ["../research/source.md", "../contexts/crm/CONTEXT.md"],
+        )
+
     def test_finds_local_link_in_paragraph(self):
         hrefs = extract_local_links("See [ADR 5](../adr/0005-thing.md) for details.")
 

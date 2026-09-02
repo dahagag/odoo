@@ -179,7 +179,7 @@ def _render_closure(closure: dict[Path, _Document], output_dir: Path) -> dict[Pa
         except MarkdownSyntaxError as exc:
             raise DocsBuildError(f"{doc_path}: {exc}") from exc
 
-        output_paths[doc_path].write_text(rendered_html, encoding="utf-8")
+        output_paths[doc_path].write_text(rendered_html, encoding="utf-8", newline="\n")
 
     return output_paths
 
