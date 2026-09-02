@@ -87,9 +87,26 @@
   /* Hero walkthrough video. Rules copied verbatim from docs-build:doc's template
      (scripts/docs_build/markdown_transform.py) so a regeneration under #74 matches. */
   .video-embed{
-    /* sits between the hero rule and the TOC/content layout; the hero already
-       carries 2.5rem below its border, so only the lower gap is needed here */
-    margin:0 0 2.5rem;
+    /* sits between the hero rule and the audience filter */
+    position:relative;
+    margin:0 0 1.75rem;
+  }
+  /* Darkens the frame while the video is stopped. Frame 1 opens on a near-empty
+     cream ground, so an undimmed poster reads as a bright slab; the scrim fades
+     out on play and back in on pause/end. pointer-events:none so it never
+     intercepts a click on the native controls, and it is the default state so
+     the page still behaves with JS unavailable. */
+  .video-scrim{
+    position:absolute;
+    inset:0;
+    border-radius:.5rem;
+    background:var(--ink-900);
+    opacity:.45;
+    pointer-events:none;
+    transition:opacity .3s ease;
+  }
+  .video-embed.is-playing .video-scrim{
+    opacity:0;
   }
   .video-embed video{
     display:block;
@@ -127,6 +144,7 @@
     margin:0 0 1.75rem;
   }
   .legend{
+    margin:0 0 2.5rem;
     display:flex;
     flex-wrap:wrap;
     gap:.6rem;
@@ -449,16 +467,20 @@
     <p class="eyebrow">Teach doc &middot; custom_addons/crm_methodology</p>
     <h1 class="title">Sales Methodology, Explained</h1>
     <p class="dek">What the custom <code>crm.methodology</code> addon does, why it exists, and exactly how it differs from stock Odoo 19 CRM — for Sales, R&amp;D, and the consultants who have to explain it to a client.</p>
-    <div class="legend">
-      <span class="legend-label">Filter by audience</span>
-      <button class="chip s" data-filter="s" data-active="false"><span class="dot"></span>Sales</button>
-      <button class="chip r" data-filter="r" data-active="false"><span class="dot"></span>R&amp;D</button>
-      <button class="chip c" data-filter="c" data-active="false"><span class="dot"></span>Consultants</button>
-      <button id="reset-filter" hidden>Clear filter</button>
-    </div>
   </header>
 
-  <div class="video-embed"><video src="sales-methodology-vs-odoo-crm.mp4" controls preload="metadata"></video></div>
+  <div class="video-embed">
+    <video src="sales-methodology-vs-odoo-crm.mp4" controls preload="metadata"></video>
+    <div class="video-scrim" aria-hidden="true"></div>
+  </div>
+
+  <div class="legend">
+    <span class="legend-label">Filter by audience</span>
+    <button class="chip s" data-filter="s" data-active="false"><span class="dot"></span>Sales</button>
+    <button class="chip r" data-filter="r" data-active="false"><span class="dot"></span>R&amp;D</button>
+    <button class="chip c" data-filter="c" data-active="false"><span class="dot"></span>Consultants</button>
+    <button id="reset-filter" hidden>Clear filter</button>
+  </div>
 
   <div class="layout">
     <nav class="toc" aria-label="Table of contents">
@@ -674,6 +696,19 @@ flowchart TB
 </div>
 
 <script>
+  (function(){
+    // Scrim: lift the dim while the video is actually playing.
+    var embed = document.querySelector('.video-embed');
+    var video = embed && embed.querySelector('video');
+    if (video) {
+      var setPlaying = function(playing){ embed.classList.toggle('is-playing', playing); };
+      video.addEventListener('play', function(){ setPlaying(true); });
+      video.addEventListener('playing', function(){ setPlaying(true); });
+      video.addEventListener('pause', function(){ setPlaying(false); });
+      video.addEventListener('ended', function(){ setPlaying(false); });
+    }
+  })();
+
   (function(){
     var sections = Array.prototype.slice.call(document.querySelectorAll('main > section'));
     var tocList = document.getElementById('toc-list');
