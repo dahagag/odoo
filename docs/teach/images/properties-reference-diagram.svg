@@ -48,7 +48,7 @@
 <rect class="group" x="150" y="20" width="340" height="140" rx="10"/>
 <text class="group-label" x="170" y="42">Sales Team</text>
 
-<rect class="group" x="150" y="300" width="340" height="160" rx="10"/>
+<rect class="group" x="150" y="300" width="390" height="160" rx="10"/>
 <text class="group-label" x="170" y="322">Sales Methodology</text>
 
 <rect class="group" x="150" y="600" width="340" height="140" rx="10"/>
@@ -68,18 +68,18 @@
 <text class="edge-label" x="335" y="254" text-anchor="middle">key in</text>
 
 <!-- R -> PD: "key missing? Sync to Team" -->
-<path class="edge" marker-end="url(#pr-arrow)" d="M430,345 L430,140"/>
-<rect class="edge-label-bg" x="435" y="215" width="150" height="52"/>
-<text class="edge-label" x="440" y="232">key missing?</text>
-<text class="edge-label" x="440" y="248">Sync to</text>
-<text class="edge-label" x="440" y="264">Team</text>
+<path class="edge" marker-end="url(#pr-arrow)" d="M440,345 L440,140"/>
+<rect class="edge-label-bg" x="445" y="215" width="150" height="52"/>
+<text class="edge-label" x="450" y="232">key missing?</text>
+<text class="edge-label" x="450" y="248">Sync to</text>
+<text class="edge-label" x="450" y="264">Team</text>
 
 <!-- R -> LP: "reads / checks value from" (dashed) -->
-<path class="edge edge-dashed" marker-end="url(#pr-arrow)" d="M380,440 L380,640"/>
-<rect class="edge-label-bg" x="385" y="525" width="150" height="52"/>
-<text class="edge-label" x="390" y="542">reads /</text>
-<text class="edge-label" x="390" y="558">checks value</text>
-<text class="edge-label" x="390" y="574">from</text>
+<path class="edge edge-dashed" marker-end="url(#pr-arrow)" d="M390,440 L390,640"/>
+<rect class="edge-label-bg" x="395" y="525" width="150" height="52"/>
+<text class="edge-label" x="400" y="542">reads /</text>
+<text class="edge-label" x="400" y="558">checks value</text>
+<text class="edge-label" x="400" y="574">from</text>
 
 <!-- PD -->
 <rect class="node-team" x="290" y="70" width="200" height="70" rx="8"/>
@@ -88,11 +88,11 @@
 <text class="node" x="390" y="134" text-anchor="middle" style="font-size:12px;">(owned by the team)</text>
 
 <!-- R -->
-<rect class="node-method" x="250" y="345" width="260" height="95" rx="8"/>
-<text class="node" x="380" y="373" text-anchor="middle">Requirement</text>
-<text class="node" x="380" y="393" text-anchor="middle" style="font-size:13px;">key = 'economic_buyer'</text>
-<text class="node" x="380" y="409" text-anchor="middle" style="font-size:12px;">(a reference, never</text>
-<text class="node" x="380" y="424" text-anchor="middle" style="font-size:12px;">a definition)</text>
+<rect class="node-method" x="260" y="345" width="260" height="95" rx="8"/>
+<text class="node" x="390" y="373" text-anchor="middle">Requirement</text>
+<text class="node" x="390" y="393" text-anchor="middle" style="font-size:13px;">key = 'economic_buyer'</text>
+<text class="node" x="390" y="409" text-anchor="middle" style="font-size:12px;">(a reference, never</text>
+<text class="node" x="390" y="424" text-anchor="middle" style="font-size:12px;">a definition)</text>
 
 <!-- LP -->
 <rect class="node-lead" x="290" y="650" width="200" height="70" rx="8"/>
