@@ -13,19 +13,23 @@ jobs:
     name: Detect lint/test-relevant changes
     runs-on: ubuntu-latest
     outputs:
-      relevant: ${{ steps.check.outputs.relevant }}
+      image_relevant: ${{ steps.check.outputs.image_relevant }}
       docs_build: ${{ steps.check.outputs.docs_build }}
       test_modules: ${{ steps.plan.outputs.modules }}
     steps:
-      - name: Check for changes under custom_addons/, docker/, scripts/, etc.
+      # image_relevant and docs_build are deliberately independent: docs_build's
+      # docs-build-tests job runs on bare ubuntu-latest and never touches the
+      # Odoo dev image, so it shouldn't force build-image/lint/test to run, and
+      # vice versa.
+      - name: Check for changes affecting the Odoo dev image, lint, or tests
         id: check
         uses: dorny/paths-filter@v3
         with:
           filters: |
-            relevant:
+            image_relevant:
               - 'custom_addons/**'
               - 'docker/**'
-              - 'scripts/**'
+              - 'scripts/dev.sh'
               - 'requirements.txt'
               - 'compose.yaml'
               - '.github/workflows/ci.yml'
@@ -81,7 +85,7 @@ jobs:
   build-image:
     name: Build development image
     needs: changes
-    if: needs.changes.outputs.relevant == 'true'
+    if: needs.changes.outputs.image_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -145,21 +149,21 @@ jobs:
       packages: read
     steps:
       - uses: actions/checkout@v4
-        if: needs.changes.outputs.relevant == 'true'
+        if: needs.changes.outputs.image_relevant == 'true'
       - name: Configure environment
-        if: needs.changes.outputs.relevant == 'true'
+        if: needs.changes.outputs.image_relevant == 'true'
         run: |
           cp .env.example .env
           echo "HOST_UID=$(id -u)" >> .env
           echo "HOST_GID=$(id -g)" >> .env
           echo "ODOO_DEV_IMAGE=${{ needs.build-image.outputs.image }}" >> .env
       - uses: ./.github/actions/ghcr-login
-        if: needs.changes.outputs.relevant == 'true'
+        if: needs.changes.outputs.image_relevant == 'true'
       - name: Pull cached development image
-        if: needs.changes.outputs.relevant == 'true'
+        if: needs.changes.outputs.image_relevant == 'true'
         run: docker compose pull odoo
       - name: Run ruff
-        if: needs.changes.outputs.relevant == 'true'
+        if: needs.changes.outputs.image_relevant == 'true'
         run: bash scripts/dev.sh lint custom_addons
 
   docs-build-tests:
@@ -183,7 +187,7 @@ jobs:
   test:
     name: Test (${{ matrix.module }})
     needs: [changes, build-image]
-    if: needs.changes.outputs.relevant == 'true' && needs.changes.outputs.test_modules != '[]'
+    if: needs.changes.outputs.image_relevant == 'true' && needs.changes.outputs.test_modules != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
