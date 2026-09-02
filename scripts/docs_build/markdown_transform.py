@@ -141,8 +141,13 @@ def render_markdown_document(
     A `<!-- layout: main -->` comment directive, placed anywhere before the
     document's first heading (see ADR 0009), selects the multi-section
     layout: each top-level (H2) heading and the blocks under it become a
-    `<section>`, preceded by a static (JS-free) anchor-link table of
-    contents. Its absence renders today's single-column deep-dive layout.
+    `<section>`, preceded by an anchor-link table of contents. Per ADR 0009
+    this layout also embeds the audience-filter legend and a small inline
+    `<script>` (scroll-spy `IntersectionObserver` highlighting the current
+    TOC entry, plus the `.chip` audience filter that dims non-matching
+    sections and TOC entries) — reproduced verbatim from the reviewed
+    Artifact this module tracks. Its absence renders today's single-column
+    deep-dive layout, with no TOC, legend, or script.
 
     A `<!-- tags: s c -->` comment directive placed immediately above an
     `<h2>` sets that section's audience (space-separated values from
@@ -268,7 +273,8 @@ def _render_main_layout(
     intro_blocks, sections = _split_into_sections(blocks)
     intro_html = _render_blocks(intro_blocks, link_resolver, image_resolver)
     toc_items = "".join(
-        f'<li><a href="#{html.escape(slug, quote=True)}">{html.escape(heading_text, quote=False)}</a></li>'
+        f'<li><a href="#{html.escape(slug, quote=True)}" data-target="{html.escape(slug, quote=True)}">'
+        f"{html.escape(heading_text, quote=False)}</a></li>"
         for heading_text, slug, _tags, _ in sections
     )
     sections_html = "".join(
@@ -289,6 +295,8 @@ def _render_main_layout(
         intro=intro_html,
         toc_items=toc_items,
         sections=sections_html,
+        legend=_LEGEND_HTML,
+        script=_MAIN_LAYOUT_SCRIPT,
     )
 
 
@@ -918,6 +926,67 @@ section + section{{
 .tag.s{{ background: var(--teal); }}
 .tag.r{{ background: var(--violet); }}
 .tag.c{{ background: var(--amber); }}
+.legend{{
+  display: flex;
+  flex-wrap: wrap;
+  gap: .6rem;
+  align-items: center;
+  margin: 0 0 2rem;
+}}
+.legend-label{{
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .72rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+  margin-right: .25rem;
+}}
+.chip{{
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .78rem;
+  font-weight: 500;
+  border-radius: 999px;
+  padding: .36rem .85rem;
+  border: 1px solid var(--line);
+  background: var(--paper-1);
+  color: var(--ink-700);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}}
+.chip:hover{{ box-shadow: var(--shadow); transform: translateY(-1px); }}
+.chip[data-active="true"]{{
+  border-color: transparent;
+  color: var(--paper-1);
+}}
+.chip.s[data-active="true"]{{ background: var(--teal); }}
+.chip.r[data-active="true"]{{ background: var(--violet); }}
+.chip.c[data-active="true"]{{ background: var(--amber); }}
+.chip .dot{{ width: .5rem; height: .5rem; border-radius: 50%; }}
+.chip.s .dot{{ background: var(--teal); }}
+.chip.r .dot{{ background: var(--violet); }}
+.chip.c .dot{{ background: var(--amber); }}
+.chip[data-active="true"] .dot{{ background: var(--paper-1); }}
+#reset-filter{{
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .75rem;
+  color: var(--ink-500);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: .36rem .3rem;
+}}
+#reset-filter[hidden]{{ display: none; }}
+nav.toc a.current{{
+  color: var(--amber);
+  border-left-color: var(--amber);
+  font-weight: 500;
+}}
+nav.toc a[data-dim="true"]{{ opacity: .35; }}
+section[data-dim="true"]{{ opacity: .3; }}
 @media (prefers-reduced-motion: reduce){{
   *{{ transition: none !important; }}
 }}
@@ -927,6 +996,7 @@ section + section{{
 <main class="shell">
 {video}
 {intro}
+{legend}
 <div class="layout">
 <nav class="toc" aria-label="Table of contents"><ol id="toc-list">
 {toc_items}
@@ -936,6 +1006,64 @@ section + section{{
 </div>
 </div>
 </main>
+{script}
 </body>
 </html>
 """
+
+_LEGEND_HTML = (
+    '<div class="legend">'
+    '<span class="legend-label">Filter by audience</span>'
+    '<button class="chip s" data-filter="s" data-active="false"><span class="dot"></span>Sales</button>'
+    '<button class="chip r" data-filter="r" data-active="false"><span class="dot"></span>R&amp;D</button>'
+    '<button class="chip c" data-filter="c" data-active="false"><span class="dot"></span>Consultants</button>'
+    '<button id="reset-filter" hidden>Clear filter</button>'
+    "</div>"
+)
+
+_MAIN_LAYOUT_SCRIPT = """<script>
+  (function(){
+    var sections = Array.prototype.slice.call(document.querySelectorAll('main > section'));
+    var tocLinks = Array.prototype.slice.call(document.querySelectorAll('#toc-list a'));
+    var chips = Array.prototype.slice.call(document.querySelectorAll('.chip'));
+    var resetBtn = document.getElementById('reset-filter');
+    var active = null;
+
+    function applyFilter(tag){
+      active = tag;
+      chips.forEach(function(c){ c.dataset.active = (c.dataset.filter === tag) ? 'true' : 'false'; });
+      resetBtn.hidden = !tag;
+      function isDimmed(sec){
+        var tags = (sec.dataset.tags || '').split(' ');
+        return tag && tags.indexOf(tag) === -1;
+      }
+      sections.forEach(function(sec){
+        sec.dataset.dim = isDimmed(sec) ? 'true' : 'false';
+      });
+      tocLinks.forEach(function(a){
+        var sec = document.getElementById(a.dataset.target);
+        a.dataset.dim = isDimmed(sec) ? 'true' : 'false';
+      });
+    }
+
+    chips.forEach(function(chip){
+      chip.addEventListener('click', function(){
+        var tag = chip.dataset.filter;
+        applyFilter(active === tag ? null : tag);
+      });
+    });
+    resetBtn.addEventListener('click', function(){ applyFilter(null); });
+
+    var observer = new IntersectionObserver(function(entries){
+      entries.forEach(function(entry){
+        var link = document.querySelector('#toc-list a[data-target="' + entry.target.id + '"]');
+        if(!link) return;
+        if(entry.isIntersecting){
+          tocLinks.forEach(function(a){ a.classList.remove('current'); });
+          link.classList.add('current');
+        }
+      });
+    }, { rootMargin: '-10% 0px -70% 0px' });
+    sections.forEach(function(sec){ observer.observe(sec); });
+  })();
+</script>"""
