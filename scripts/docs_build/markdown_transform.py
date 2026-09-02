@@ -181,7 +181,7 @@ def render_markdown_document(
     escaped_title = html.escape(title, quote=False)
 
     if directives.get("layout") == "methodologies":
-        return _render_methodologies_layout(blocks, escaped_title, link_resolver, image_resolver)
+        return _render_methodologies_layout(blocks, escaped_title, video_html, link_resolver, image_resolver)
 
     if directives.get("layout") == "main":
         return _render_main_layout(blocks, escaped_title, video_html, link_resolver, image_resolver)
@@ -569,6 +569,7 @@ _METHOD_LABEL_RE = re.compile(r"^\*\*(.+?)\.\*\*\s+(.*)$")
 def _render_methodologies_layout(
     blocks: list[_Block],
     escaped_title: str,
+    video_html: str,
     link_resolver: LinkResolver | None,
     image_resolver: ImageResolver | None,
 ) -> str:
@@ -616,6 +617,7 @@ def _render_methodologies_layout(
     return (
         _METHODOLOGIES_TEMPLATE.replace("__TITLE__", escaped_title)
         .replace("__DEK__", dek)
+        .replace("__VIDEO__", video_html)
         .replace("__ILO_HEADING__", html.escape(ilo_heading, quote=False))
         .replace("__ILO_ITEMS__", ilo_items)
         .replace("__METHODS__", methods)
@@ -1174,6 +1176,9 @@ _METHODOLOGIES_TEMPLATE = """<!doctype html>
   h1.title{ font-family:'Source Serif 4',Georgia,serif; font-weight:600; font-size:clamp(1.9rem,4.4vw,2.8rem); line-height:1.1; margin:0 0 .9rem; text-wrap:balance; }
   .dek{ font-size:1.05rem; color:var(--ink-700); max-width:60ch; line-height:1.55; }
 
+  .video-embed{ margin: 0 0 2.5rem; }
+  .video-embed video{ display:block; width:100%; border-radius:.7rem; box-shadow:var(--shadow); }
+
   .ilo{
     background:var(--paper-1); border:1px solid var(--line); border-radius:.7rem;
     padding:1.4rem 1.6rem; margin-bottom:2.5rem; box-shadow:var(--shadow);
@@ -1212,6 +1217,7 @@ _METHODOLOGIES_TEMPLATE = """<!doctype html>
     <p class="dek">__DEK__</p>
   </header>
 
+__VIDEO__
   <div class="ilo">
     <h2>__ILO_HEADING__</h2>
     <ul>

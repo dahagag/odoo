@@ -22,7 +22,7 @@ _APPROVED_OUTPUTS = {
     ),
     "custom_addons/crm_methodology/static/docs/methodologies.html": (
         "docs/teach/methodologies.md",
-        "f46b5b3bee49b74872c83f6277c3e4e1ffdf501513ed81e41646546a876d8dc2",
+        "294805f2370d5c9550a098224405e07d60fae2220b35cef1650345e1fe7205ba",
     ),
     "custom_addons/crm_methodology/static/docs/sales-methodology-vs-odoo-crm.html": (
         "docs/teach/sales-methodology-vs-odoo-crm.md",
