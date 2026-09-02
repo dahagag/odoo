@@ -2,7 +2,7 @@
 <!-- dependencies: ../research/b2b-sales-methodologies-odoo.md -->
 # The Eight B2B Sales Methodologies
 
-Branches off [Sales Methodology, Explained](https://claude.ai/code/artifact/34b9bfe1-df69-41f9-a912-adf3d73c50d3). Every claim here traces to the trademark holder's or originating author's own site — full citations live in the underlying research doc.
+Branches off [Sales Methodology, Explained](sales-methodology-vs-odoo-crm.md). Every claim here traces to the trademark holder's or originating author's own site — full citations live in the underlying research doc.
 
 ## Intended Learning Outcomes
 
@@ -99,4 +99,4 @@ Branches off [Sales Methodology, Explained](https://claude.ai/code/artifact/34b9
 
 ## Further reading
 
-- [Back to Sales Methodology, Explained](https://claude.ai/code/artifact/34b9bfe1-df69-41f9-a912-adf3d73c50d3)
+- [Back to Sales Methodology, Explained](sales-methodology-vs-odoo-crm.md)

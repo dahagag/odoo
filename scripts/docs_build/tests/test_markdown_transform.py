@@ -529,6 +529,44 @@ class RenderMarkdownDocumentVideoEmbedTests(unittest.TestCase):
 
         self.assertIn('<video src="a&quot;b.mp4"', html)
 
+    _METHODOLOGIES_MARKDOWN = (
+        "<!-- layout: methodologies -->\n"
+        "# The Eight B2B Sales Methodologies\n\n"
+        "A dek paragraph.\n\n"
+        "## Intended Learning Outcomes\n\n"
+        "- Learn thing one.\n\n"
+        "## MEDDIC\n\n"
+        "**Origin.** Developed at PTC.\n\n"
+        "## Further reading\n\n"
+        "- [Sales Methodology, Explained](methodologies-explained.md)"
+    )
+
+    def test_methodologies_layout_has_no_video_tag_when_video_src_omitted(self):
+        html = render_markdown_document(
+            self._METHODOLOGIES_MARKDOWN, fallback_title="Doc",
+        )
+
+        self.assertNotIn("<video", html)
+
+    def test_methodologies_layout_embeds_video_between_hero_and_ilo(self):
+        html = render_markdown_document(
+            self._METHODOLOGIES_MARKDOWN, fallback_title="Doc", video_src="methodologies.mp4",
+        )
+
+        self.assertIn('<video src="methodologies.mp4" controls', html)
+        self.assertLess(html.index("</header>"), html.index("<video"))
+        self.assertLess(html.index("<video"), html.index('class="ilo"'))
+
+    def test_methodologies_layout_footer_backlink_is_rewritten_via_resolver(self):
+        html = render_markdown_document(
+            self._METHODOLOGIES_MARKDOWN,
+            fallback_title="Doc",
+            link_resolver=lambda href: "methodologies-explained.html",
+        )
+
+        self.assertIn('<a class="backlink" href="methodologies-explained.html">', html)
+        self.assertNotIn("methodologies-explained.md", html)
+
 
 class IsLocalMarkdownLinkTests(unittest.TestCase):
     def test_relative_md_path_is_local(self):

@@ -20,12 +20,12 @@
     {
       "source": "docs/teach/methodologies.md",
       "output": "custom_addons/crm_methodology/static/docs/methodologies.html",
-      "baseline_sha256": "f46b5b3bee49b74872c83f6277c3e4e1ffdf501513ed81e41646546a876d8dc2"
+      "baseline_sha256": "e1bd206aee844faf3a68a1837e891f841744cda3cf78ed1f41784b961ea21742"
     },
     {
       "source": "docs/teach/sales-methodology-vs-odoo-crm.md",
       "output": "custom_addons/crm_methodology/static/docs/sales-methodology-vs-odoo-crm.html",
-      "baseline_sha256": "16a883449f149a2366d668ffc8cf223e75f79e5346fa77f944b0af6be00b53b7"
+      "baseline_sha256": "7605911bdb36e238da6e830d93cd048fdb4e194cd0a248da51371b45dabd87db"
     }
   ],
   "stale_outputs": [
