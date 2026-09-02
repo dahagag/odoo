@@ -215,20 +215,20 @@ Small IBM Plex Mono text in `--ink-500`, top-bordered in `--line` — used for a
 
 `a:focus-visible, button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px }` — applied uniformly, not per-component. Any transition/animation added to the shared template must be guarded with `@media (prefers-reduced-motion: reduce) { *{ transition:none !important; } }`, per the two source Artifacts. Neither has a markup sample — they're global CSS rules, not components with their own HTML shape.
 
-## Mermaid diagrams
+## Mermaid diagrams — resolved as authored SVG images
 
-Verified directly against the live Artifact's page source (not just the two source `.md`/`.html` files): the main teach doc author only writes `<pre class="mermaid">…flowchart syntax as plain text…</pre>` twice — nothing else. There is no Mermaid `<script>` or `<link>` in the Artifact's own authored markup. The rendering is done entirely by a runtime the Claude Artifacts *platform* injects after the author's content (bounded by an explicit `<!--claude-mermaid-runtime-end-->` marker in the page source), bundling the full Mermaid library inline (not fetched from a CDN at view time) and scanning the page for `pre.mermaid` elements to replace with rendered SVG.
+Verified directly against the live Artifact's page source (not just the two source `.md`/`.html` files): the main teach doc author only wrote `<pre class="mermaid">…flowchart syntax as plain text…</pre>` twice — nothing else. There was no Mermaid `<script>` or `<link>` in the Artifact's own authored markup; rendering was done entirely by a runtime the Claude Artifacts *platform* injects after the author's content, bundling the full Mermaid library inline and scanning the page for `pre.mermaid` elements to replace with rendered SVG. That platform runtime used its **own hardcoded color palette**, entirely independent of this doc's `--ink`/`--paper`/`--amber`/`--teal`/`--violet`/`--block` tokens — so inside the Artifact the two flowcharts never actually matched the surrounding design system.
 
-That platform runtime uses its **own hardcoded color palette**, entirely independent of this doc's `--ink`/`--paper`/`--amber`/`--teal`/`--violet`/`--block` tokens:
+`docs-build:doc` never renders Mermaid at all, at view time or build time — issue #33 rejected pipeline-rendered Mermaid outright (parser complexity, a required headless-browser step), a constraint [ADR 0009](../adr/0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.md)'s zero-network reversal doesn't touch. Confirmed live: before #71, running `docs-build:doc` rendered the two Mermaid fences as raw, unstyled diagram-source text inside a `<pre><code>` block.
 
-```js
-{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},
- "dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}
+#71 resolved this: the two Mermaid fences in `docs/teach/sales-methodology-vs-odoo-crm.md` (§3's workflow flowchart, §8's Properties-reference diagram) were replaced with ordinary Markdown image references —
+
+```md
+![Workflow: …](images/workflow-diagram.svg)
+![Properties reference: …](images/properties-reference-diagram.svg)
 ```
 
-So today, inside the Artifact, the two flowcharts do **not** visually match the surrounding design system at all — there's no existing color-token mapping to copy.
-
-`docs-build:doc` never renders Mermaid at all, at view time or build time — issue #33 rejects pipeline-rendered Mermaid outright (parser complexity, a required headless-browser step), a constraint [ADR 0009](../adr/0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.md)'s zero-network reversal doesn't touch. The two Mermaid blocks in the source Markdown are a **content sketch** only — see #56, which tracks a Claude Code session authoring them as finished SVG image assets using this design system's actual color tokens (not the hardcoded palette above), then embedding them through the pipeline's ordinary image-embedding mechanism like any screenshot.
+— picked up by #37's existing generic local-image embedding with no special-casing. Each is a hand-authored, self-contained SVG under `docs/teach/images/`, built directly from this file's actual color tokens (`--ink-900`, `--paper-1`, `--line`, `--amber`, `--teal`, `--violet`, `--block`, and their `-soft` variants) rather than Mermaid's hardcoded palette. A static raster image can't react to the page's own `data-theme` toggle, so instead each SVG declares its own `:root` custom properties plus a `@media (prefers-color-scheme: dark)` override — the same pattern as the [Color tokens](#color-tokens) block above, scoped to the SVG document — so the diagram follows the *viewer's OS/browser* color scheme even though it can't see the in-page toggle. Both diagrams use a vertical (portrait-leaning) node layout specifically so they stay legible once `img{max-width:100%}` scales them down on a narrow viewport, rather than the wide landscape shape Mermaid's default `flowchart LR`/`TB` produced.
 
 ## What this file deliberately omits
 

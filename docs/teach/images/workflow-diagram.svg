@@ -1,0 +1,125 @@
+<svg viewBox="0 0 780 1050" width="780" height="1050" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="wf-title wf-desc">
+<title id="wf-title">Sales Methodology workflow: opportunity through quotation and Won</title>
+<desc id="wf-desc">Client's default methodology flows into a new opportunity, which shows completion in the Qualification tab. Creating a quotation is refused with a clear error when a Block Requirement is unmet, or proceeds to an activity marked done and a matching Playbook Question wizard. Marking Won likewise is refused when a Block Requirement is unmet, or proceeds to Won.</desc>
+<style>
+  :root{
+    --ink-900:#1B2430; --ink-700:#3E4A59; --ink-500:#6B7688;
+    --paper-0:#F3F4EF; --paper-1:#FFFFFF; --line:#D3D6CC;
+    --amber:#B96A22; --amber-soft:#F0DFC7;
+    --teal:#2E6B60; --teal-soft:#D9E8E3;
+    --block:#A23B3B; --block-soft:#F3DBDB;
+    --shadow-1:rgba(27,36,48,.16); --shadow-2:rgba(27,36,48,.12);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --ink-900:#ECEAE2; --ink-700:#C7CCC0; --ink-500:#93998C;
+      --paper-0:#181B17; --paper-1:#20241F; --line:#3A3F35;
+      --amber:#E0954C; --amber-soft:#3B2C18;
+      --teal:#6FBBAC; --teal-soft:#1D332E;
+      --block:#E28080; --block-soft:#3A2222;
+      --shadow-1:rgba(0,0,0,.45); --shadow-2:rgba(0,0,0,.4);
+    }
+  }
+  .canvas{ fill: var(--paper-0); }
+  text{ font-family: 'IBM Plex Mono', ui-monospace, Consolas, monospace; fill: var(--ink-900); }
+  .node{ font-size: 16px; }
+  .node-box, .node-decision, .node-block, .node-ok{
+    filter: drop-shadow(0 1px 2px var(--shadow-1)) drop-shadow(0 4px 10px var(--shadow-2));
+  }
+  .node-box{ fill: var(--paper-1); stroke: var(--line); stroke-width: 1.5; }
+  .node-decision{ fill: var(--amber-soft); stroke: var(--amber); stroke-width: 1.5; }
+  .node-block{ fill: var(--block-soft); stroke: var(--block); stroke-width: 1.5; }
+  .node-ok{ fill: var(--teal-soft); stroke: var(--teal); stroke-width: 1.5; }
+  .edge{ stroke: var(--ink-500); stroke-width: 1.8; fill: none; }
+  .edge-block{ stroke: var(--block); }
+  .edge-ok{ stroke: var(--teal); }
+  .edge-label{ font-size: 13.5px; fill: var(--ink-700); }
+  .edge-label-bg{ fill: var(--paper-0); }
+</style>
+<rect class="canvas" x="0" y="0" width="780" height="1050"/>
+
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="var(--ink-500)"/>
+  </marker>
+  <marker id="arrow-block" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="var(--block)"/>
+  </marker>
+  <marker id="arrow-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="var(--teal)"/>
+  </marker>
+</defs>
+
+<!-- main vertical chain -->
+<path class="edge" marker-end="url(#arrow)" d="M220,85 L220,135"/>
+<path class="edge" marker-end="url(#arrow)" d="M220,205 L220,255"/>
+<path class="edge" marker-end="url(#arrow)" d="M220,325 L220,375"/>
+<path class="edge edge-ok" marker-end="url(#arrow-ok)" d="M220,485 L220,535"/>
+<rect class="edge-label-bg" x="228" y="500" width="34" height="18"/>
+<text class="edge-label" x="230" y="514">met</text>
+<path class="edge" marker-end="url(#arrow)" d="M220,605 L220,655"/>
+<path class="edge" marker-end="url(#arrow)" d="M220,725 L220,775"/>
+<path class="edge edge-ok" marker-end="url(#arrow-ok)" d="M220,885 L220,935"/>
+<rect class="edge-label-bg" x="228" y="900" width="34" height="18"/>
+<text class="edge-label" x="230" y="914">met</text>
+
+<!-- decision side-branches -->
+<path class="edge edge-block" marker-end="url(#arrow-block)" d="M370,430 L520,430"/>
+<rect class="edge-label-bg" x="365" y="392" width="150" height="34"/>
+<text class="edge-label" x="440" y="405" text-anchor="middle">Block</text>
+<text class="edge-label" x="440" y="421" text-anchor="middle">Requirement unmet</text>
+
+<path class="edge edge-block" marker-end="url(#arrow-block)" d="M370,830 L520,830"/>
+<rect class="edge-label-bg" x="372" y="792" width="136" height="34"/>
+<text class="edge-label" x="440" y="805" text-anchor="middle">Block</text>
+<text class="edge-label" x="440" y="821" text-anchor="middle">Requirement unmet</text>
+
+<!-- A -->
+<rect class="node-box" x="40" y="15" width="360" height="70" rx="8"/>
+<text class="node" x="220" y="46" text-anchor="middle">Client's default</text>
+<text class="node" x="220" y="66" text-anchor="middle">methodology</text>
+
+<!-- B -->
+<rect class="node-box" x="40" y="135" width="360" height="70" rx="8"/>
+<text class="node" x="220" y="166" text-anchor="middle">New opportunity</text>
+<text class="node" x="220" y="186" text-anchor="middle">inherits it</text>
+
+<!-- C -->
+<rect class="node-box" x="40" y="255" width="360" height="70" rx="8"/>
+<text class="node" x="220" y="286" text-anchor="middle">Qualification tab:</text>
+<text class="node" x="220" y="306" text-anchor="middle">completion / warnings / blockers</text>
+
+<!-- D diamond: center 220,430 -->
+<polygon class="node-decision" points="70,430 220,375 370,430 220,485"/>
+<text class="node" x="220" y="424" text-anchor="middle">Create</text>
+<text class="node" x="220" y="442" text-anchor="middle">quotation</text>
+
+<!-- D1 -->
+<rect class="node-block" x="520" y="395" width="200" height="70" rx="8"/>
+<text class="node" x="620" y="426" text-anchor="middle">Refused,</text>
+<text class="node" x="620" y="446" text-anchor="middle">clear error</text>
+
+<!-- E -->
+<rect class="node-ok" x="40" y="535" width="360" height="70" rx="8"/>
+<text class="node" x="220" y="566" text-anchor="middle">Activity</text>
+<text class="node" x="220" y="586" text-anchor="middle">marked done</text>
+
+<!-- F -->
+<rect class="node-box" x="40" y="655" width="360" height="70" rx="8"/>
+<text class="node" x="220" y="686" text-anchor="middle">Playbook Question</text>
+<text class="node" x="220" y="706" text-anchor="middle">wizard (if matched)</text>
+
+<!-- G diamond: center 220,830 -->
+<polygon class="node-decision" points="70,830 220,775 370,830 220,885"/>
+<text class="node" x="220" y="838" text-anchor="middle">Mark Won</text>
+
+<!-- G1 -->
+<rect class="node-block" x="520" y="795" width="200" height="70" rx="8"/>
+<text class="node" x="620" y="826" text-anchor="middle">Refused,</text>
+<text class="node" x="620" y="846" text-anchor="middle">clear error</text>
+
+<!-- H -->
+<rect class="node-ok" x="40" y="935" width="360" height="70" rx="8"/>
+<text class="node" x="220" y="978" text-anchor="middle">Won</text>
+
+</svg>
