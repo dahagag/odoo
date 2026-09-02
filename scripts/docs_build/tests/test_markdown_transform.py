@@ -327,6 +327,8 @@ class RenderMarkdownDocumentMainLayoutTests(unittest.TestCase):
         self.assertIn('max-width: 840px', html_out)
         self.assertNotIn('class="toc"', html_out)
         self.assertNotIn("<section", html_out)
+        self.assertNotIn("<script", html_out)
+        self.assertNotIn('class="legend"', html_out)
 
     def test_layout_main_directive_selects_multi_section_layout(self):
         markdown_text = (
@@ -353,18 +355,49 @@ class RenderMarkdownDocumentMainLayoutTests(unittest.TestCase):
 
         html_out = render_markdown_document(markdown_text, fallback_title="Doc")
 
-        self.assertIn('<li><a href="#first-section">First Section</a></li>', html_out)
-        self.assertIn('<li><a href="#second-section">Second Section</a></li>', html_out)
+        self.assertIn(
+            '<li><a href="#first-section" data-target="first-section">First Section</a></li>', html_out,
+        )
+        self.assertIn(
+            '<li><a href="#second-section" data-target="second-section">Second Section</a></li>', html_out,
+        )
         self.assertIn('<section id="first-section">', html_out)
         self.assertIn('<section id="second-section">', html_out)
         self.assertIn("<h1>Title</h1>", html_out)
 
-    def test_layout_main_toc_has_no_javascript(self):
+    def test_layout_main_embeds_scroll_spy_and_filter_script(self):
         markdown_text = "<!-- layout: main -->\n## Only Section\n\nBody."
 
         html_out = render_markdown_document(markdown_text, fallback_title="Doc")
 
-        self.assertNotIn("<script", html_out)
+        self.assertIn("<script>", html_out)
+        self.assertIn("IntersectionObserver", html_out)
+        self.assertIn("applyFilter", html_out)
+
+    def test_layout_main_embeds_audience_filter_legend(self):
+        markdown_text = "<!-- layout: main -->\n## Only Section\n\nBody."
+
+        html_out = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('<div class="legend">', html_out)
+        self.assertIn('<button class="chip s" data-filter="s" data-active="false">', html_out)
+        self.assertIn('<button class="chip r" data-filter="r" data-active="false">', html_out)
+        self.assertIn('<button class="chip c" data-filter="c" data-active="false">', html_out)
+        self.assertIn('<button id="reset-filter" hidden>', html_out)
+
+    def test_layout_main_rendering_is_deterministic(self):
+        markdown_text = (
+            "<!-- layout: main -->\n"
+            "# Title\n\n"
+            "<!-- tags: s c -->\n"
+            "## Section One\n\nBody one.\n\n"
+            "## Section Two\n\nBody two."
+        )
+
+        first = render_markdown_document(markdown_text, fallback_title="Doc")
+        second = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertEqual(first, second)
 
     def test_layout_main_duplicate_heading_text_gets_distinct_slugs(self):
         markdown_text = (
