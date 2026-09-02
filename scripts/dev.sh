@@ -256,8 +256,12 @@ case "$COMMAND" in
         compose run --rm --no-deps odoo ruff check "${ruff_options[@]}" "/workspace/$lint_path"
         ;;
     docs-build:doc)
-        assert_relative_path "$ARGUMENT" "docs-build:doc"
-        compose run --rm --no-deps odoo python3 -m scripts.docs_build.cli "$ARGUMENT"
+        docs_build_doc_args=()
+        if [[ -n "$ARGUMENT" ]]; then
+            assert_relative_path "$ARGUMENT" "docs-build:doc"
+            docs_build_doc_args=("$ARGUMENT")
+        fi
+        compose run --rm --no-deps odoo python3 -m scripts.docs_build.cli "${docs_build_doc_args[@]}"
         ;;
     docs-build:video)
         assert_relative_path "$ARGUMENT" "docs-build:video"

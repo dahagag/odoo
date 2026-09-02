@@ -9,6 +9,17 @@ under custom_addons/crm_methodology/static/docs/ (see docs/adr/0007 for why
 that directory is the publishing path). Internal links are rewritten to point
 at the generated page; external URLs pass through unchanged. See issue #38.
 
+Invoked with no file argument, it instead rebuilds the whole `docs/teach/`
+directory: every `docs/teach/*.md` file (except `_REFERENCE_ONLY_FILENAMES`,
+docs that document themselves as implementation reference rather than
+stakeholder-facing content) becomes an entry point, and the combined link
+closure of all of them is rendered together in one pass — a document linked
+from two different teach docs is still written once. Entries are discovered
+in a fixed sorted order so two runs against unchanged input produce
+byte-identical output; a failure on any entry or any document in the closure
+exits non-zero naming that specific file, exactly as the single-file mode
+does. See issue #41.
+
 Every local image a rendered document references (a product screenshot, a
 pre-authored diagram — never a pipeline-rendered Mermaid diagram, see issue
 #33) is read from disk and embedded into that document's HTML as a data URI,
@@ -48,6 +59,13 @@ from scripts.docs_build.markdown_transform import (
 )
 
 DEFAULT_OUTPUT_DIR = Path("custom_addons/crm_methodology/static/docs")
+TEACH_DIR = Path("docs/teach")
+
+# docs/teach/DESIGN-TOKENS.md documents itself as implementation reference for this
+# pipeline's own template, not stakeholder-facing content — "do not treat it as a
+# third teach doc." A whole-directory build must honor that note rather than
+# generating a page for it.
+_REFERENCE_ONLY_FILENAMES = frozenset({"DESIGN-TOKENS.md"})
 
 # A generated page embeds every local image inline as a base64 data URI (roughly a
 # third larger than the source file). This is a per-image guideline, not an
@@ -78,8 +96,47 @@ def build_doc(source: Path, output_dir: Path) -> Path:
     if not source.is_file():
         raise DocsBuildError(f"{source}: source file not found")
 
-    closure = _discover_closure(source)
+    closure = _discover_closure([source])
+    output_paths = _render_closure(closure, output_dir)
+    return output_paths[source]
 
+
+def discover_teach_entries(teach_dir: Path) -> list[Path]:
+    """Return every renderable `teach_dir/*.md` entry, sorted for deterministic ordering.
+
+    Excludes `_REFERENCE_ONLY_FILENAMES` (implementation reference docs that are
+    never themselves rendered).
+    """
+    return sorted(
+        path
+        for path in teach_dir.glob("*.md")
+        if path.name not in _REFERENCE_ONLY_FILENAMES
+    )
+
+
+def build_all(teach_dir: Path, output_dir: Path) -> list[Path]:
+    """Render every `teach_dir/*.md` entry and their combined link closure.
+
+    Two runs against unchanged input produce byte-identical output: entries are
+    processed in a fixed sorted order and each document's rendered content
+    depends only on its own text and the (order-independent) map of resolved
+    link/image targets. Returns the output paths written for the entries
+    themselves, in the same sorted order.
+    """
+    entries = discover_teach_entries(teach_dir)
+    if not entries:
+        raise DocsBuildError(f"{teach_dir}: no renderable *.md files found")
+
+    closure = _discover_closure(entries)
+    output_paths = _render_closure(closure, output_dir)
+    return [output_paths[entry] for entry in entries]
+
+
+def _render_closure(closure: dict[Path, _Document], output_dir: Path) -> dict[Path, Path]:
+    """Write every document in `closure` as self-contained HTML under `output_dir`.
+
+    Returns the map of source path to written output path.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     output_paths = _assign_output_paths(closure, output_dir)
 
@@ -111,7 +168,7 @@ def build_doc(source: Path, output_dir: Path) -> Path:
 
         output_paths[doc_path].write_text(rendered_html, encoding="utf-8")
 
-    return output_paths[source]
+    return output_paths
 
 
 def _embed_image_as_data_uri(image_path: Path, *, referencing_doc: Path) -> str:
@@ -139,18 +196,18 @@ def _embed_image_as_data_uri(image_path: Path, *, referencing_doc: Path) -> str:
     return f"data:{mime_type};base64,{encoded}"
 
 
-def _discover_closure(entry: Path) -> dict[Path, _Document]:
-    """Walk the local-`.md`-link graph reachable from `entry`.
+def _discover_closure(entries: list[Path]) -> dict[Path, _Document]:
+    """Walk the local-`.md`-link graph reachable from `entries`.
 
-    Returns a map of every reachable document (including `entry`) to its parsed
-    text and its own `{raw_href: resolved_target_path}` links and image
+    Returns a map of every reachable document (including every entry) to its
+    parsed text and its own `{raw_href: resolved_target_path}` links and image
     references, in the order first discovered. Raises ``DocsBuildError`` for a
     link or image reference that doesn't resolve to a real file, naming both
     the referencing document and the missing reference.
     """
     closure: dict[Path, _Document] = {}
-    queue = [entry]
-    queued = {entry}
+    queue = list(entries)
+    queued = set(entries)
 
     while queue:
         doc_path = queue.pop(0)
@@ -224,18 +281,21 @@ def _title_from_filename(stem: str) -> str:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 1:
-        sys.stderr.write("Usage: docs-build:doc <file.md>\n")
+    if len(argv) > 1:
+        sys.stderr.write("Usage: docs-build:doc [file.md]\n")
         return 2
 
-    source = Path(argv[0])
     try:
-        output_path = build_doc(source, DEFAULT_OUTPUT_DIR)
+        if argv:
+            output_paths = [build_doc(Path(argv[0]), DEFAULT_OUTPUT_DIR)]
+        else:
+            output_paths = build_all(TEACH_DIR, DEFAULT_OUTPUT_DIR)
     except DocsBuildError as exc:
         sys.stderr.write(f"docs-build:doc failed: {exc}\n")
         return 1
 
-    sys.stdout.write(f"Wrote {output_path}\n")
+    for output_path in output_paths:
+        sys.stdout.write(f"Wrote {output_path}\n")
     return 0
 
 

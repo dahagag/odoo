@@ -1,11 +1,12 @@
 import base64
 import contextlib
 import io
+import os
 import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.docs_build.cli import DocsBuildError, build_doc
+from scripts.docs_build.cli import DocsBuildError, build_all, build_doc, main
 
 _ONE_PIXEL_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
@@ -312,6 +313,147 @@ class BuildDocVideoEmbedTests(unittest.TestCase):
             other_html = (output_dir / "other.html").read_text(encoding="utf-8")
             self.assertNotIn("<video", main_html)
             self.assertIn('<video src="other.mp4" controls', other_html)
+
+
+class BuildAllTests(unittest.TestCase):
+    def test_renders_every_teach_doc(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            teach_dir = Path(tmp) / "docs" / "teach"
+            teach_dir.mkdir(parents=True)
+            (teach_dir / "alpha.md").write_text("# Alpha\n\nBody.", encoding="utf-8")
+            (teach_dir / "beta.md").write_text("# Beta\n\nBody.", encoding="utf-8")
+            output_dir = Path(tmp) / "out"
+
+            output_paths = build_all(teach_dir, output_dir)
+
+            self.assertEqual(
+                output_paths,
+                [output_dir / "alpha.html", output_dir / "beta.html"],
+            )
+            self.assertTrue((output_dir / "alpha.html").is_file())
+            self.assertTrue((output_dir / "beta.html").is_file())
+
+    def test_excludes_reference_only_design_tokens_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            teach_dir = Path(tmp) / "docs" / "teach"
+            teach_dir.mkdir(parents=True)
+            (teach_dir / "alpha.md").write_text("# Alpha\n\nBody.", encoding="utf-8")
+            (teach_dir / "DESIGN-TOKENS.md").write_text(
+                "# Not a teach doc\n\nReference only.", encoding="utf-8",
+            )
+            output_dir = Path(tmp) / "out"
+
+            output_paths = build_all(teach_dir, output_dir)
+
+            self.assertEqual(output_paths, [output_dir / "alpha.html"])
+            self.assertFalse((output_dir / "DESIGN-TOKENS.html").exists())
+
+    def test_shared_link_target_is_rendered_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            teach_dir = root / "docs" / "teach"
+            adr_dir = root / "docs" / "adr"
+            teach_dir.mkdir(parents=True)
+            adr_dir.mkdir(parents=True)
+            (teach_dir / "alpha.md").write_text(
+                "# Alpha\n\nSee [ADR 5](../adr/0005-thing.md).", encoding="utf-8",
+            )
+            (teach_dir / "beta.md").write_text(
+                "# Beta\n\nAlso see [ADR 5](../adr/0005-thing.md).", encoding="utf-8",
+            )
+            (adr_dir / "0005-thing.md").write_text("# ADR 5\n\nDecision text.", encoding="utf-8")
+            output_dir = root / "out"
+
+            build_all(teach_dir, output_dir)
+
+            self.assertEqual(
+                sorted(p.name for p in output_dir.iterdir()),
+                ["0005-thing.html", "alpha.html", "beta.html"],
+            )
+
+    def test_failure_in_one_entry_names_the_offending_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            teach_dir = Path(tmp) / "docs" / "teach"
+            teach_dir.mkdir(parents=True)
+            (teach_dir / "good.md").write_text("# Good\n\nBody.", encoding="utf-8")
+            bad = teach_dir / "bad.md"
+            bad.write_text("```\nunterminated\n", encoding="utf-8")
+            output_dir = Path(tmp) / "out"
+
+            with self.assertRaises(DocsBuildError) as ctx:
+                build_all(teach_dir, output_dir)
+
+            self.assertIn(str(bad), str(ctx.exception))
+
+    def test_no_renderable_files_fails_clearly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            teach_dir = Path(tmp) / "docs" / "teach"
+            teach_dir.mkdir(parents=True)
+            (teach_dir / "DESIGN-TOKENS.md").write_text("Reference only.", encoding="utf-8")
+            output_dir = Path(tmp) / "out"
+
+            with self.assertRaises(DocsBuildError) as ctx:
+                build_all(teach_dir, output_dir)
+
+            self.assertIn(str(teach_dir), str(ctx.exception))
+
+    def test_two_runs_against_unchanged_input_produce_byte_identical_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            teach_dir = root / "docs" / "teach"
+            adr_dir = root / "docs" / "adr"
+            teach_dir.mkdir(parents=True)
+            adr_dir.mkdir(parents=True)
+            (teach_dir / "alpha.md").write_text(
+                "# Alpha\n\nSee [beta](beta.md) and [ADR 5](../adr/0005-thing.md).",
+                encoding="utf-8",
+            )
+            (teach_dir / "beta.md").write_text(
+                "# Beta\n\nSee [ADR 5](../adr/0005-thing.md).", encoding="utf-8",
+            )
+            (adr_dir / "0005-thing.md").write_text("# ADR 5\n\nDecision text.", encoding="utf-8")
+
+            first_dir = root / "out1"
+            second_dir = root / "out2"
+            build_all(teach_dir, first_dir)
+            build_all(teach_dir, second_dir)
+
+            first_files = sorted(first_dir.iterdir())
+            second_files = sorted(second_dir.iterdir())
+            self.assertEqual([p.name for p in first_files], [p.name for p in second_files])
+            for first_file, second_file in zip(first_files, second_files):
+                self.assertEqual(first_file.read_bytes(), second_file.read_bytes())
+
+
+class MainWholeDirectoryTests(unittest.TestCase):
+    def test_main_with_no_args_builds_whole_teach_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "docs" / "teach").mkdir(parents=True)
+            (root / "docs" / "teach" / "alpha.md").write_text("# Alpha\n\nBody.", encoding="utf-8")
+            (root / "custom_addons" / "crm_methodology" / "static" / "docs").mkdir(parents=True)
+
+            cwd = os.getcwd()
+            os.chdir(root)
+            try:
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout):
+                    exit_code = main([])
+            finally:
+                os.chdir(cwd)
+
+            self.assertEqual(exit_code, 0)
+            output_html = root / "custom_addons" / "crm_methodology" / "static" / "docs" / "alpha.html"
+            self.assertTrue(output_html.is_file())
+            self.assertIn("alpha.html", stdout.getvalue())
+
+    def test_main_rejects_more_than_one_argument(self):
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            exit_code = main(["a.md", "b.md"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("Usage", stderr.getvalue())
 
 
 if __name__ == "__main__":

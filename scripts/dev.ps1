@@ -302,8 +302,11 @@ switch ($Command) {
         Invoke-Compose -Arguments $ruffArguments
     }
     'docs-build:doc' {
-        $relativePath = Assert-RelativePath -Path $Argument -Label 'docs-build:doc'
-        Invoke-Compose -Arguments @('run', '--rm', '--no-deps', 'odoo', 'python3', '-m', 'scripts.docs_build.cli', $relativePath)
+        $cliArguments = @('run', '--rm', '--no-deps', 'odoo', 'python3', '-m', 'scripts.docs_build.cli')
+        if ($Argument) {
+            $cliArguments += Assert-RelativePath -Path $Argument -Label 'docs-build:doc'
+        }
+        Invoke-Compose -Arguments $cliArguments
     }
     'docs-build:video' {
         $relativePath = Assert-RelativePath -Path $Argument -Label 'docs-build:video'
