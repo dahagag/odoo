@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "35222a314d3b0e4fd94ae8249c2abd995d796e59",
+  "outputs": [
+    {
+      "source": "docs/adr/0005-methodology-requirements-reference-properties-by-key.md",
+      "output": "custom_addons/crm_methodology/static/docs/0005-methodology-requirements-reference-properties-by-key.html",
+      "baseline_sha256": "b311074500600368f6d2fa27aeb9c17da1d78abce54f2738dcd01fe3693ad233"
+    },
+    {
+      "source": "docs/contexts/crm/CONTEXT.md",
+      "output": "custom_addons/crm_methodology/static/docs/CONTEXT.html",
+      "baseline_sha256": "336f944bae8a22d1df0b56e55fa6b169e1b8a86d4fbf31171f7bfe3e1a6c28d4"
+    },
+    {
+      "source": "docs/research/b2b-sales-methodologies-odoo.md",
+      "output": "custom_addons/crm_methodology/static/docs/b2b-sales-methodologies-odoo.html",
+      "baseline_sha256": "801f5d4a0d19f554dd12d4ad4798c0ad8f588f95f7f4b59981e827e6edff78a2"
+    },
+    {
+      "source": "docs/teach/methodologies.md",
+      "output": "custom_addons/crm_methodology/static/docs/methodologies.html",
+      "baseline_sha256": "79d419d18c96a9b68ed553111872e128c3ac51b33ce8b428cfa76bc8f6bb8fca"
+    },
+    {
+      "source": "docs/teach/sales-methodology-vs-odoo-crm.md",
+      "output": "custom_addons/crm_methodology/static/docs/sales-methodology-vs-odoo-crm.html",
+      "baseline_sha256": "511fe3971ac6bdf81d89929170fefba309faa11ce456dde1246e298c7b9c40d3"
+    }
+  ],
+  "stale_outputs": [
+    {
+      "output": "custom_addons/crm_methodology/static/docs/0007-self-contained-teach-docs-served-from-static.html",
+      "baseline_sha256": "5a4846000c9187c2f317c076044ac4d806abc0d21a5985e69baba410606d1c40"
+    },
+    {
+      "output": "custom_addons/crm_methodology/static/docs/0009-docs-build-doc-relaxes-zero-network-and-adds-authoring-directives.html",
+      "baseline_sha256": "7c79841d1a7d8c6ae321f0adb4d29deccf746a97e9ddbcc41dbdfd77e17588ab"
+    },
+    {
+      "output": "custom_addons/crm_methodology/static/docs/DESIGN-TOKENS.html",
+      "baseline_sha256": "b0f5618901f7ab89a773c2d36956acc47905de806b42cd53f775eaedd0d98b82"
+    }
+  ]
+}
