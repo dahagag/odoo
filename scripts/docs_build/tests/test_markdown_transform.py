@@ -80,6 +80,70 @@ class RenderMarkdownDocumentTests(unittest.TestCase):
 
         self.assertIn("<pre><code>value = **not bold**</code></pre>", html)
 
+    def test_renders_allowlisted_status_pill_unescaped_in_prose(self):
+        markdown_text = 'A <span class="pill new">New</span> feature.'
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('<span class="pill new">New</span>', html)
+        self.assertNotIn("&lt;span", html)
+
+    def test_renders_allowlisted_status_pills_in_table_cell(self):
+        markdown_text = (
+            "| Model | Status |\n"
+            "| --- | --- |\n"
+            '| crm.methodology | <span class="pill ext">Extended</span> |'
+        )
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('<span class="pill ext">Extended</span>', html)
+
+    def test_renders_demo_badge_unescaped(self):
+        markdown_text = '<span class="demo-badge">Used in our demo</span>'
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('<span class="demo-badge">Used in our demo</span>', html)
+
+    def test_renders_other_allowlisted_tags_unescaped(self):
+        markdown_text = "H<sub>2</sub>O and E=mc<sup>2</sup>, a <mark>highlight</mark>, a <kbd>Ctrl</kbd> key, line one<br>line two."
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn("H<sub>2</sub>O", html)
+        self.assertIn("mc<sup>2</sup>", html)
+        self.assertIn("<mark>highlight</mark>", html)
+        self.assertIn("<kbd>Ctrl</kbd>", html)
+        self.assertIn("line one<br>line two", html)
+
+    def test_escapes_non_allowlisted_inline_html(self):
+        markdown_text = 'Inline <script>alert(1)</script> and <iframe src="x"></iframe> text.'
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertNotIn("<script>", html)
+        self.assertNotIn("<iframe", html)
+        self.assertIn("&lt;script&gt;", html)
+        self.assertIn("&lt;iframe", html)
+
+    def test_escapes_disallowed_tag_even_when_mixed_with_allowlisted_tags(self):
+        markdown_text = '<span class="pill new">New</span> then <div>block</div> text.'
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('<span class="pill new">New</span>', html)
+        self.assertIn("&lt;div&gt;", html)
+        self.assertNotIn("<div>", html)
+
+    def test_allowlisted_tag_written_literally_inside_inline_code_stays_escaped(self):
+        markdown_text = 'Write `<span class="pill new">New</span>` literally.'
+
+        html = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn("<code>&lt;span class=&quot;pill new&quot;&gt;New&lt;/span&gt;</code>", html)
+        self.assertNotIn('<span class="pill new">', html)
+
     def test_renders_horizontal_rule(self):
         html = render_markdown_document("Above.\n\n---\n\nBelow.", fallback_title="Doc")
 
