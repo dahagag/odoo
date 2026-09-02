@@ -37,6 +37,8 @@ _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _TABLE_SEPARATOR_RE = re.compile(r"^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$")
 _EXTERNAL_LINK_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:|^//")
 _INLINE_HTML_RE = re.compile(r"</?(?:span|mark|sup|sub|kbd|br)(?:\s+[^<>]*)?/?>")
+_DIRECTIVE_RE = re.compile(r"^<!--\s*([a-zA-Z][\w-]*)\s*:\s*(.*?)\s*-->$")
+_SLUG_INVALID_RE = re.compile(r"[^a-z0-9]+")
 
 LinkResolver = Callable[[str], str]
 ImageResolver = Callable[[str], str]
@@ -111,11 +113,13 @@ def render_markdown_document(
 ) -> str:
     """Render one Markdown document into a self-contained HTML page.
 
-    Returns a full ``<!doctype html>`` document with the shared template inlined
-    (no external stylesheets, fonts, or scripts) so the output has zero network
-    dependencies at view time. Raises ``MarkdownSyntaxError`` on Markdown this
-    parser cannot resolve unambiguously (for example, an unterminated fenced code
-    block), or on a local image reference given no `image_resolver`.
+    Returns a full ``<!doctype html>`` document with the shared template inlined.
+    Per ADR 0009, "self-contained" means no unresolved *local* images or links —
+    not zero network access: the page still loads the Google Fonts stylesheet
+    at view time, exactly as the hand-authored source Artifacts do. Raises
+    ``MarkdownSyntaxError`` on Markdown this parser cannot resolve unambiguously
+    (for example, an unterminated fenced code block), or on a local image
+    reference given no `image_resolver`.
 
     `link_resolver`, when given, rewrites local ``.md`` hrefs (see
     ``is_local_markdown_link``) to their generated-page equivalent; external
@@ -129,10 +133,16 @@ def render_markdown_document(
     pointing at that (relative) src — the sibling MP4 `docs-build:video`
     renders next to this document's generated HTML (see issue #40). Omitted
     cleanly when `video_src` is `None`.
+
+    A `<!-- layout: main -->` comment directive, placed anywhere before the
+    document's first heading (see ADR 0009), selects the multi-section
+    layout: each top-level (H2) heading and the blocks under it become a
+    `<section>`, preceded by a static (JS-free) anchor-link table of
+    contents. Its absence renders today's single-column deep-dive layout.
     """
+    directives, markdown_text = _extract_document_directives(markdown_text)
     blocks = _parse_blocks(markdown_text)
     title = _find_first_heading_text(blocks) or fallback_title
-    body_html = "\n".join(_render_block(block, link_resolver, image_resolver) for block in blocks)
     video_html = ""
     if video_src is not None:
         escaped_src = html.escape(video_src, quote=True)
@@ -141,7 +151,96 @@ def render_markdown_document(
             f'<video src="{escaped_src}" controls preload="metadata"></video>'
             "</div>"
         )
-    return _TEMPLATE.format(title=html.escape(title, quote=False), body=body_html, video=video_html)
+    escaped_title = html.escape(title, quote=False)
+
+    if directives.get("layout") == "main":
+        return _render_main_layout(blocks, escaped_title, video_html, link_resolver, image_resolver)
+
+    body_html = _render_blocks(blocks, link_resolver, image_resolver)
+    return _TEMPLATE.format(title=escaped_title, body=body_html, video=video_html)
+
+
+def _extract_document_directives(markdown_text: str) -> tuple[dict[str, str], str]:
+    """Parse `<!-- key: value -->` lines before the first heading; strip them out.
+
+    Per ADR 0009, this is a single flat parser shared by every document- and
+    section-level directive (`layout`, and the section-level `tags` a future
+    ticket adds) — no YAML dependency, matching this module's stdlib-only
+    design.
+    """
+    lines = markdown_text.splitlines()
+    directives: dict[str, str] = {}
+    remaining_lines: list[str] = []
+    seen_heading = False
+    for line in lines:
+        if not seen_heading and _HEADING_RE.match(line):
+            seen_heading = True
+        if not seen_heading:
+            match = _DIRECTIVE_RE.match(line.strip())
+            if match:
+                directives[match.group(1)] = match.group(2)
+                continue
+        remaining_lines.append(line)
+    return directives, "\n".join(remaining_lines)
+
+
+def _slugify(text: str, seen_slugs: dict[str, int]) -> str:
+    base = _SLUG_INVALID_RE.sub("-", text.lower()).strip("-") or "section"
+    count = seen_slugs.get(base, 0)
+    seen_slugs[base] = count + 1
+    return base if count == 0 else f"{base}-{count}"
+
+
+def _split_into_sections(
+    blocks: list[_Block],
+) -> tuple[list[_Block], list[tuple[str, str, list[_Block]]]]:
+    """Split blocks into leading (pre-first-H2) blocks and H2-headed sections.
+
+    Each section's blocks include its own heading, so `_render_block` needs
+    no special-casing to render it.
+    """
+    intro_blocks: list[_Block] = []
+    sections: list[tuple[str, str, list[_Block]]] = []
+    current_section: list[_Block] | None = None
+    seen_slugs: dict[str, int] = {}
+    for block in blocks:
+        if isinstance(block, _Heading) and block.level == 2:
+            slug = _slugify(block.text, seen_slugs)
+            current_section = [block]
+            sections.append((block.text, slug, current_section))
+            continue
+        if current_section is None:
+            intro_blocks.append(block)
+        else:
+            current_section.append(block)
+    return intro_blocks, sections
+
+
+def _render_main_layout(
+    blocks: list[_Block],
+    escaped_title: str,
+    video_html: str,
+    link_resolver: LinkResolver | None,
+    image_resolver: ImageResolver | None,
+) -> str:
+    intro_blocks, sections = _split_into_sections(blocks)
+    intro_html = _render_blocks(intro_blocks, link_resolver, image_resolver)
+    toc_items = "".join(
+        f'<li><a href="#{html.escape(slug, quote=True)}">{html.escape(heading_text, quote=False)}</a></li>'
+        for heading_text, slug, _ in sections
+    )
+    sections_html = "".join(
+        f'<section id="{html.escape(slug, quote=True)}">'
+        f'{_render_blocks(section_blocks, link_resolver, image_resolver)}</section>'
+        for _heading_text, slug, section_blocks in sections
+    )
+    return _MAIN_TEMPLATE.format(
+        title=escaped_title,
+        video=video_html,
+        intro=intro_html,
+        toc_items=toc_items,
+        sections=sections_html,
+    )
 
 
 @dataclass
@@ -310,6 +409,14 @@ def _find_first_heading_text(blocks: list[_Block]) -> str | None:
         if isinstance(block, _Heading):
             return block.text
     return None
+
+
+def _render_blocks(
+    blocks: list[_Block],
+    link_resolver: LinkResolver | None,
+    image_resolver: ImageResolver | None,
+) -> str:
+    return "\n".join(_render_block(block, link_resolver, image_resolver) for block in blocks)
 
 
 def _render_block(
@@ -558,6 +665,191 @@ td{{
 <main class="shell">
 {video}
 {body}
+</main>
+</body>
+</html>
+"""
+
+
+_MAIN_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=Karla:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{{
+  --ink-900:#1B2430; --ink-700:#3E4A59; --ink-500:#6B7688;
+  --paper-0:#F3F4EF; --paper-1:#FFFFFF; --line:#D3D6CC;
+  --amber:#B96A22; --amber-soft:#F0DFC7;
+  --teal:#2E6B60; --teal-soft:#D9E8E3;
+  --violet:#5B5285; --violet-soft:#E5E2F0;
+  --block:#A23B3B; --block-soft:#F3DBDB;
+  --shadow: 0 1px 2px rgba(27,36,48,.06), 0 8px 24px rgba(27,36,48,.05);
+  color-scheme: light;
+}}
+@media (prefers-color-scheme: dark){{
+  :root:not([data-theme="light"]){{
+    --ink-900:#ECEAE2; --ink-700:#C7CCC0; --ink-500:#93998C;
+    --paper-0:#181B17; --paper-1:#20241F; --line:#3A3F35;
+    --amber:#E0954C; --amber-soft:#3B2C18;
+    --teal:#6FBBAC; --teal-soft:#1D332E;
+    --violet:#B0A6E0; --violet-soft:#2A2540;
+    --block:#E28080; --block-soft:#3A2222;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }}
+}}
+:root[data-theme="dark"]{{
+  --ink-900:#ECEAE2; --ink-700:#C7CCC0; --ink-500:#93998C;
+  --paper-0:#181B17; --paper-1:#20241F; --line:#3A3F35;
+  --amber:#E0954C; --amber-soft:#3B2C18;
+  --teal:#6FBBAC; --teal-soft:#1D332E;
+  --violet:#B0A6E0; --violet-soft:#2A2540;
+  --block:#E28080; --block-soft:#3A2222;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  color-scheme: dark;
+}}
+*{{ box-sizing: border-box; }}
+body{{
+  margin: 0;
+  background: var(--paper-0);
+  color: var(--ink-900);
+  font-family: Karla, system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.6;
+}}
+.shell{{
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 clamp(1.25rem, 4vw, 3rem) 6rem;
+}}
+h1, h2, h3, h4, h5, h6{{
+  font-family: "Source Serif 4", Georgia, serif;
+  font-weight: 600;
+  color: var(--ink-900);
+}}
+code, pre{{
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}}
+pre{{
+  background: var(--paper-1);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+}}
+a{{ color: var(--teal); }}
+a:focus-visible, button:focus-visible{{
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}}
+blockquote.callout{{
+  border-left: 3px solid var(--amber);
+  background: var(--amber-soft);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+}}
+hr{{
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 2rem 0;
+}}
+.table-wrap{{
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow);
+  margin: 1rem 0;
+}}
+.video-embed{{
+  margin: 0 0 2rem;
+}}
+.video-embed video{{
+  display: block;
+  width: 100%;
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow);
+}}
+table{{
+  border-collapse: collapse;
+  width: 100%;
+}}
+th, td{{
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+}}
+th{{
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  background: var(--paper-0);
+}}
+td{{
+  background: var(--paper-1);
+}}
+.pill, .demo-badge{{
+  display: inline-block;
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+}}
+.pill.new{{ background: var(--teal-soft); color: var(--teal); }}
+.pill.ext{{ background: var(--violet-soft); color: var(--violet); }}
+.pill.same{{ background: var(--block-soft); color: var(--block); }}
+.demo-badge{{ background: var(--teal-soft); color: var(--teal); }}
+.layout{{
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 2.5rem;
+  align-items: start;
+}}
+@media (max-width: 860px){{
+  .layout{{ grid-template-columns: 1fr; }}
+}}
+nav.toc{{
+  position: sticky;
+  top: 1.5rem;
+}}
+nav.toc ol{{
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}}
+nav.toc li{{
+  margin-bottom: 0.5rem;
+}}
+nav.toc a{{
+  color: var(--ink-700);
+  text-decoration: none;
+}}
+nav.toc a:hover{{
+  color: var(--teal);
+}}
+section + section{{
+  margin-top: 3rem;
+}}
+@media (prefers-reduced-motion: reduce){{
+  *{{ transition: none !important; }}
+}}
+</style>
+</head>
+<body>
+<main class="shell">
+{video}
+{intro}
+<div class="layout">
+<nav class="toc" aria-label="Table of contents"><ol id="toc-list">
+{toc_items}
+</ol></nav>
+<div class="content">
+{sections}
+</div>
+</div>
 </main>
 </body>
 </html>
