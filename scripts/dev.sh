@@ -15,7 +15,7 @@ CLEANUP_OPTION="${4:-}"
 COMPOSE=()
 
 usage() {
-    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|docs-build:doc|docs-build:video|reset} [argument] [extra] [option]" >&2
+    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|docs-build|docs-build:doc|docs-build:video|reset} [argument] [extra] [option]" >&2
     exit 2
 }
 
@@ -94,6 +94,36 @@ assert_relative_path() {
     [[ -n "$path" ]] || { echo "$label requires a path argument." >&2; exit 1; }
     [[ "$path" != /* && "/$path/" != *"/../"* ]] || { echo "$label path must be a relative path inside the repository." >&2; exit 1; }
     [[ -e "$path" ]] || { echo "$label path '$path' does not exist." >&2; exit 1; }
+}
+
+docs_build_doc() {
+    local argument="$1" docs_build_doc_args=()
+    if [[ -n "$argument" ]]; then
+        assert_relative_path "$argument" "docs-build:doc"
+        docs_build_doc_args=("$argument")
+    fi
+    compose run --rm --no-deps odoo python3 -m scripts.docs_build.cli "${docs_build_doc_args[@]}"
+}
+
+docs_build_video() {
+    local project_path="$1" host_python
+    assert_relative_path "$project_path" "docs-build:video"
+    host_python="$(resolve_host_python)"
+    "$host_python" -m scripts.docs_build.video_cli "$project_path"
+}
+
+# Authored HyperFrames projects live at docs/teach/videos/<stem>/ (see
+# scripts/docs_build/video_cli.py and docs/adr/0008) - one per teach doc that has
+# a walkthrough video authored for it. Bare `docs-build` re-renders every one it
+# finds; a teach doc with no authored project simply has no video.
+docs_build_video_projects() {
+    local videos_dir="docs/teach/videos"
+    [[ -d "$videos_dir" ]] || return 0
+    find "$videos_dir" -mindepth 2 -maxdepth 2 -name hyperframes.json -print0 |
+        while IFS= read -r -d '' manifest; do
+            dirname "$manifest"
+        done |
+        sort
 }
 
 start_database() {
@@ -255,19 +285,15 @@ case "$COMMAND" in
         esac
         compose run --rm --no-deps odoo ruff check "${ruff_options[@]}" "/workspace/$lint_path"
         ;;
-    docs-build:doc)
-        docs_build_doc_args=()
-        if [[ -n "$ARGUMENT" ]]; then
-            assert_relative_path "$ARGUMENT" "docs-build:doc"
-            docs_build_doc_args=("$ARGUMENT")
-        fi
-        compose run --rm --no-deps odoo python3 -m scripts.docs_build.cli "${docs_build_doc_args[@]}"
+    docs-build)
+        docs_build_doc ""
+        while IFS= read -r project; do
+            [[ -n "$project" ]] || continue
+            docs_build_video "$project"
+        done < <(docs_build_video_projects)
         ;;
-    docs-build:video)
-        assert_relative_path "$ARGUMENT" "docs-build:video"
-        host_python="$(resolve_host_python)"
-        "$host_python" -m scripts.docs_build.video_cli "$ARGUMENT"
-        ;;
+    docs-build:doc) docs_build_doc "$ARGUMENT" ;;
+    docs-build:video) docs_build_video "$ARGUMENT" ;;
     reset)
         project="$(setting COMPOSE_PROJECT_NAME agentic-erp-dev)"
         [[ "$project" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo "Unsafe Compose project name '$project'." >&2; exit 1; }
