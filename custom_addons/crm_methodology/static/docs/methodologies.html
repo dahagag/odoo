@@ -6,184 +6,173 @@
 <title>The Eight B2B Sales Methodologies</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=Karla:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
-:root{
-  --ink-900:#1B2430; --ink-700:#3E4A59; --ink-500:#6B7688;
-  --paper-0:#F3F4EF; --paper-1:#FFFFFF; --line:#D3D6CC;
-  --amber:#B96A22; --amber-soft:#F0DFC7;
-  --teal:#2E6B60; --teal-soft:#D9E8E3;
-  --violet:#5B5285; --violet-soft:#E5E2F0;
-  --block:#A23B3B; --block-soft:#F3DBDB;
-  --shadow: 0 1px 2px rgba(27,36,48,.06), 0 8px 24px rgba(27,36,48,.05);
-  color-scheme: light;
-}
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
+  :root{
+    --ink-900:#1B2430; --ink-700:#3E4A59; --ink-500:#6B7688;
+    --paper-0:#F3F4EF; --paper-1:#FFFFFF; --line:#D3D6CC;
+    --amber:#B96A22; --amber-soft:#F0DFC7;
+    --teal:#2E6B60; --teal-soft:#D9E8E3;
+    --violet:#5B5285; --violet-soft:#E5E2F0;
+    --shadow: 0 1px 2px rgba(27,36,48,.06), 0 8px 24px rgba(27,36,48,.05);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink-900:#ECEAE2; --ink-700:#C7CCC0; --ink-500:#93998C;
+      --paper-0:#181B17; --paper-1:#20241F; --line:#3A3F35;
+      --amber:#E0954C; --amber-soft:#3B2C18;
+      --teal:#6FBBAC; --teal-soft:#1D332E;
+      --violet:#B0A6E0; --violet-soft:#2A2540;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
     --ink-900:#ECEAE2; --ink-700:#C7CCC0; --ink-500:#93998C;
     --paper-0:#181B17; --paper-1:#20241F; --line:#3A3F35;
     --amber:#E0954C; --amber-soft:#3B2C18;
     --teal:#6FBBAC; --teal-soft:#1D332E;
     --violet:#B0A6E0; --violet-soft:#2A2540;
-    --block:#E28080; --block-soft:#3A2222;
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
     color-scheme: dark;
   }
-}
-:root[data-theme="dark"]{
-  --ink-900:#ECEAE2; --ink-700:#C7CCC0; --ink-500:#93998C;
-  --paper-0:#181B17; --paper-1:#20241F; --line:#3A3F35;
-  --amber:#E0954C; --amber-soft:#3B2C18;
-  --teal:#6FBBAC; --teal-soft:#1D332E;
-  --violet:#B0A6E0; --violet-soft:#2A2540;
-  --block:#E28080; --block-soft:#3A2222;
-  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
-  color-scheme: dark;
-}
-*{ box-sizing: border-box; }
-body{
-  margin: 0;
-  background: var(--paper-0);
-  color: var(--ink-900);
-  font-family: Karla, system-ui, -apple-system, "Segoe UI", sans-serif;
-  line-height: 1.6;
-}
-.shell{
-  max-width: 840px;
-  margin: 0 auto;
-  padding: 0 clamp(1.25rem, 4vw, 2rem) 6rem;
-}
-h1, h2, h3, h4, h5, h6{
-  font-family: "Source Serif 4", Georgia, serif;
-  font-weight: 600;
-  color: var(--ink-900);
-}
-code, pre{
-  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-pre{
-  background: var(--paper-1);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 1rem;
-  overflow-x: auto;
-}
-a{ color: var(--teal); }
-a:focus-visible, button:focus-visible{
-  outline: 2px solid var(--amber);
-  outline-offset: 2px;
-}
-blockquote.callout{
-  border-left: 3px solid var(--amber);
-  background: var(--amber-soft);
-  border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
-  margin: 1rem 0;
-}
-hr{
-  border: none;
-  border-top: 1px solid var(--line);
-  margin: 2rem 0;
-}
-.table-wrap{
-  overflow-x: auto;
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  box-shadow: var(--shadow);
-  margin: 1rem 0;
-}
-.video-embed{
-  margin: 0 0 2rem;
-}
-.video-embed video{
-  display: block;
-  width: 100%;
-  border-radius: 0.5rem;
-  box-shadow: var(--shadow);
-}
-table{
-  border-collapse: collapse;
-  width: 100%;
-}
-th, td{
-  text-align: left;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--line);
-}
-th{
-  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  background: var(--paper-0);
-}
-td{
-  background: var(--paper-1);
-}
-@media (prefers-reduced-motion: reduce){
-  *{ transition: none !important; }
-}
+  *{box-sizing:border-box;}
+  body{ margin:0; background:var(--paper-0); color:var(--ink-900); font-family:'Karla',system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  a{ color:var(--teal); }
+  a:focus-visible{ outline:2px solid var(--amber); outline-offset:2px; }
+  .shell{ max-width:840px; margin:0 auto; padding:0 clamp(1.25rem,4vw,2rem) 6rem; }
+
+  .backlink{
+    display:inline-flex; align-items:center; gap:.4rem;
+    font-family:'IBM Plex Mono',monospace; font-size:.78rem;
+    color:var(--ink-500); text-decoration:none;
+    margin-top:2rem;
+  }
+  .backlink:hover{ color:var(--amber); }
+
+  header.hero{ padding:1rem 0 2rem; border-bottom:1px solid var(--line); margin-bottom:2rem; }
+  .eyebrow{ font-family:'IBM Plex Mono',monospace; font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--amber); margin:0 0 .9rem; }
+  h1.title{ font-family:'Source Serif 4',Georgia,serif; font-weight:600; font-size:clamp(1.9rem,4.4vw,2.8rem); line-height:1.1; margin:0 0 .9rem; text-wrap:balance; }
+  .dek{ font-size:1.05rem; color:var(--ink-700); max-width:60ch; line-height:1.55; }
+
+  .ilo{
+    background:var(--paper-1); border:1px solid var(--line); border-radius:.7rem;
+    padding:1.4rem 1.6rem; margin-bottom:2.5rem; box-shadow:var(--shadow);
+  }
+  .ilo h2{ font-family:'IBM Plex Mono',monospace; font-size:.75rem; text-transform:uppercase; letter-spacing:.08em; color:var(--amber); margin:0 0 .8rem; }
+  .ilo ul{ margin:0; padding-left:1.2rem; }
+  .ilo li{ color:var(--ink-700); line-height:1.6; margin-bottom:.5rem; font-size:.95rem; }
+  .ilo li:last-child{ margin-bottom:0; }
+
+  .method{
+    padding:2rem 0; border-bottom:1px solid var(--line);
+  }
+  .method:last-of-type{ border-bottom:none; }
+  .method-head{ display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; margin-bottom:.9rem; }
+  h2.method-title{ font-family:'Source Serif 4',Georgia,serif; font-weight:600; font-size:1.5rem; margin:0; }
+  .demo-badge{
+    font-family:'IBM Plex Mono',monospace; font-size:.68rem; text-transform:uppercase; letter-spacing:.05em;
+    background:var(--teal-soft); color:var(--teal); padding:.22rem .6rem; border-radius:999px;
+  }
+  .method p{ max-width:66ch; line-height:1.7; color:var(--ink-700); margin:0 0 .9rem; font-size:.98rem; }
+  .method p:last-child{ margin-bottom:0; }
+  .method strong{ color:var(--ink-900); }
+  .method .label{ font-family:'IBM Plex Mono',monospace; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-500); display:block; margin-bottom:.2rem; }
+
+  footer.reading{ margin-top:2.5rem; padding-top:1.5rem; border-top:1px solid var(--line); }
+  footer.reading a{ font-size:.92rem; }
 </style>
 </head>
 <body>
-<main class="shell">
 
-<h1>The Eight B2B Sales Methodologies</h1>
-<p><em>A deep-dive teaching branch of <a href="sales-methodology-vs-odoo-crm.html" rel="noopener noreferrer">Sales Methodology, Explained</a>. Every claim below is sourced from <a href="b2b-sales-methodologies-odoo.html" rel="noopener noreferrer"><code>docs/research/b2b-sales-methodologies-odoo.md</code></a>, which cites primary sources (the trademark holder or originating author&#x27;s own site) for each methodology — this page distills that research for a reader who wants to understand the methodologies themselves and how the <code>crm.methodology</code> addon&#x27;s Requirements/Checkpoints/Enforcement map onto each one.</em></p>
-<h2>Intended Learning Outcomes</h2>
-<p>After reading this page, you should be able to:</p>
-<ul><li>Name the core framework of each of the eight methodologies the addon can model, in the originating organization&#x27;s own terms.</li><li>Explain what problem each methodology claims to solve, so you can match a prospective client&#x27;s stated pain to the right one.</li><li>Identify which three methodologies are pre-seeded in the demo data (MEDDIC, Sandler, SPIN) and which five are supported by the addon&#x27;s architecture but not yet configured (CustomerCentric Selling, Solution Selling, Challenger, ValueSelling, Consultative Selling).</li><li>Translate a methodology&#x27;s own named elements (e.g. MEDDIC&#x27;s &quot;Economic Buyer&quot;) into what it would look like as a <code>crm.methodology.requirement</code> in this addon.</li></ul>
-<hr>
-<h2>MEDDIC / MEDDPICC 🟢 <em>used in our demo</em></h2>
-<p><strong>Origin.</strong> Developed inside PTC in the early 1990s; MEDDIC Academy and the MEDDICC platform both host primary material, though they attribute the framework&#x27;s authorship slightly differently (a PTC sales-management team vs. Dick Dunkel personally).</p>
-<p><strong>The framework.</strong> Six elements, per MEDDIC Academy&#x27;s own definition: <strong>M</strong>etrics (the measurable economic benefit vs. competition or no-decision), <strong>E</strong>conomic Buyer (who can actually release funds), <strong>D</strong>ecision Process, <strong>D</strong>ecision Criteria, <strong>I</strong>dentify Pain, <strong>C</strong>hampion. MEDDPICC adds <strong>P</strong>aper Process and <strong>C</strong>ompetition.</p>
-<p><strong>Problem it addresses.</strong> More accurate deal qualification and forecasting — MEDDIC Academy states it directly: &quot;if you execute the above in any complex B-to-B sales campaign, you win the sale.&quot;</p>
-<p><strong>Seeded in the demo as:</strong> 6 Requirements (Metrics, Economic Buyer, Decision Process, Decision Criteria, Identify Pain, Champion) and 3 Playbook Questions (Metrics, Identify Pain, Economic Buyer), assigned to demo client Nimbus Robotics.</p>
-<p><strong>Mapping to the addon.</strong> This is the most directly CRM-field-shaped methodology of the eight — each named element is already something to &quot;identify,&quot; &quot;know,&quot; or &quot;measure&quot; per deal, which is exactly what a <code>crm.methodology.requirement</code> is for.</p>
-<hr>
-<h2>Sandler Selling System 🟢 <em>used in our demo</em></h2>
-<p><strong>Origin.</strong> Created by David H. Sandler, founder of Sandler Training, &quot;with a clinical psychologist,&quot; positioned explicitly against manipulative, pressure-based sales tactics.</p>
-<p><strong>The framework.</strong> Seven steps, per Sandler&#x27;s own page: Establishing Bonding &amp; Rapport, Setting an Up-Front Contract, Identify the Prospect&#x27;s Pain, Uncover the Prospect&#x27;s Budget, Identify the Decision Making Process, Present Your Fulfillment of the Agreement, Confirm the Post-Sell Process.</p>
-<p><strong>Problem it addresses.</strong> Preventing &quot;games&quot; — pressure tactics and manipulation — from ever entering the sales conversation, by putting the rep in control of a structured discovery process instead.</p>
-<p><strong>Seeded in the demo as:</strong> 3 Requirements (Pain, Budget, Decision-Making Process) and 2 Playbook Questions (Up-Front Contract, Confirm Post-Sell), assigned to demo client Falcon Logistics.</p>
-<p><strong>Mapping to the addon.</strong> The three Requirements cover the steps most naturally captured as data (Pain, Budget, Decision Process); the two conversational steps (Up-Front Contract, Post-Sell Confirmation) are Playbook Questions instead, since they&#x27;re about <em>what to ask</em>, not a field to fill in.</p>
-<hr>
-<h2>SPIN Selling 🟢 <em>used in our demo</em></h2>
-<p><strong>Origin.</strong> Created by Neil Rackham, founder of Huthwaite International, first documented in his 1988 book of the same name. Huthwaite&#x27;s own site also credits Rackham as a pioneer of the broader &quot;consultative selling&quot; approach (see below).</p>
-<p><strong>The framework.</strong> Four question types asked in sequence: <strong>S</strong>ituation, <strong>P</strong>roblem, <strong>I</strong>mplication, <strong>N</strong>eed-payoff — used within a four-stage conversation (Preliminaries, Investigating, Demonstrating capability, Obtaining commitment).</p>
-<p><strong>Problem it addresses.</strong> Big, complex transactions, where uncovering a buyer&#x27;s latent problems and their business implications — rather than pitching features — is what actually creates the buyer&#x27;s own sense of need and urgency.</p>
-<p><strong>Seeded in the demo as:</strong> 0 Requirements (deliberately) and 4 Playbook Questions (Situation, Problem, Implication, Need-payoff), assigned to demo client Comet Analytics.</p>
-<p><strong>Mapping to the addon.</strong> SPIN is playbook-only by design in the demo data: its value is entirely in the sequence and content of the questions asked during discovery, not in a qualification field to fill afterward — a clean illustration that a <code>crm.methodology</code> doesn&#x27;t have to define any Requirements at all.</p>
-<hr>
-<h2>CustomerCentric Selling</h2>
-<p><strong>Origin.</strong> Created by Michael T. Bosworth with John R. Holland; now trained via customercentric.com.</p>
-<p><strong>The framework.</strong> Built around Targeted Conversation Lists™ (pairing decision-maker titles with the business outcomes they care about), diagnostic questions, and &quot;Sales Ready Messaging®.&quot; The guiding principle, in the methodology&#x27;s own words: &quot;people would rather buy than be sold to.&quot;</p>
-<p><strong>Problem it addresses.</strong> Losing deals to &quot;no decision,&quot; trouble reaching real decision-makers, inconsistent rep performance, unreliable forecasts, excessive discounting, and sales/marketing message misalignment.</p>
-<p><strong>Mapping to the addon.</strong> Would need a Requirement recording each targeted decision-maker&#x27;s title/role per opportunity, plus a milestone/grading Checkpoint a sales manager reviews against — not yet configured in the demo, but architecturally straightforward to add as a new <code>crm.methodology</code> record.</p>
-<hr>
-<h2>Solution Selling</h2>
-<p><strong>Origin.</strong> Michael T. Bosworth&#x27;s 1995 book, now marketed by Richardson Sales Performance.</p>
-<p><strong>The framework.</strong> Five components (A Map for Sales Success, Building Sales Pipelines, Establishing Buyer Consensus, Collaborating with Buyers, Negotiating the Win) and a diagnostic model Richardson calls <strong>PPVVC</strong>: Pain, Power, Vision, Value, Consensus.</p>
-<p><strong>Problem it addresses.</strong> Long sales cycles, complex buying groups, and inconsistent pipelines in a &quot;consensus-driven&quot; B2B environment.</p>
-<p><strong>Mapping to the addon.</strong> PPVVC&#x27;s five dimensions translate directly to five Requirements — a close analog to how MEDDIC&#x27;s six elements were configured.</p>
-<hr>
-<h2>The Challenger Sale</h2>
-<p><strong>Origin.</strong> Matthew Dixon and Brent Adamson, from CEB (later Gartner) research; commercialized by Challenger Inc.</p>
-<p><strong>The framework.</strong> Three behaviors — &quot;Teach, Tailor, Take Control&quot; — built around creating &quot;constructive tension,&quot; with a six-part conversation structure (warmer, reframe, rational drowning, emotional impact, presenting a new way, the solution).</p>
-<p><strong>Problem it addresses.</strong> Challenger&#x27;s own research found that traditional relationship-first selling (&quot;the Relationship Builder&quot;) performs worst in complex sales, and that buyers are typically 57% through their buying process before ever engaging a rep — so the rep&#x27;s job is to teach something new, not just relate well.</p>
-<p><strong>Mapping to the addon.</strong> The natural Requirement here is less a qualification field and more a record of <em>what specific insight was taught to which stakeholder</em> — closer to a structured Playbook Question than a Metrics-style field.</p>
-<hr>
-<h2>ValueSelling Framework</h2>
-<p><strong>Origin.</strong> Created and owned by ValueSelling Associates, Inc.</p>
-<p><strong>The framework.</strong> A four-stage cycle: <strong>Engage → Qualify → Advance → Close</strong>, aimed at giving a revenue team &quot;a common language&quot; to &quot;compete on value, not price.&quot;</p>
-<p><strong>Problem it addresses.</strong> Price-based competition — connecting a solution to quantified business impact instead of a features list.</p>
-<p><strong>Mapping to the addon.</strong> The natural Requirement is a quantified buyer-side value/ROI figure — deliberately distinct from <code>expected_revenue</code> (which quantifies the deal&#x27;s value to the <em>seller</em>, not the value delivered to the <em>buyer</em>).</p>
-<hr>
-<h2>Consultative Selling (umbrella term)</h2>
-<p><strong>Origin.</strong> Treated as a general umbrella rather than a single trademarked system — no single primary source claims exclusive ownership the way the other seven do. Often traced bibliographically to Mack Hanan&#x27;s 1970 book, though Huthwaite International&#x27;s own site also credits Neil Rackham (SPIN&#x27;s creator) as &quot;a leading authority on consultative selling.&quot;</p>
-<p><strong>The framework.</strong> No single named structure — open-ended, discovery-led conversation, by design.</p>
-<p><strong>Problem it addresses.</strong> Generic: selling by understanding the buyer&#x27;s needs first, rather than pitching.</p>
-<p><strong>Mapping to the addon.</strong> No named Requirement set is implied by the research — a client asking for &quot;consultative selling&quot; support is really asking which of the other seven (usually SPIN, MEDDIC, or Solution Selling) they actually mean, since &quot;consultative&quot; describes a stance, not a checklist.</p>
-<hr>
-<h2>Further reading</h2>
-<ul><li><a href="sales-methodology-vs-odoo-crm.html" rel="noopener noreferrer">Sales Methodology, Explained</a> — the main teach doc this page branches from</li><li><a href="b2b-sales-methodologies-odoo.html" rel="noopener noreferrer">B2B sales methodologies research</a> — full primary-source citations for every claim above, plus how OOTB Odoo and six competing platforms handle (or don&#x27;t handle) each one</li></ul>
-</main>
+<div class="shell">
+  <header class="hero">
+    <p class="eyebrow">Deep-dive teaching branch</p>
+    <h1 class="title">The Eight B2B Sales Methodologies</h1>
+    <p class="dek">Branches off <a href="https://claude.ai/code/artifact/34b9bfe1-df69-41f9-a912-adf3d73c50d3">Sales Methodology, Explained</a>. Every claim here traces to the trademark holder's or originating author's own site — full citations live in the underlying research doc.</p>
+  </header>
+
+  <div class="ilo">
+    <h2>Intended Learning Outcomes</h2>
+    <ul>
+      <li>Name the core framework of each of the eight methodologies the addon can model, in the originating organization's own terms.</li>
+      <li>Explain what problem each methodology claims to solve, so you can match a prospective client's stated pain to the right one.</li>
+      <li>Identify which three methodologies are pre-seeded in the demo data (MEDDIC, Sandler, SPIN) and which five are supported by the addon's architecture but not yet configured.</li>
+      <li>Translate a methodology's own named elements (e.g. MEDDIC's "Economic Buyer") into what it would look like as a Requirement in this addon.</li>
+    </ul>
+  </div>
+
+  <main>
+    <section class="method">
+      <div class="method-head"><h2 class="method-title">MEDDIC / MEDDPICC</h2><span class="demo-badge">Used in our demo</span></div>
+      <p><span class="label">Origin</span>Developed inside PTC in the early 1990s; MEDDIC Academy and the MEDDICC platform both host primary material, attributing authorship slightly differently.</p>
+      <p><span class="label">The framework</span>Six elements: <strong>M</strong>etrics (measurable economic benefit vs. competition or no-decision), <strong>E</strong>conomic Buyer (who can release funds), <strong>D</strong>ecision Process, <strong>D</strong>ecision Criteria, <strong>I</strong>dentify Pain, <strong>C</strong>hampion. MEDDPICC adds <strong>P</strong>aper Process and <strong>C</strong>ompetition.</p>
+      <p><span class="label">Problem it addresses</span>More accurate deal qualification and forecasting.</p>
+      <p><span class="label">Seeded in the demo as</span>6 Requirements (Metrics, Economic Buyer, Decision Process, Decision Criteria, Identify Pain, Champion), 3 Playbook Questions — assigned to demo client Nimbus Robotics.</p>
+      <p><span class="label">Mapping to the addon</span>The most directly CRM-field-shaped methodology of the eight — each element is already something to identify, know, or measure per deal, exactly what a Requirement is for.</p>
+    </section>
+
+    <section class="method">
+      <div class="method-head"><h2 class="method-title">Sandler Selling System</h2><span class="demo-badge">Used in our demo</span></div>
+      <p><span class="label">Origin</span>Created by David H. Sandler, founder of Sandler Training, positioned explicitly against pressure-based sales tactics.</p>
+      <p><span class="label">The framework</span>Seven steps: Establishing Bonding &amp; Rapport, Setting an Up-Front Contract, Identify the Prospect's Pain, Uncover the Prospect's Budget, Identify the Decision Making Process, Present Your Fulfillment of the Agreement, Confirm the Post-Sell Process.</p>
+      <p><span class="label">Problem it addresses</span>Preventing manipulation and "games" from entering the sales conversation.</p>
+      <p><span class="label">Seeded in the demo as</span>3 Requirements (Pain, Budget, Decision-Making Process), 2 Playbook Questions — assigned to demo client Falcon Logistics.</p>
+      <p><span class="label">Mapping to the addon</span>Data-shaped steps become Requirements; the two conversational steps (Up-Front Contract, Post-Sell Confirmation) become Playbook Questions instead.</p>
+    </section>
+
+    <section class="method">
+      <div class="method-head"><h2 class="method-title">SPIN Selling</h2><span class="demo-badge">Used in our demo</span></div>
+      <p><span class="label">Origin</span>Created by Neil Rackham, founder of Huthwaite International, first documented in his 1988 book of the same name.</p>
+      <p><span class="label">The framework</span>Four question types in sequence: <strong>S</strong>ituation, <strong>P</strong>roblem, <strong>I</strong>mplication, <strong>N</strong>eed-payoff.</p>
+      <p><span class="label">Problem it addresses</span>Big, complex transactions, where uncovering latent problems creates the buyer's own sense of urgency.</p>
+      <p><span class="label">Seeded in the demo as</span>0 Requirements (deliberately), 4 Playbook Questions — assigned to demo client Comet Analytics.</p>
+      <p><span class="label">Mapping to the addon</span>Playbook-only by design: SPIN's value is entirely in the sequence of questions asked, not a field filled in afterward — proof a methodology doesn't need any Requirements at all.</p>
+    </section>
+
+    <section class="method">
+      <div class="method-head"><h2 class="method-title">CustomerCentric Selling</h2></div>
+      <p><span class="label">Origin</span>Created by Michael T. Bosworth with John R. Holland; trained today via customercentric.com.</p>
+      <p><span class="label">The framework</span>Targeted Conversation Lists™ pairing decision-maker titles with business outcomes, diagnostic questions, and "Sales Ready Messaging®." Guiding principle: "people would rather buy than be sold to."</p>
+      <p><span class="label">Problem it addresses</span>Losing deals to "no decision," trouble reaching real decision-makers, inconsistent forecasts, excessive discounting.</p>
+      <p><span class="label">Mapping to the addon</span>Would need a Requirement recording each decision-maker's title/role, plus a milestone Checkpoint a manager reviews against — not configured in the demo, but a straightforward new <code>crm.methodology</code> record.</p>
+    </section>
+
+    <section class="method">
+      <div class="method-head"><h2 class="method-title">Solution Selling</h2></div>
+      <p><span class="label">Origin</span>Michael T. Bosworth's 1995 book, now marketed by Richardson Sales Performance.</p>
+      <p><span class="label">The framework</span>Five components, and a diagnostic model called <strong>PPVVC</strong>: Pain, Power, Vision, Value, Consensus.</p>
+      <p><span class="label">Problem it addresses</span>Long sales cycles, complex buying groups, inconsistent pipelines.</p>
+      <p><span class="label">Mapping to the addon</span>PPVVC's five dimensions translate directly to five Requirements — a close analog to how MEDDIC's six elements were configured.</p>
+    </section>
+
+    <section class="method">
+      <div class="method-head"><h2 class="method-title">The Challenger Sale</h2></div>
+      <p><span class="label">Origin</span>Matthew Dixon and Brent Adamson, from CEB/Gartner research; commercialized by Challenger Inc.</p>
+      <p><span class="label">The framework</span>Three behaviors — "Teach, Tailor, Take Control" — built around creating constructive tension.</p>
+      <p><span class="label">Problem it addresses</span>Relationship-first selling performs worst in complex sales; buyers are ~57% through their buying process before engaging a rep, so the rep's job is to teach.</p>
+      <p><span class="label">Mapping to the addon</span>The natural fit is a record of what insight was taught to which stakeholder — closer to a Playbook Question than a Metrics-style field.</p>
+    </section>
+
+    <section class="method">
+      <div class="method-head"><h2 class="method-title">ValueSelling Framework</h2></div>
+      <p><span class="label">Origin</span>Created and owned by ValueSelling Associates, Inc.</p>
+      <p><span class="label">The framework</span>A four-stage cycle: <strong>Engage → Qualify → Advance → Close</strong>.</p>
+      <p><span class="label">Problem it addresses</span>Price-based competition — connecting a solution to quantified business impact instead of features.</p>
+      <p><span class="label">Mapping to the addon</span>The natural Requirement is a quantified buyer-side value/ROI figure, deliberately distinct from <code>expected_revenue</code> (which quantifies value to the seller, not the buyer).</p>
+    </section>
+
+    <section class="method">
+      <div class="method-head"><h2 class="method-title">Consultative Selling</h2></div>
+      <p><span class="label">Origin</span>An umbrella term, not a single trademarked system — often traced bibliographically to Mack Hanan's 1970 book, though Huthwaite International also credits SPIN's Neil Rackham as a pioneer of the approach.</p>
+      <p><span class="label">The framework</span>No single named structure — open-ended, discovery-led conversation, by design.</p>
+      <p><span class="label">Problem it addresses</span>Generic: understanding the buyer's needs before pitching.</p>
+      <p><span class="label">Mapping to the addon</span>No named Requirement set is implied — a client asking for "consultative selling" is usually really asking about SPIN, MEDDIC, or Solution Selling specifically.</p>
+    </section>
+  </main>
+
+  <footer class="reading">
+    <a class="backlink" href="https://claude.ai/code/artifact/34b9bfe1-df69-41f9-a912-adf3d73c50d3">&larr; Back to Sales Methodology, Explained</a>
+  </footer>
+</div>
 </body>
 </html>
