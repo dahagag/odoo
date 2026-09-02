@@ -87,7 +87,9 @@
   /* Hero walkthrough video. Rules copied verbatim from docs-build:doc's template
      (scripts/docs_build/markdown_transform.py) so a regeneration under #74 matches. */
   .video-embed{
-    margin:0 0 2rem;
+    /* sits between the hero rule and the TOC/content layout; the hero already
+       carries 2.5rem below its border, so only the lower gap is needed here */
+    margin:0 0 2.5rem;
   }
   .video-embed video{
     display:block;
@@ -443,7 +445,6 @@
 <body>
 
 <div class="shell">
-  <div class="video-embed"><video src="sales-methodology-vs-odoo-crm.mp4" controls preload="metadata"></video></div>
   <header class="hero">
     <p class="eyebrow">Teach doc &middot; custom_addons/crm_methodology</p>
     <h1 class="title">Sales Methodology, Explained</h1>
@@ -456,6 +457,8 @@
       <button id="reset-filter" hidden>Clear filter</button>
     </div>
   </header>
+
+  <div class="video-embed"><video src="sales-methodology-vs-odoo-crm.mp4" controls preload="metadata"></video></div>
 
   <div class="layout">
     <nav class="toc" aria-label="Table of contents">
