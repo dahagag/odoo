@@ -18,18 +18,7 @@ Internal research surveyed [eight named B2B methodologies](https://claude.ai/cod
 
 The addon's founding commit frames the need directly: Sales Managers define named Sales Methodologies; opportunities inherit their client's methodology; reps are blocked with a clear error when a Block-enforcement Requirement is unmet. The core engine shipped first, followed by demo personas so the workflow could be shown live, and a "Reset Demo Data" action so the demo can be replayed without polluting real data.
 
-```mermaid
-flowchart LR
-    A["Client's default\nmethodology"] --> B["New opportunity\ninherits it"]
-    B --> C["Qualification tab:\ncompletion / warnings / blockers"]
-    C --> D{"Create quotation"}
-    D -- "Block Requirement unmet" --> D1["Refused,\nclear error"]
-    D -- "met" --> E["Activity marked done"]
-    E --> F["Playbook Question\nwizard (if matched)"]
-    F --> G{"Mark Won"}
-    G -- "Block Requirement unmet" --> G1["Refused,\nclear error"]
-    G -- "met" --> H["Won"]
-```
+![Workflow: a new opportunity inherits its client's default methodology, shows live completion in the Qualification tab, and is gated at two points — creating a quotation and marking Won — each either refused with a clear error when a Block Requirement is unmet, or proceeding (through an activity-done Playbook Question wizard, in the quotation case) to Won.](images/workflow-diagram.svg)
 
 The addon deliberately does **not** try to own qualification-field storage itself. Requirements reference Odoo's native per-team `lead_properties` Properties mechanism by string key, rather than defining bespoke fields — and the reason is simple: Sales Teams already configure their own Properties, and a second, addon-owned field system would immediately fork from whatever fields a team actually uses, forcing reps to fill in the same information twice under two different names. Referencing by key keeps one field, one place, one name — the addon adds enforcement on top of data that already exists, instead of asking teams to maintain it twice. More on that trade-off in [§8](#decisions).
 
@@ -87,22 +76,7 @@ The addon never reads or writes Odoo's pipeline-stage field (`stage_id`) or its 
 
 Requirements reference the Properties system by key instead of owning field definitions themselves. This keeps qualification data inside the same Properties system Sales Teams already use, avoiding a second parallel field system. The trade-off: a Requirement's key can drift out of sync with a team's actual Properties definition, which is why the addon includes reconciliation and "Sync to Team" logic rather than assuming they always match.
 
-```mermaid
-flowchart TB
-    subgraph Team["Sales Team"]
-        PD["Properties Definition\n(owned by the team)"]
-    end
-    subgraph Methodology["Sales Methodology"]
-        R["Requirement\nkey = 'economic_buyer'\n(a reference, never a definition)"]
-    end
-    subgraph Lead["Opportunity"]
-        LP["Properties\n(the actual stored value)"]
-    end
-    R -- "looks up key in" --> PD
-    PD -- "defines the field\nthat backs" --> LP
-    R -. "reads / checks value from" .-> LP
-    R -- "key missing?\nSync to Team" --> PD
-```
+![Properties reference: the Sales Team owns the Properties Definition; a Sales Methodology's Requirement holds a key that looks up that definition (and can trigger Sync to Team when the key is missing); the Properties Definition defines the field that backs the Opportunity's own Properties, where the Requirement reads and checks the actual stored value.](images/properties-reference-diagram.svg)
 
 The addon also follows OCA-style module versioning — the target Odoo series comes first, and the rest tracks the addon's own feature and fix increments independently of Odoo core.
 
