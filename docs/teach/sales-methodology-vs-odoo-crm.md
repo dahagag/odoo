@@ -14,7 +14,7 @@ The reason it exists: stock Odoo 19 CRM has no concept of a named B2B sales meth
 <!-- section: why s r c -->
 ## Why this exists
 
-Internal research surveyed [eight named B2B methodologies](https://claude.ai/code/artifact/9ad91be5-df4d-44fc-9327-26fa130d30dc) — MEDDIC/MEDDPICC, Sandler, Challenger Sale, SPIN Selling, Solution Selling, CustomerCentric Selling, ValueSelling, Consultative Selling — from primary, trademark-holder sources, then checked whether stock Odoo 19 CRM already supported any of them. It found nothing: no methodology-specific fields, stages, or terminology anywhere in the vendored CRM, Sales, or Mail modules. See [The Eight B2B Sales Methodologies](https://claude.ai/code/artifact/9ad91be5-df4d-44fc-9327-26fa130d30dc) for what each one actually claims, in its own trademark holder's words, and how it maps onto a Sales Methodology configuration.
+Internal research surveyed [eight named B2B methodologies](methodologies.md) — MEDDIC/MEDDPICC, Sandler, Challenger Sale, SPIN Selling, Solution Selling, CustomerCentric Selling, ValueSelling, Consultative Selling — from primary, trademark-holder sources, then checked whether stock Odoo 19 CRM already supported any of them. It found nothing: no methodology-specific fields, stages, or terminology anywhere in the vendored CRM, Sales, or Mail modules. See [The Eight B2B Sales Methodologies](methodologies.md) for what each one actually claims, in its own trademark holder's words, and how it maps onto a Sales Methodology configuration.
 
 The addon's founding commit frames the need directly: Sales Managers define named Sales Methodologies; opportunities inherit their client's methodology; reps are blocked with a clear error when a Block-enforcement Requirement is unmet. The core engine shipped first, followed by demo personas so the workflow could be shown live, and a "Reset Demo Data" action so the demo can be replayed without polluting real data.
 
@@ -123,7 +123,7 @@ So consultants don't over-promise to clients, today the addon does **not**:
 <!-- section: reading s r c -->
 ## Further reading
 
-- [The Eight B2B Sales Methodologies — deep-dive teaching page](https://claude.ai/code/artifact/9ad91be5-df4d-44fc-9327-26fa130d30dc)
+- [The Eight B2B Sales Methodologies — deep-dive teaching page](methodologies.md)
 - [CRM context glossary — docs/contexts/crm/CONTEXT.md (repo)](https://github.com/dahagag/odoo/blob/dev/19.0/docs/contexts/crm/CONTEXT.md)
 - [ADR 0005 — Requirements reference Properties by key (repo)](https://github.com/dahagag/odoo/blob/dev/19.0/docs/adr/0005-methodology-requirements-reference-properties-by-key.md)
 - [B2B sales methodologies research — 8 methodologies, OOTB Community/Enterprise, 6 platforms (repo)](https://github.com/dahagag/odoo/blob/dev/19.0/docs/research/b2b-sales-methodologies-odoo.md)

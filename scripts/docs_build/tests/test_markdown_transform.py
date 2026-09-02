@@ -557,6 +557,16 @@ class RenderMarkdownDocumentVideoEmbedTests(unittest.TestCase):
         self.assertLess(html.index("</header>"), html.index("<video"))
         self.assertLess(html.index("<video"), html.index('class="ilo"'))
 
+    def test_methodologies_layout_footer_backlink_is_rewritten_via_resolver(self):
+        html = render_markdown_document(
+            self._METHODOLOGIES_MARKDOWN,
+            fallback_title="Doc",
+            link_resolver=lambda href: "methodologies-explained.html",
+        )
+
+        self.assertIn('<a class="backlink" href="methodologies-explained.html">', html)
+        self.assertNotIn("methodologies-explained.md", html)
+
 
 class IsLocalMarkdownLinkTests(unittest.TestCase):
     def test_relative_md_path_is_local(self):

@@ -612,7 +612,10 @@ def _render_methodologies_layout(
     if backlink_match is None:
         message = "methodologies footer item must be a link"
         raise MarkdownSyntaxError(message)
-    backlink_href = html.escape(backlink_match.group(2), quote=True)
+    raw_backlink_href = backlink_match.group(2)
+    if link_resolver is not None and is_local_markdown_link(raw_backlink_href):
+        raw_backlink_href = link_resolver(raw_backlink_href)
+    backlink_href = html.escape(raw_backlink_href, quote=True)
 
     return (
         _METHODOLOGIES_TEMPLATE.replace("__TITLE__", escaped_title)
