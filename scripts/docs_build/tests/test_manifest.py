@@ -111,6 +111,28 @@ class ManagedOutputManifestTests(unittest.TestCase):
             {entry.output.name for entry in manifest.outputs},
         )
 
+    def test_real_declared_set_converges_from_clean_and_dirty_output_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            build_all(Path("docs/teach"), output_dir)
+            first_html = {
+                path.name: path.read_bytes() for path in output_dir.glob("*.html")
+            }
+            sales_html = first_html["sales-methodology-vs-odoo-crm.html"]
+            self.assertIn(b'<video src="sales-methodology-vs-odoo-crm.mp4"', sales_html)
+
+            (output_dir / "stale.html").write_text("stale", encoding="utf-8")
+            video_path = output_dir / "sales-methodology-vs-odoo-crm.mp4"
+            video_path.write_bytes(b"fake-video")
+            build_all(Path("docs/teach"), output_dir)
+
+            second_html = {
+                path.name: path.read_bytes() for path in output_dir.glob("*.html")
+            }
+            self.assertEqual(first_html, second_html)
+            self.assertFalse((output_dir / "stale.html").exists())
+            self.assertEqual(video_path.read_bytes(), b"fake-video")
+
     def test_historical_unreachable_pages_are_not_managed_outputs(self):
         manifest = load_managed_output_manifest()
         managed_names = {entry.output.name for entry in manifest.outputs}
