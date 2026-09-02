@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       relevant: ${{ steps.check.outputs.relevant }}
+      docs_build: ${{ steps.check.outputs.docs_build }}
       test_modules: ${{ steps.plan.outputs.modules }}
     steps:
       - name: Check for changes under custom_addons/, docker/, scripts/, etc.
@@ -28,6 +29,8 @@ jobs:
               - 'requirements.txt'
               - 'compose.yaml'
               - '.github/workflows/ci.yml'
+            docs_build:
+              - 'scripts/docs_build/**'
       - uses: actions/checkout@v4
       - name: Build per-module change filters
         run: |
@@ -153,6 +156,24 @@ jobs:
       - name: Run ruff
         if: needs.changes.outputs.relevant == 'true'
         run: bash scripts/dev.sh lint custom_addons
+
+  docs-build-tests:
+    name: Docs-build tooling tests (required)
+    needs: changes
+    if: needs.changes.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        if: needs.changes.outputs.docs_build == 'true'
+      - uses: actions/setup-python@v5
+        if: needs.changes.outputs.docs_build == 'true'
+        with:
+          python-version: '3.x'
+      - name: Run scripts/docs_build unit tests
+        if: needs.changes.outputs.docs_build == 'true'
+        run: python3 -m unittest discover -s scripts/docs_build/tests -t .
 
   test:
     name: Test (${{ matrix.module }})
