@@ -133,6 +133,25 @@ class ManagedOutputManifestTests(unittest.TestCase):
             self.assertFalse((output_dir / "stale.html").exists())
             self.assertEqual(video_path.read_bytes(), b"fake-video")
 
+    def test_generated_html_matches_the_frozen_approved_bytes(self):
+        manifest = load_managed_output_manifest()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            build_all(Path("docs/teach"), output_dir)
+
+            mismatches = {}
+            for entry in manifest.outputs:
+                generated_path = output_dir / entry.output.name
+                generated_hash = hashlib.sha256(generated_path.read_bytes()).hexdigest()
+                if generated_hash != entry.baseline_sha256:
+                    mismatches[entry.output.name] = {
+                        "expected": entry.baseline_sha256,
+                        "actual": generated_hash,
+                    }
+
+        self.assertEqual(mismatches, {})
+
     def test_historical_unreachable_pages_are_not_managed_outputs(self):
         manifest = load_managed_output_manifest()
         managed_names = {entry.output.name for entry in manifest.outputs}

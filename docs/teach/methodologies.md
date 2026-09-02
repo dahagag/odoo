@@ -1,121 +1,102 @@
+<!-- layout: methodologies -->
+<!-- dependencies: ../research/b2b-sales-methodologies-odoo.md -->
 # The Eight B2B Sales Methodologies
 
-*A deep-dive teaching branch of [Sales Methodology, Explained](sales-methodology-vs-odoo-crm.md). Every claim below is sourced from [`docs/research/b2b-sales-methodologies-odoo.md`](../research/b2b-sales-methodologies-odoo.md), which cites primary sources (the trademark holder or originating author's own site) for each methodology — this page distills that research for a reader who wants to understand the methodologies themselves and how the `crm.methodology` addon's Requirements/Checkpoints/Enforcement map onto each one.*
+Branches off [Sales Methodology, Explained](https://claude.ai/code/artifact/34b9bfe1-df69-41f9-a912-adf3d73c50d3). Every claim here traces to the trademark holder's or originating author's own site — full citations live in the underlying research doc.
 
 ## Intended Learning Outcomes
 
-After reading this page, you should be able to:
-
 - Name the core framework of each of the eight methodologies the addon can model, in the originating organization's own terms.
 - Explain what problem each methodology claims to solve, so you can match a prospective client's stated pain to the right one.
-- Identify which three methodologies are pre-seeded in the demo data (MEDDIC, Sandler, SPIN) and which five are supported by the addon's architecture but not yet configured (CustomerCentric Selling, Solution Selling, Challenger, ValueSelling, Consultative Selling).
-- Translate a methodology's own named elements (e.g. MEDDIC's "Economic Buyer") into what it would look like as a `crm.methodology.requirement` in this addon.
+- Identify which three methodologies are pre-seeded in the demo data (MEDDIC, Sandler, SPIN) and which five are supported by the addon's architecture but not yet configured.
+- Translate a methodology's own named elements (e.g. MEDDIC's "Economic Buyer") into what it would look like as a Requirement in this addon.
 
----
+## MEDDIC / MEDDPICC <span class="demo-badge">Used in our demo</span>
 
-## MEDDIC / MEDDPICC 🟢 *used in our demo*
+**Origin.** Developed inside PTC in the early 1990s; MEDDIC Academy and the MEDDICC platform both host primary material, attributing authorship slightly differently.
 
-**Origin.** Developed inside PTC in the early 1990s; MEDDIC Academy and the MEDDICC platform both host primary material, though they attribute the framework's authorship slightly differently (a PTC sales-management team vs. Dick Dunkel personally).
+**The framework.** Six elements: **M**etrics (measurable economic benefit vs. competition or no-decision), **E**conomic Buyer (who can release funds), **D**ecision Process, **D**ecision Criteria, **I**dentify Pain, **C**hampion. MEDDPICC adds **P**aper Process and **C**ompetition.
 
-**The framework.** Six elements, per MEDDIC Academy's own definition: **M**etrics (the measurable economic benefit vs. competition or no-decision), **E**conomic Buyer (who can actually release funds), **D**ecision Process, **D**ecision Criteria, **I**dentify Pain, **C**hampion. MEDDPICC adds **P**aper Process and **C**ompetition.
+**Problem it addresses.** More accurate deal qualification and forecasting.
 
-**Problem it addresses.** More accurate deal qualification and forecasting — MEDDIC Academy states it directly: "if you execute the above in any complex B-to-B sales campaign, you win the sale."
+**Seeded in the demo as.** 6 Requirements (Metrics, Economic Buyer, Decision Process, Decision Criteria, Identify Pain, Champion), 3 Playbook Questions — assigned to demo client Nimbus Robotics.
 
-**Seeded in the demo as:** 6 Requirements (Metrics, Economic Buyer, Decision Process, Decision Criteria, Identify Pain, Champion) and 3 Playbook Questions (Metrics, Identify Pain, Economic Buyer), assigned to demo client Nimbus Robotics.
+**Mapping to the addon.** The most directly CRM-field-shaped methodology of the eight — each element is already something to identify, know, or measure per deal, exactly what a Requirement is for.
 
-**Mapping to the addon.** This is the most directly CRM-field-shaped methodology of the eight — each named element is already something to "identify," "know," or "measure" per deal, which is exactly what a `crm.methodology.requirement` is for.
+## Sandler Selling System <span class="demo-badge">Used in our demo</span>
 
----
+**Origin.** Created by David H. Sandler, founder of Sandler Training, positioned explicitly against pressure-based sales tactics.
 
-## Sandler Selling System 🟢 *used in our demo*
+**The framework.** Seven steps: Establishing Bonding & Rapport, Setting an Up-Front Contract, Identify the Prospect's Pain, Uncover the Prospect's Budget, Identify the Decision Making Process, Present Your Fulfillment of the Agreement, Confirm the Post-Sell Process.
 
-**Origin.** Created by David H. Sandler, founder of Sandler Training, "with a clinical psychologist," positioned explicitly against manipulative, pressure-based sales tactics.
+**Problem it addresses.** Preventing manipulation and "games" from entering the sales conversation.
 
-**The framework.** Seven steps, per Sandler's own page: Establishing Bonding & Rapport, Setting an Up-Front Contract, Identify the Prospect's Pain, Uncover the Prospect's Budget, Identify the Decision Making Process, Present Your Fulfillment of the Agreement, Confirm the Post-Sell Process.
+**Seeded in the demo as.** 3 Requirements (Pain, Budget, Decision-Making Process), 2 Playbook Questions — assigned to demo client Falcon Logistics.
 
-**Problem it addresses.** Preventing "games" — pressure tactics and manipulation — from ever entering the sales conversation, by putting the rep in control of a structured discovery process instead.
+**Mapping to the addon.** Data-shaped steps become Requirements; the two conversational steps (Up-Front Contract, Post-Sell Confirmation) become Playbook Questions instead.
 
-**Seeded in the demo as:** 3 Requirements (Pain, Budget, Decision-Making Process) and 2 Playbook Questions (Up-Front Contract, Confirm Post-Sell), assigned to demo client Falcon Logistics.
+## SPIN Selling <span class="demo-badge">Used in our demo</span>
 
-**Mapping to the addon.** The three Requirements cover the steps most naturally captured as data (Pain, Budget, Decision Process); the two conversational steps (Up-Front Contract, Post-Sell Confirmation) are Playbook Questions instead, since they're about *what to ask*, not a field to fill in.
+**Origin.** Created by Neil Rackham, founder of Huthwaite International, first documented in his 1988 book of the same name.
 
----
+**The framework.** Four question types in sequence: **S**ituation, **P**roblem, **I**mplication, **N**eed-payoff.
 
-## SPIN Selling 🟢 *used in our demo*
+**Problem it addresses.** Big, complex transactions, where uncovering latent problems creates the buyer's own sense of urgency.
 
-**Origin.** Created by Neil Rackham, founder of Huthwaite International, first documented in his 1988 book of the same name. Huthwaite's own site also credits Rackham as a pioneer of the broader "consultative selling" approach (see below).
+**Seeded in the demo as.** 0 Requirements (deliberately), 4 Playbook Questions — assigned to demo client Comet Analytics.
 
-**The framework.** Four question types asked in sequence: **S**ituation, **P**roblem, **I**mplication, **N**eed-payoff — used within a four-stage conversation (Preliminaries, Investigating, Demonstrating capability, Obtaining commitment).
-
-**Problem it addresses.** Big, complex transactions, where uncovering a buyer's latent problems and their business implications — rather than pitching features — is what actually creates the buyer's own sense of need and urgency.
-
-**Seeded in the demo as:** 0 Requirements (deliberately) and 4 Playbook Questions (Situation, Problem, Implication, Need-payoff), assigned to demo client Comet Analytics.
-
-**Mapping to the addon.** SPIN is playbook-only by design in the demo data: its value is entirely in the sequence and content of the questions asked during discovery, not in a qualification field to fill afterward — a clean illustration that a `crm.methodology` doesn't have to define any Requirements at all.
-
----
+**Mapping to the addon.** Playbook-only by design: SPIN's value is entirely in the sequence of questions asked, not a field filled in afterward — proof a methodology doesn't need any Requirements at all.
 
 ## CustomerCentric Selling
 
-**Origin.** Created by Michael T. Bosworth with John R. Holland; now trained via customercentric.com.
+**Origin.** Created by Michael T. Bosworth with John R. Holland; trained today via customercentric.com.
 
-**The framework.** Built around Targeted Conversation Lists™ (pairing decision-maker titles with the business outcomes they care about), diagnostic questions, and "Sales Ready Messaging®." The guiding principle, in the methodology's own words: "people would rather buy than be sold to."
+**The framework.** Targeted Conversation Lists™ pairing decision-maker titles with business outcomes, diagnostic questions, and "Sales Ready Messaging®." Guiding principle: "people would rather buy than be sold to."
 
-**Problem it addresses.** Losing deals to "no decision," trouble reaching real decision-makers, inconsistent rep performance, unreliable forecasts, excessive discounting, and sales/marketing message misalignment.
+**Problem it addresses.** Losing deals to "no decision," trouble reaching real decision-makers, inconsistent forecasts, excessive discounting.
 
-**Mapping to the addon.** Would need a Requirement recording each targeted decision-maker's title/role per opportunity, plus a milestone/grading Checkpoint a sales manager reviews against — not yet configured in the demo, but architecturally straightforward to add as a new `crm.methodology` record.
-
----
+**Mapping to the addon.** Would need a Requirement recording each decision-maker's title/role, plus a milestone Checkpoint a manager reviews against — not configured in the demo, but a straightforward new `crm.methodology` record.
 
 ## Solution Selling
 
 **Origin.** Michael T. Bosworth's 1995 book, now marketed by Richardson Sales Performance.
 
-**The framework.** Five components (A Map for Sales Success, Building Sales Pipelines, Establishing Buyer Consensus, Collaborating with Buyers, Negotiating the Win) and a diagnostic model Richardson calls **PPVVC**: Pain, Power, Vision, Value, Consensus.
+**The framework.** Five components, and a diagnostic model called **PPVVC**: Pain, Power, Vision, Value, Consensus.
 
-**Problem it addresses.** Long sales cycles, complex buying groups, and inconsistent pipelines in a "consensus-driven" B2B environment.
+**Problem it addresses.** Long sales cycles, complex buying groups, inconsistent pipelines.
 
 **Mapping to the addon.** PPVVC's five dimensions translate directly to five Requirements — a close analog to how MEDDIC's six elements were configured.
 
----
-
 ## The Challenger Sale
 
-**Origin.** Matthew Dixon and Brent Adamson, from CEB (later Gartner) research; commercialized by Challenger Inc.
+**Origin.** Matthew Dixon and Brent Adamson, from CEB/Gartner research; commercialized by Challenger Inc.
 
-**The framework.** Three behaviors — "Teach, Tailor, Take Control" — built around creating "constructive tension," with a six-part conversation structure (warmer, reframe, rational drowning, emotional impact, presenting a new way, the solution).
+**The framework.** Three behaviors — "Teach, Tailor, Take Control" — built around creating constructive tension.
 
-**Problem it addresses.** Challenger's own research found that traditional relationship-first selling ("the Relationship Builder") performs worst in complex sales, and that buyers are typically 57% through their buying process before ever engaging a rep — so the rep's job is to teach something new, not just relate well.
+**Problem it addresses.** Relationship-first selling performs worst in complex sales; buyers are ~57% through their buying process before engaging a rep, so the rep's job is to teach.
 
-**Mapping to the addon.** The natural Requirement here is less a qualification field and more a record of *what specific insight was taught to which stakeholder* — closer to a structured Playbook Question than a Metrics-style field.
-
----
+**Mapping to the addon.** The natural fit is a record of what insight was taught to which stakeholder — closer to a Playbook Question than a Metrics-style field.
 
 ## ValueSelling Framework
 
 **Origin.** Created and owned by ValueSelling Associates, Inc.
 
-**The framework.** A four-stage cycle: **Engage → Qualify → Advance → Close**, aimed at giving a revenue team "a common language" to "compete on value, not price."
+**The framework.** A four-stage cycle: **Engage → Qualify → Advance → Close**.
 
-**Problem it addresses.** Price-based competition — connecting a solution to quantified business impact instead of a features list.
+**Problem it addresses.** Price-based competition — connecting a solution to quantified business impact instead of features.
 
-**Mapping to the addon.** The natural Requirement is a quantified buyer-side value/ROI figure — deliberately distinct from `expected_revenue` (which quantifies the deal's value to the *seller*, not the value delivered to the *buyer*).
+**Mapping to the addon.** The natural Requirement is a quantified buyer-side value/ROI figure, deliberately distinct from `expected_revenue` (which quantifies value to the seller, not the buyer).
 
----
+## Consultative Selling
 
-## Consultative Selling (umbrella term)
-
-**Origin.** Treated as a general umbrella rather than a single trademarked system — no single primary source claims exclusive ownership the way the other seven do. Often traced bibliographically to Mack Hanan's 1970 book, though Huthwaite International's own site also credits Neil Rackham (SPIN's creator) as "a leading authority on consultative selling."
+**Origin.** An umbrella term, not a single trademarked system — often traced bibliographically to Mack Hanan's 1970 book, though Huthwaite International also credits SPIN's Neil Rackham as a pioneer of the approach.
 
 **The framework.** No single named structure — open-ended, discovery-led conversation, by design.
 
-**Problem it addresses.** Generic: selling by understanding the buyer's needs first, rather than pitching.
+**Problem it addresses.** Generic: understanding the buyer's needs before pitching.
 
-**Mapping to the addon.** No named Requirement set is implied by the research — a client asking for "consultative selling" support is really asking which of the other seven (usually SPIN, MEDDIC, or Solution Selling) they actually mean, since "consultative" describes a stance, not a checklist.
-
----
+**Mapping to the addon.** No named Requirement set is implied — a client asking for "consultative selling" is usually really asking about SPIN, MEDDIC, or Solution Selling specifically.
 
 ## Further reading
 
-- [Sales Methodology, Explained](sales-methodology-vs-odoo-crm.md) — the main teach doc this page branches from
-- [B2B sales methodologies research](../research/b2b-sales-methodologies-odoo.md) — full primary-source citations for every claim above, plus how OOTB Odoo and six competing platforms handle (or don't handle) each one
+- [Back to Sales Methodology, Explained](https://claude.ai/code/artifact/34b9bfe1-df69-41f9-a912-adf3d73c50d3)
