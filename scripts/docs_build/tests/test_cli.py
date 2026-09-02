@@ -246,8 +246,12 @@ class BuildDocImageEmbeddingTests(unittest.TestCase):
     def test_image_with_unrecognized_extension_still_embeds(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "doc.md"
-            source.write_text("# Doc\n\n![alt text](data.xyz)", encoding="utf-8")
-            (Path(tmp) / "data.xyz").write_bytes(b"some-bytes")
+            # .xyz is a real, long-standing entry in Python's stdlib mimetypes
+            # table (chemical/x-xyz), so it doesn't exercise the "unrecognized"
+            # fallback this test is meant to cover - use an extension no MIME
+            # database registers.
+            source.write_text("# Doc\n\n![alt text](data.notarealext)", encoding="utf-8")
+            (Path(tmp) / "data.notarealext").write_bytes(b"some-bytes")
             output_dir = Path(tmp) / "out"
 
             output_path = build_doc(source, output_dir)
