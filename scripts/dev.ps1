@@ -1,6 +1,6 @@
 param(
     [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateSet('doctor', 'build', 'init', 'up', 'down', 'logs', 'shell', 'db-shell', 'scaffold', 'install', 'update', 'test', 'lint', 'docs-build:doc', 'docs-build:video', 'reset')]
+    [ValidateSet('doctor', 'build', 'init', 'up', 'down', 'logs', 'shell', 'db-shell', 'scaffold', 'install', 'update', 'test', 'lint', 'docs-build', 'docs-build:doc', 'docs-build:video', 'reset')]
     [string]$Command,
 
     [Parameter(Position = 1)]
@@ -131,6 +131,36 @@ function Assert-RelativePath {
         throw "$Label path '$Path' does not exist."
     }
     return $normalized
+}
+
+function Invoke-DocsBuildDoc {
+    param([string]$Argument)
+    $cliArguments = @('run', '--rm', '--no-deps', 'odoo', 'python3', '-m', 'scripts.docs_build.cli')
+    if ($Argument) {
+        $cliArguments += Assert-RelativePath -Path $Argument -Label 'docs-build:doc'
+    }
+    Invoke-Compose -Arguments $cliArguments
+}
+
+function Invoke-DocsBuildVideo {
+    param([string]$ProjectPath)
+    $relativePath = Assert-RelativePath -Path $ProjectPath -Label 'docs-build:video'
+    $python = Resolve-HostPython
+    & $python -m scripts.docs_build.video_cli $relativePath
+    if ($LASTEXITCODE -ne 0) { throw "docs-build:video failed with exit code $LASTEXITCODE." }
+}
+
+function Get-DocsBuildVideoProjects {
+    # Authored HyperFrames projects live at docs/teach/videos/<stem>/ (see
+    # scripts/docs_build/video_cli.py and docs/adr/0008) - one per teach doc that
+    # has a walkthrough video authored for it. Bare `docs-build` re-renders every
+    # one it finds; a teach doc with no authored project simply has no video.
+    $videosDir = Join-Path $script:RepoRoot 'docs\teach\videos'
+    if (-not (Test-Path -LiteralPath $videosDir)) { return @() }
+    Get-ChildItem -LiteralPath $videosDir -Directory |
+        Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'hyperframes.json') } |
+        ForEach-Object { [System.IO.Path]::GetRelativePath($script:RepoRoot, $_.FullName) -replace '\\', '/' } |
+        Sort-Object
 }
 
 function Start-Database {
@@ -301,19 +331,14 @@ switch ($Command) {
         $ruffArguments += "/workspace/$path"
         Invoke-Compose -Arguments $ruffArguments
     }
-    'docs-build:doc' {
-        $cliArguments = @('run', '--rm', '--no-deps', 'odoo', 'python3', '-m', 'scripts.docs_build.cli')
-        if ($Argument) {
-            $cliArguments += Assert-RelativePath -Path $Argument -Label 'docs-build:doc'
+    'docs-build' {
+        Invoke-DocsBuildDoc -Argument $null
+        foreach ($project in Get-DocsBuildVideoProjects) {
+            Invoke-DocsBuildVideo -ProjectPath $project
         }
-        Invoke-Compose -Arguments $cliArguments
     }
-    'docs-build:video' {
-        $relativePath = Assert-RelativePath -Path $Argument -Label 'docs-build:video'
-        $python = Resolve-HostPython
-        & $python -m scripts.docs_build.video_cli $relativePath
-        if ($LASTEXITCODE -ne 0) { throw "docs-build:video failed with exit code $LASTEXITCODE." }
-    }
+    'docs-build:doc' { Invoke-DocsBuildDoc -Argument $Argument }
+    'docs-build:video' { Invoke-DocsBuildVideo -ProjectPath $Argument }
     'reset' {
         $project = Get-DevSetting 'COMPOSE_PROJECT_NAME' 'agentic-erp-dev'
         if ($project -notmatch '^[a-z0-9][a-z0-9_-]*$') { throw "Unsafe Compose project name '$project'." }
