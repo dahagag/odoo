@@ -1,0 +1,242 @@
+<template>
+  <style>
+    /* Webfonts ship with the project — the render machine is clean headless Chrome.
+       Provenance: assets/fonts/README.md. font-display:block keeps the render deterministic. */
+    @font-face {
+      font-family: "Source Serif 4"; font-style: normal; font-weight: 400; font-display: block;
+      src: url(assets/fonts/SourceSerif4-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "Karla"; font-style: normal; font-weight: 400 500; font-display: block;
+      src: url(assets/fonts/Karla-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: block;
+      src: url(assets/fonts/IBMPlexMono-400-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: block;
+      src: url(assets/fonts/IBMPlexMono-500-latin.woff2) format("woff2");
+    }
+
+    #root {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      container-type: size;
+      container-name: f05;
+    }
+
+    /* Ground — warm cream paper on its own full-duration clip layer (never on #root). */
+    .f05-ground { position: absolute; inset: 0; background: #F3F4EF; }
+
+    .f05-pad { position: absolute; inset: 0; padding: 4.2cqw; display: flex; flex-direction: column; gap: 2.4cqh; }
+
+    /* — chrome: the ✱ kicker-spike (mono, uppercase, 0.16em) — */
+    .f05-kicker {
+      margin: 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.46cqw; font-weight: 500; letter-spacing: 0.16em;
+      text-transform: uppercase; color: rgba(27, 36, 48, 0.52);
+    }
+    .f05-kicker span { color: #B96A22; margin-right: 0.5em; }
+
+    /* asymmetric 40/60 split, camera locked — no wrapper transform on this row */
+    .f05-stage { flex: 1; display: grid; grid-template-columns: 1fr 1.5fr; gap: 2.4cqw; align-items: center; }
+
+    /* — focal: the completion figure + its meter, the frame's ONE accent moment — */
+    .f05-figure { display: flex; flex-direction: column; gap: 2.6cqh; }
+    .f05-numwrap { display: flex; align-items: baseline; gap: 0.3cqw; }
+    .f05-num {
+      margin: 0;
+      font-family: "Source Serif 4", serif;
+      font-size: 9.4cqw; font-weight: 400; line-height: 1.04; letter-spacing: -0.025em;
+      color: #B96A22;
+      font-variant-numeric: tabular-nums; /* mandatory — digit count changes must not jitter width */
+      transform-origin: left center;
+      display: inline-block;
+    }
+    /* the unit — Source Serif 4 figure pairs with an ALWAYS-mono unit (number-lockup) */
+    .f05-num-suffix {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 3.6cqw; font-weight: 500; color: #B96A22;
+    }
+    .f05-numlabel {
+      margin: 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.35cqw; font-weight: 500; letter-spacing: 0.1em;
+      text-transform: uppercase; color: rgba(27, 36, 48, 0.52);
+    }
+    .f05-meter { height: 0.9cqh; background: #DFE1D8; border-radius: 9999px; overflow: hidden; margin-top: 0.6cqh; }
+    .f05-meterfill {
+      width: 17%; /* authored final width — NEVER tweened; the fill sweeps via scaleX */
+      height: 100%;
+      background: #B96A22;
+      transform-origin: left center;
+    }
+
+    /* — supporting: the two readings, echoing frame 3's requirement pills — */
+    .f05-readings { display: flex; flex-direction: column; gap: 1.2cqh; }
+    .f05-reading {
+      display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 1.2cqw;
+      border: 1px solid rgba(27, 36, 48, 0.12);
+      border-radius: 12px;
+      padding: 1.5cqh 1.4cqw;
+    }
+    .f05-reading.warn { background: #D9E8E3; }
+    .f05-reading.block { background: #F3DBDB; }
+    .f05-tag {
+      display: inline-block;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.05cqw; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
+      border-radius: 9999px; padding: 0.3cqh 0.75cqw; min-width: 5.6cqw; text-align: center;
+    }
+    .f05-reading.warn .f05-tag { background: #F3F4EF; color: #2E6B60; }
+    .f05-reading.block .f05-tag { background: #F3F4EF; color: #A23B3B; }
+    .f05-readtext { display: flex; flex-direction: column; gap: 0.2cqh; }
+    .f05-readtitle {
+      margin: 0;
+      font-family: "Karla", sans-serif;
+      font-size: 1.9cqw; font-weight: 500; color: #1B2430;
+    }
+    .f05-readsub {
+      margin: 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.05cqw; font-weight: 500; letter-spacing: 0.02em; color: #3E4A59;
+    }
+
+    /* — chrome: the hairline that draws on, then the provenance footline — */
+    .f05-rule-svg { display: block; width: 100%; height: 1px; overflow: visible; }
+    .f05-rule-svg line { stroke: rgba(27, 36, 48, 0.12); stroke-width: 2; }
+    .f05-foot {
+      margin: 0.9cqh 0 0 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.25cqw; font-weight: 500; letter-spacing: 0.14em;
+      text-transform: uppercase; color: rgba(27, 36, 48, 0.48);
+    }
+  </style>
+
+  <div data-hf-id="hf-jy1q" id="root" data-composition-id="05-tab-already-knows" data-width="1920" data-height="1080" data-duration="11.039">
+    <div id="f05-ground" data-hf-id="hf-heej" class="clip f05-ground" data-start="0" data-duration="12.468" data-track-index="0"></div>
+
+    <div id="f05-pad" data-hf-id="hf-tayc" class="clip f05-pad" data-start="0" data-duration="12.468" data-track-index="1">
+      <p data-hf-id="hf-i4ky" class="f05-kicker" id="f05-kicker"><span data-hf-id="hf-zak0">✱</span>Station 2 · Qualification</p>
+
+      <div data-hf-id="hf-ef2e" class="f05-stage">
+        <div data-hf-id="hf-bp5w" class="f05-figure">
+          <div data-hf-id="hf-nwq1" class="f05-numwrap">
+            <p data-hf-id="hf-igf5" class="f05-num" id="f05-num-value">0</p><span data-hf-id="hf-nwq2" class="f05-num-suffix" id="f05-num-suffix">%</span>
+          </div>
+          <p data-hf-id="hf-m636" class="f05-numlabel" id="f05-numlabel">Filled · 1 of 6 requirements</p>
+          <div data-hf-id="hf-dlmf" class="f05-meter" id="f05-meter"><div data-hf-id="hf-kwls" class="f05-meterfill" id="f05-meterfill"></div></div>
+        </div>
+
+        <div data-hf-id="hf-l91n" class="f05-readings">
+          <div data-hf-id="hf-sny4" class="f05-reading warn" id="f05-warn-row">
+            <span data-hf-id="hf-8as3" class="f05-tag" id="f05-warn-tag">Warn</span>
+            <span data-hf-id="hf-6tq8" class="f05-readtext">
+              <span data-hf-id="hf-6y8w" class="f05-readtitle">Four warnings</span>
+              <span data-hf-id="hf-6x2f" class="f05-readsub">Metrics · Decision Process · Decision Criteria · Identify Pain</span>
+            </span>
+          </div>
+          <div data-hf-id="hf-g77f" class="f05-reading block" id="f05-block-row">
+            <span data-hf-id="hf-3y2k" class="f05-tag" id="f05-block-tag">Block</span>
+            <span data-hf-id="hf-1vy0" class="f05-readtext">
+              <span data-hf-id="hf-99o3" class="f05-readtitle">Economic Buyer</span>
+              <span data-hf-id="hf-hlpy" class="f05-readsub">Missing — will refuse at Marked Won</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <svg data-hf-id="hf-rlsv" class="f05-rule-svg" id="f05-rule-svg" viewBox="0 0 1000 2" preserveAspectRatio="none">
+        <line data-hf-id="hf-rlln" id="f05-rule-line" x1="0" y1="1" x2="1000" y2="1"></line>
+      </svg>
+      <p data-hf-id="hf-6qbo" class="f05-foot" id="f05-foot">Read from Sales Team · Properties</p>
+    </div>
+  </div>
+
+  <script src="../../assets/vendor/gsap-3.14.2.min.js"></script>
+  <script>
+    (function () {
+      var DUR = 10.539;
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+      window.__timelines["05-tab-already-knows"] = tl;
+
+      var root = document.querySelector('[data-composition-id="05-tab-already-knows"]');
+      var q = function (sel) { return root.querySelector(sel); };
+
+      var kicker = q("#f05-kicker");
+      var numValue = q("#f05-num-value");
+      var numSuffix = q("#f05-num-suffix");
+      var numLabel = q("#f05-numlabel");
+      var meter = q("#f05-meter");
+      var meterFill = q("#f05-meterfill");
+      var warnRow = q("#f05-warn-row");
+      var warnTag = q("#f05-warn-tag");
+      var blockRow = q("#f05-block-row");
+      var blockTag = q("#f05-block-tag");
+      var ruleLine = q("#f05-rule-line");
+      var foot = q("#f05-foot");
+
+      /* svg-path-draw setup — measure the hairline, don't hard-code its length. */
+      var ruleLen = ruleLine.getTotalLength();
+      ruleLine.style.strokeDasharray = ruleLen;
+      ruleLine.style.strokeDashoffset = ruleLen;
+
+      /* ── Scene 1 (0.0–2.0s) — kicker settles; the mono label + the EMPTY meter
+            track reveal. No number yet. Right column stays empty. Camera locked. ── */
+      tl.fromTo(kicker, { opacity: 0, y: -14 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 0.04);
+      tl.fromTo(numLabel, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 0.3);
+      tl.fromTo(meter, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 0.5);
+
+      /* ── Scene 2 (2.0–3.6s) — THE SIGNATURE BEAT: counting-dynamic-scale +
+            stat-bars-and-fills sharing one position + one ease, so the count
+            0→17% and the meter's scaleX sweep land as a single beat. The
+            suffix "%" (the mono unit) slides in only after the count lands. ── */
+      var COUNT_START = 2.0;
+      var COUNT_DUR = 1.4;
+      var COUNT_EASE = "power3.out";
+      var START_SIZE = 5.2, END_SIZE = 9.4; // cqw — START_SCALE derived, never tweened directly
+      var START_SCALE = START_SIZE / END_SIZE;
+      var counter = { value: 0 };
+
+      tl.to(counter, {
+        value: 17,
+        duration: COUNT_DUR,
+        ease: COUNT_EASE,
+        onUpdate: function () {
+          numValue.textContent = Math.round(counter.value);
+        }
+      }, COUNT_START);
+
+      tl.fromTo(numValue, { opacity: 0, scale: START_SCALE }, { opacity: 1, scale: 1, duration: COUNT_DUR, ease: COUNT_EASE, transformOrigin: "left center" }, COUNT_START);
+      tl.fromTo(meterFill, { scaleX: 0 }, { scaleX: 1, duration: COUNT_DUR, ease: COUNT_EASE }, COUNT_START);
+      tl.fromTo(numSuffix, { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, COUNT_START + COUNT_DUR);
+
+      /* ── Scene 3 (3.6–6.0s) — on "as a warning": the teal Warn row slides
+            into the right column, its tag spring-popping in behind it. ── */
+      tl.fromTo(warnRow, { opacity: 0, x: "3cqw" }, { opacity: 1, x: 0, duration: 0.6, ease: "power2.out" }, 4.3);
+      tl.fromTo(warnTag, { opacity: 0, scale: 0.4 }, { opacity: 1, scale: 1, duration: 0.5, ease: "power3.out" }, 4.6);
+
+      /* ── Scene 4 (6.0–8.2s) — on "a hard blocker": the block-red row arrives
+            beneath it, tag spring-popping. Warn + Block now read as a pair
+            against the figure, echoing frame 3's requirement pills. ── */
+      tl.fromTo(blockRow, { opacity: 0, x: "3cqw" }, { opacity: 1, x: 0, duration: 0.6, ease: "power2.out" }, 6.6);
+      tl.fromTo(blockTag, { opacity: 0, scale: 0.4 }, { opacity: 1, scale: 1, duration: 0.5, ease: "power3.out" }, 6.9);
+
+      /* ── Scene 5 (8.2–11.4s) — on "the fields your Sales Team already uses":
+            the hairline draws left→right (svg-path-draw, constant-speed pen
+            trace), then the mono footline reveals, tying the live state back
+            to its source. ── */
+      tl.to(ruleLine, { strokeDashoffset: 0, duration: 1.1, ease: "none" }, 9.0);
+      tl.fromTo(foot, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.5, ease: "power1.out" }, 9.5);
+
+      /* ── Scene 6 (11.4–11.968s) — held still. No exit: the root transition
+            (push-slide LEFT, stamped by the injector) owns the hand-off out. ── */
+      tl.set({}, {}, DUR);
+    })();
+  </script>
+</template>

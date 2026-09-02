@@ -79,14 +79,20 @@ resolve_host_python() {
     # installed on the host (see issue #36) - none of that is in the Odoo dev
     # image, so unlike every other subcommand here, this one runs on the host,
     # not via compose.
-    if command -v python3 >/dev/null 2>&1; then
-        echo python3
-    elif command -v python >/dev/null 2>&1; then
-        echo python
-    else
-        echo "No Python interpreter (python3/python) found on PATH." >&2
-        exit 1
-    fi
+    # Windows ships App Execution Alias stubs for python/python3 that satisfy
+    # `command -v` but only print a "Python was not found" hint and exit 49, so
+    # probe that each candidate actually runs before trusting it - otherwise
+    # docs-build:video silently renders nothing on a machine whose real
+    # interpreter is installed under a different name.
+    local candidate
+    for candidate in python3 python py; do
+        command -v "$candidate" >/dev/null 2>&1 || continue
+        "$candidate" -c '' >/dev/null 2>&1 || continue
+        printf '%s
+' "$candidate"
+        return 0
+    done
+    return 1
 }
 
 assert_relative_path() {
@@ -108,7 +114,12 @@ docs_build_doc() {
 docs_build_video() {
     local project_path="$1" host_python
     assert_relative_path "$project_path" "docs-build:video"
-    host_python="$(resolve_host_python)"
+    # resolve_host_python runs in a subshell here, so it reports failure through
+    # its exit status rather than exiting the script itself.
+    if ! host_python="$(resolve_host_python)"; then
+        echo "docs-build:video needs a working Python interpreter (python3/python/py) on PATH." >&2
+        exit 1
+    fi
     "$host_python" -m scripts.docs_build.video_cli "$project_path"
 }
 
