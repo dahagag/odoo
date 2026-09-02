@@ -113,11 +113,18 @@ function Resolve-HostPython {
     # installed on the host (see issue #36) - none of that is in the Odoo dev
     # image, so unlike every other subcommand here, this one runs on the host,
     # not via Invoke-Compose.
-    foreach ($candidate in @('python3', 'python')) {
+    # Windows ships App Execution Alias stubs for python/python3 that resolve via
+    # Get-Command but only print a "Python was not found" hint and exit 49, so
+    # probe that each candidate actually runs before trusting it - otherwise
+    # docs-build:video silently renders nothing on a machine whose real
+    # interpreter is installed under a different name.
+    foreach ($candidate in @('python3', 'python', 'py')) {
         $command = Get-Command $candidate -ErrorAction SilentlyContinue
-        if ($command) { return $command.Source }
+        if (-not $command) { continue }
+        & $command.Source '-c' '' 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { return $command.Source }
     }
-    throw 'No Python interpreter (python3/python) found on PATH.'
+    throw 'No working Python interpreter (python3/python/py) found on PATH.'
 }
 
 function Assert-RelativePath {

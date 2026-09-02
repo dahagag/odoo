@@ -1,0 +1,245 @@
+<template>
+  <style>
+    /* Webfonts ship with the project — the render machine is clean headless Chrome.
+       Provenance: assets/fonts/README.md. font-display:block keeps the render deterministic. */
+    @font-face {
+      font-family: "Source Serif 4"; font-style: normal; font-weight: 400; font-display: block;
+      src: url(assets/fonts/SourceSerif4-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "Karla"; font-style: normal; font-weight: 400 500; font-display: block;
+      src: url(assets/fonts/Karla-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: block;
+      src: url(assets/fonts/IBMPlexMono-400-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: block;
+      src: url(assets/fonts/IBMPlexMono-500-latin.woff2) format("woff2");
+    }
+
+    #root {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      container-type: size;
+      container-name: f07;
+    }
+    .f07-ground { position: absolute; inset: 0; background: #F3F4EF; }
+    .f07-pad { position: absolute; inset: 0; padding: 4.2cqw; display: flex; flex-direction: column; gap: 2.2cqh; }
+    .f07-kicker {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.46cqw; font-weight: 500; letter-spacing: 0.16em;
+      text-transform: uppercase; color: #6B7688;
+    }
+    .f07-kicker span { color: #B96A22; }
+
+    .f07-stage { flex: 1; display: flex; flex-direction: column; gap: 2.2cqh; }
+
+    /* the completed activity that fires the wizard */
+    .f07-activity {
+      display: flex; align-items: center; gap: 1.2cqw;
+      background: #E9EAE3;
+      border: 1px solid rgba(27, 36, 48, 0.12);
+      border-radius: 8px;
+      padding: 1.2cqh 1.4cqw;
+      align-self: flex-start;
+      box-shadow: 0 1px 3px rgba(27, 36, 48, 0.08), 0 4px 16px rgba(27, 36, 48, 0.04);
+    }
+    .f07-check {
+      width: 1.9cqw; height: 1.9cqw;
+      border: 1px solid #2E6B60; background: #D9E8E3; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .f07-checksvg { width: 68%; height: 68%; overflow: visible; }
+    .f07-checkpath { fill: none; stroke: #2E6B60; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+    .f07-activitylabel {
+      font-family: "Karla", sans-serif;
+      font-size: 1.9cqw; font-weight: 500; color: #1B2430;
+    }
+    .f07-activitysub {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.05cqw; font-weight: 500; letter-spacing: 0.1em;
+      text-transform: uppercase; color: #6B7688;
+    }
+
+    /* the three question cards cascading out of it */
+    .f07-cards { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.6cqw; align-items: stretch; }
+    .f07-card {
+      background: #E9EAE3;
+      border: 1px solid rgba(27, 36, 48, 0.12);
+      border-radius: 12px;
+      padding: 1.8cqw;
+      display: flex; flex-direction: column; gap: 1cqh;
+      min-height: 22cqh;
+      box-shadow: 0 1px 3px rgba(27, 36, 48, 0.08), 0 4px 16px rgba(27, 36, 48, 0.04);
+      will-change: transform;
+    }
+    .f07-cardnum {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.05cqw; font-weight: 500; letter-spacing: 0.1em; color: #6B7688;
+    }
+    .f07-cardq {
+      font-family: "Source Serif 4", serif;
+      font-size: 2.9cqw; font-weight: 400; line-height: 1.0; letter-spacing: -0.01em;
+      color: #1B2430;
+    }
+
+    /* the checkpoint rail, called back from frame 3 — Marked Won lit */
+    .f07-rail { display: flex; gap: 1cqw; align-items: center; flex: 0 0 auto; }
+    .f07-raillabel {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.05cqw; font-weight: 500; letter-spacing: 0.1em;
+      text-transform: uppercase; color: #6B7688; margin-right: 0.6cqw;
+    }
+    .f07-stop {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.05cqw; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
+      color: #6B7688;
+      border: 1px solid rgba(27, 36, 48, 0.2);
+      border-radius: 9999px;
+      padding: 0.35cqh 0.9cqw;
+      /* "Marked Won" flips to the block-red lit state via JS (inline style,
+         driver-recomputed) at its cue — see the script below. */
+    }
+  </style>
+
+  <div data-hf-id="hf-2stf" id="root" data-composition-id="07-questions-it-asks" data-width="1920" data-height="1080" data-duration="11.252">
+    <div id="f07-ground" data-hf-id="hf-5vuy" class="clip f07-ground" data-start="0" data-duration="10.533" data-track-index="0"></div>
+
+    <div id="f07-pad" data-hf-id="hf-2p99" class="clip f07-pad" data-start="0" data-duration="10.533" data-track-index="1">
+      <p data-hf-id="hf-whev" id="f07-kicker" class="f07-kicker"><span data-hf-id="hf-zak0">✱</span> Station 4 · Coaching</p>
+
+      <div data-hf-id="hf-lqn0" class="f07-stage">
+        <div data-hf-id="hf-1ma5" id="f07-activity" class="f07-activity">
+          <span data-hf-id="hf-ftyy" class="f07-check">
+            <svg data-hf-id="hf-ftyy-svg" id="f07-checksvg" class="f07-checksvg" viewBox="0 0 24 24">
+              <path data-hf-id="hf-ftyy-path" id="f07-checkpath" class="f07-checkpath" d="M5 12.5 L10 17.5 L19 6.5" />
+            </svg>
+          </span>
+          <span data-hf-id="hf-mcu8" class="f07-activitylabel">Call</span>
+          <span data-hf-id="hf-8c7y" id="f07-markeddone" class="f07-activitysub">Marked done</span>
+        </div>
+
+        <div data-hf-id="hf-4swz" class="f07-cards">
+          <div data-hf-id="hf-ucj4" id="f07-card1" class="f07-card">
+            <p data-hf-id="hf-2yjy" class="f07-cardnum">01</p>
+            <p data-hf-id="hf-ixok" class="f07-cardq">What's the quantifiable cost of this problem today (Metrics)?</p>
+          </div>
+          <div data-hf-id="hf-lryg" id="f07-card2" class="f07-card">
+            <p data-hf-id="hf-3cuz" class="f07-cardnum">02</p>
+            <p data-hf-id="hf-b8h4" class="f07-cardq">What specific pain triggered this evaluation (Identify Pain)?</p>
+          </div>
+          <div data-hf-id="hf-kl1d" id="f07-card3" class="f07-card">
+            <p data-hf-id="hf-3r60" class="f07-cardnum">03</p>
+            <p data-hf-id="hf-bhgu" class="f07-cardq">Who besides you would need to approve this purchase (Economic Buyer)?</p>
+          </div>
+        </div>
+
+        <div data-hf-id="hf-s4iq" class="f07-rail">
+          <span data-hf-id="hf-q4la" id="f07-raillabel" class="f07-raillabel">Checkpoints</span>
+          <span data-hf-id="hf-7v8z" id="f07-stop1" class="f07-stop">Quotation Created</span>
+          <span data-hf-id="hf-lih0" id="f07-stopwon" class="f07-stop">Marked Won</span>
+          <span data-hf-id="hf-pz6v" id="f07-stop3" class="f07-stop">Marked Lost</span>
+          <span data-hf-id="hf-ec44" id="f07-stop4" class="f07-stop">Continuous</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js" integrity="sha384-sG0Hv1tP1lZCk9KQmrIbY/XNwi+OY84GQqhMscbnsoBFqAz8KNCil1kvfL3Hbbk2" crossorigin="anonymous"></script>
+  <script>
+    (function () {
+      var DUR = 10.133;
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+      window.__timelines["07-questions-it-asks"] = tl;
+
+      var root = document.querySelector('[data-composition-id="07-questions-it-asks"]');
+      var q = function (sel) { return root.querySelector(sel); };
+
+      var kicker = q("#f07-kicker");
+      var activity = q("#f07-activity");
+      var checkPath = q("#f07-checkpath");
+      var markedDone = q("#f07-markeddone");
+      var card1 = q("#f07-card1");
+      var card2 = q("#f07-card2");
+      var card3 = q("#f07-card3");
+      var railLabel = q("#f07-raillabel");
+      var stop1 = q("#f07-stop1");
+      var stopWon = q("#f07-stopwon");
+      var stop3 = q("#f07-stop3");
+      var stop4 = q("#f07-stop4");
+
+      /* ── Scene 1 (0.0–1.2s) — kicker settles; the Discovery Call activity chip
+            sits alone, checkbox empty (no stroke drawn yet); triptych empty. ── */
+      tl.fromTo(kicker, { opacity: 0, y: -12 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 0.04);
+      tl.fromTo(activity, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 0.14);
+
+      var checkLen = checkPath.getTotalLength();
+      checkPath.style.strokeDasharray = String(checkLen);
+      checkPath.style.strokeDashoffset = String(checkLen);
+
+      /* ── Scene 2 (1.2–2.4s) — svg-path-draw: on "done" the teal check draws
+            itself into the box; the mono "Marked done" tag flashes in after. ── */
+      tl.to(checkPath, { strokeDashoffset: 0, duration: 0.5, ease: "power2.out" }, 1.2);
+      tl.fromTo(markedDone, { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.3, ease: "power2.out" }, 1.78);
+
+      /* ── Scene 3 (2.4–6.6s) — center-outward-expansion (adapted: origin = the
+            activity chip, not stage center) + spring-pop-entrance per card, no
+            overshoot. Cards cascade out from behind the chip into the triptych,
+            left to right at ~1.2s apart, each question revealing as it lands. ── */
+      var chipRect = activity.getBoundingClientRect();
+      /* The emergence vector points at the chip but travels only a FRACTION of the
+         way there. At full length card 3 flew the width of the frame across cards 1
+         and 2, putting question text over question text for ~3s of a 10s frame. A
+         short rise out of the chip's direction reads as the same causality and stays
+         legible; the timing (each card right after the check) carries the rest. */
+      var EMERGE = 0.34;
+      [card1, card2, card3].forEach(function (card, i) {
+        var cardRect = card.getBoundingClientRect();
+        var dx = ((chipRect.left + chipRect.width / 2) - (cardRect.left + cardRect.width / 2)) * EMERGE;
+        var dy = ((chipRect.top + chipRect.height / 2) - (cardRect.top + cardRect.height / 2)) * EMERGE;
+        var startAt = 2.4 + i * 1.2;
+        tl.fromTo(
+          card,
+          { x: dx, y: dy, scale: 0.88, opacity: 0 },
+          { x: 0, y: 0, scale: 1, opacity: 1, duration: 0.7, ease: "power3.out" },
+          startAt
+        );
+      });
+
+      /* ── Scene 4 (6.6–9.8s) — the checkpoint rail resolves along the bottom,
+            its four stops arriving left to right; "Marked Won" flips to its
+            block-red lit state on the spoken word (hard cut, driver-recomputed
+            so it holds correctly under any seek). The other three stops stay
+            hairline-only throughout. ── */
+      tl.fromTo(railLabel, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, 6.6);
+      [stop1, stopWon, stop3, stop4].forEach(function (stop, i) {
+        tl.fromTo(stop, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, 6.7 + i * 0.15);
+      });
+
+      var LIT_AT = Infinity; /* rail stays unlit — frame 8 owns the Won beat */
+      function applyWonState(time) {
+        if (time >= LIT_AT) {
+          stopWon.style.backgroundColor = "#F3DBDB";
+          stopWon.style.borderColor = "#A23B3B";
+          stopWon.style.color = "#A23B3B";
+        } else {
+          stopWon.style.backgroundColor = "";
+          stopWon.style.borderColor = "";
+          stopWon.style.color = "";
+        }
+      }
+      applyWonState(0);
+      var wonDriver = { t: 0 };
+      tl.to(wonDriver, { t: DUR, duration: DUR, ease: "none", onUpdate: function () { applyWonState(wonDriver.t); } }, 0);
+
+      /* ── Scene 5 (9.8–10.133s) — held still. No exit: the root transition
+            owns the hand-off out of this frame. ── */
+      tl.set({}, {}, DUR);
+    })();
+  </script>
+</template>

@@ -1,0 +1,233 @@
+<template>
+  <style>
+    /* Webfonts ship with the project — the render machine is clean headless Chrome.
+       Provenance: assets/fonts/README.md. font-display:block keeps the render deterministic. */
+    @font-face {
+      font-family: "Source Serif 4"; font-style: normal; font-weight: 400; font-display: block;
+      src: url(assets/fonts/SourceSerif4-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "Karla"; font-style: normal; font-weight: 400 500; font-display: block;
+      src: url(assets/fonts/Karla-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: block;
+      src: url(assets/fonts/IBMPlexMono-400-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: block;
+      src: url(assets/fonts/IBMPlexMono-500-latin.woff2) format("woff2");
+    }
+
+    #root {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      container-type: size;
+      container-name: f01;
+    }
+
+    /* Ground — warm cream paper on its own full-duration clip layer (never on #root). */
+    .f01-ground { position: absolute; inset: 0; background: #F3F4EF; }
+
+    .f01-pad {
+      position: absolute;
+      inset: 0;
+      padding: 4.2cqw;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* — chrome: the ✱ kicker-spike (mono, uppercase, 0.16em) — */
+    .f01-kicker {
+      margin: 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.46cqw;
+      font-weight: 500;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: rgba(27, 36, 48, 0.52);
+    }
+    .f01-kicker span { color: #B96A22; margin-right: 0.5em; }
+
+    /* — stage: left-anchored, vertically centred in the safe area — */
+    .f01-stage {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 3.2cqh;
+    }
+
+    /* Foreground subject — the word itself, display-cover, sentence-tracked ink. */
+    .f01-name {
+      position: relative;
+      display: inline-block;
+      margin: 0;
+      font-family: "Source Serif 4", serif;
+      font-size: 9.9cqw;
+      font-weight: 400;
+      line-height: 0.98;
+      letter-spacing: -0.028em;
+      color: #1B2430;
+      transform-origin: left center;
+      z-index: 3;
+    }
+
+    /* css-marker-patterns · sketchout/strike form: the line crosses OVER the text,
+       so the accent sits above the copy and draws left→right from scaleX(0). */
+    .f01-strike-wrap {
+      position: absolute;
+      inset: 0 -0.5cqw;
+      overflow: hidden;
+      z-index: 1;
+      pointer-events: none;
+    }
+    .f01-strike {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      top: 52%;
+      margin-top: -0.22cqw;
+      height: 0.44cqw;
+      border-radius: 2px;
+      background: #B96A22;
+      transform-origin: left center;
+    }
+
+    /* Midground — the three flat denials. Karla lead, uniform weight and colour. */
+    .f01-denials {
+      display: flex;
+      flex-direction: column;
+      gap: 1.4cqh;
+      z-index: 2;
+    }
+    .f01-denial {
+      margin: 0;
+      font-family: "Karla", sans-serif;
+      font-size: 2.08cqw;
+      font-weight: 400;
+      line-height: 1.5;
+      color: rgba(27, 36, 48, 0.72);
+      visibility: hidden; /* hard-cut in by the discrete sequence; box reserved from t=0 */
+    }
+
+    /* — chrome: provenance footline over the one hairline section-rule — */
+    .f01-rule {
+      height: 1px;
+      width: 100%;
+      background: rgba(27, 36, 48, 0.12);
+      margin-bottom: 1.2cqw;
+    }
+    .f01-foot {
+      margin: 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.35cqw;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      line-height: 1.2;
+      text-transform: uppercase;
+      color: #3E4A59;
+    }
+  </style>
+
+  <div data-hf-id="hf-lylk" id="root" data-composition-id="01-never-heard-of-it" data-width="1920" data-height="1080" data-duration="7.412">
+    <div id="f01-ground" data-hf-id="hf-q0mv" class="clip f01-ground" data-start="0" data-duration="7.412" data-track-index="0"></div>
+
+    <div id="f01-pad" data-hf-id="hf-zito" class="clip f01-pad" data-start="0" data-duration="7.412" data-track-index="1">
+      <p data-hf-id="hf-3ai1" class="f01-kicker" id="f01-kicker"><span data-hf-id="hf-zak0">✱</span>What your CRM knows</p>
+
+      <div data-hf-id="hf-giiy" class="f01-stage">
+        <h1 data-hf-id="hf-7teh" class="f01-name" id="f01-name">MEDDIC<span data-hf-id="hf-aabg" class="f01-strike-wrap"><span data-hf-id="hf-qrz7" class="f01-strike" id="f01-strike"></span></span></h1>
+        <div data-hf-id="hf-el84" class="f01-denials" id="f01-denials">
+          <p data-hf-id="hf-vtk1" class="f01-denial">No field.</p>
+          <p data-hf-id="hf-t0uj" class="f01-denial">No stage.</p>
+          <p data-hf-id="hf-fx1x" class="f01-denial">Nowhere to put it.</p>
+        </div>
+      </div>
+
+      <div data-hf-id="hf-lkea" class="f01-rule" id="f01-rule"></div>
+      <p data-hf-id="hf-yp5o" class="f01-foot" id="f01-foot">Odoo 19 CRM · out of the box</p>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js" integrity="sha384-sG0Hv1tP1lZCk9KQmrIbY/XNwi+OY84GQqhMscbnsoBFqAz8KNCil1kvfL3Hbbk2" crossorigin="anonymous"></script>
+  <script>
+    (function () {
+      var DUR = 6.912;
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+      window.__timelines["01-never-heard-of-it"] = tl;
+
+      var root = document.querySelector('[data-composition-id="01-never-heard-of-it"]');
+      var q = function (sel) { return root.querySelector(sel); };
+
+      var kicker = q("#f01-kicker");
+      var rule = q("#f01-rule");
+      var foot = q("#f01-foot");
+      var name = q("#f01-name");
+      var strike = q("#f01-strike");
+      var denials = Array.prototype.slice.call(root.querySelectorAll(".f01-denial"));
+
+      /* ── Scene 1 (0.0–0.6s) — mono chrome only. Kicker settles top-left,
+            provenance footline + its hairline rule fade up. Nothing else. ── */
+      tl.fromTo(kicker, { opacity: 0, y: -14 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 0.04);
+      tl.fromTo(rule, { opacity: 0, scaleX: 0.82 }, { opacity: 1, scaleX: 1, duration: 0.55, ease: "power2.out", transformOrigin: "left center" }, 0.2);
+      tl.fromTo(foot, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 0.26);
+
+      /* ── Scene 2 (0.6–2.1s) — MEDDIC arrives oversized (1.12×) and SCALES DOWN
+            to its home size on a long-tail power3 settle. No overshoot. ── */
+      tl.fromTo(name, { opacity: 0, scale: 1.12 }, { opacity: 1, scale: 1, duration: 1.34, ease: "power3.out" }, 0.46);
+
+      /* ── Scene 3 (2.1–3.8s) — css-marker-patterns, strike form: the coral rule
+            draws left→right across the word from scaleX(0), transform-origin left.
+            The frame's one accent moment; the word then holds under it. ── */
+      tl.fromTo(strike, { scaleX: 0, skewX: -0.8 }, { scaleX: 1, skewX: -0.8, duration: 0.66, ease: "power2.out" }, 2.14);
+
+      /* ── Scene 4 (3.8–6.4s) — discrete-text-sequence: the three denials HARD-CUT
+            in, one per spoken cue. Sparse state array + reverse search each frame;
+            jumps are instant (visibility), never tweened, and the boxes are
+            reserved from t=0 so the struck word never reflows. ── */
+      var SEQUENCE = [
+        { t: 0.0, shown: 0 },
+        { t: 3.9, shown: 1 }, // "No field."
+        { t: 4.7, shown: 2 }, // "No stage."
+        { t: 5.4, shown: 3 }  // "Nowhere to put it."
+      ];
+
+      function shownAt(time) {
+        for (var i = SEQUENCE.length - 1; i >= 0; i--) {
+          if (time >= SEQUENCE[i].t) return SEQUENCE[i].shown;
+        }
+        return 0;
+      }
+
+      function applyDenials(time) {
+        var n = shownAt(time);
+        for (var i = 0; i < denials.length; i++) {
+          denials[i].style.visibility = i < n ? "visible" : "hidden";
+        }
+      }
+
+      applyDenials(0);
+
+      var driver = { t: 0 };
+      tl.to(
+        driver,
+        {
+          t: DUR,
+          duration: DUR,
+          ease: "none",
+          onUpdate: function () { applyDenials(driver.t); }
+        },
+        0
+      );
+
+      /* ── Scene 5 (6.4–6.912s) — resolved and held still. No exit: the root
+            transition owns the hand-off out of this frame. ── */
+      tl.set({}, {}, DUR);
+    })();
+  </script>
+</template>

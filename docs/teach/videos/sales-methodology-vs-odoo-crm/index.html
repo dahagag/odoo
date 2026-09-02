@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js" integrity="sha384-sG0Hv1tP1lZCk9KQmrIbY/XNwi+OY84GQqhMscbnsoBFqAz8KNCil1kvfL3Hbbk2" crossorigin="anonymous"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #F3F4EF;
+      }
+      .scene {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="101.506"
+      data-width="1920"
+      data-height="1080"
+    >
+      <div
+        id="el-01-never-heard-of-it"
+        class="scene"
+        data-composition-id="01-never-heard-of-it"
+        data-composition-src="compositions/frames/01-never-heard-of-it.html"
+        data-start="0"
+        data-duration="7.412"
+        data-track-index="0"
+      ></div>
+      <audio
+        id="el-01-never-heard-of-it-voice"
+        src="assets/voice/01.wav"
+        data-start="0"
+        data-duration="6.912"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+
+      <div
+        id="el-02-so-name-it"
+        class="scene"
+        data-composition-id="02-so-name-it"
+        data-composition-src="compositions/frames/02-so-name-it.html"
+        data-start="6.912"
+        data-duration="8.991"
+        data-track-index="1"
+      ></div>
+      <audio
+        id="el-02-so-name-it-voice"
+        src="assets/voice/02.wav"
+        data-start="6.912"
+        data-duration="8.491"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+
+      <div
+        id="el-03-what-it-owns"
+        class="scene"
+        data-composition-id="03-what-it-owns"
+        data-composition-src="compositions/frames/03-what-it-owns.html"
+        data-start="15.402999999999999"
+        data-duration="14.26"
+        data-track-index="0"
+      ></div>
+      <audio
+        id="el-03-what-it-owns-voice"
+        src="assets/voice/03.wav"
+        data-start="15.402999999999999"
+        data-duration="13.76"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+
+      <div
+        id="el-04-inherited-not-chosen"
+        class="scene"
+        data-composition-id="04-inherited-not-chosen"
+        data-composition-src="compositions/frames/04-inherited-not-chosen.html"
+        data-start="29.162999999999997"
+        data-duration="12.767"
+        data-track-index="1"
+      ></div>
+      <audio
+        id="el-04-inherited-not-chosen-voice"
+        src="assets/voice/04.wav"
+        data-start="29.162999999999997"
+        data-duration="12.267"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+
+      <div
+        id="el-05-tab-already-knows"
+        class="scene"
+        data-composition-id="05-tab-already-knows"
+        data-composition-src="compositions/frames/05-tab-already-knows.html"
+        data-start="41.42999999999999"
+        data-duration="11.039"
+        data-track-index="0"
+      ></div>
+      <audio
+        id="el-05-tab-already-knows-voice"
+        src="assets/voice/05.wav"
+        data-start="41.42999999999999"
+        data-duration="10.539"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+
+      <div
+        id="el-06-warned-not-blocked"
+        class="scene"
+        data-composition-id="06-warned-not-blocked"
+        data-composition-src="compositions/frames/06-warned-not-blocked.html"
+        data-start="51.968999999999994"
+        data-duration="10.911"
+        data-track-index="1"
+      ></div>
+      <audio
+        id="el-06-warned-not-blocked-voice"
+        src="assets/voice/06.wav"
+        data-start="51.968999999999994"
+        data-duration="10.411"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+
+      <div
+        id="el-07-questions-it-asks"
+        class="scene"
+        data-composition-id="07-questions-it-asks"
+        data-composition-src="compositions/frames/07-questions-it-asks.html"
+        data-start="62.379999999999995"
+        data-duration="11.252"
+        data-track-index="0"
+      ></div>
+      <audio
+        id="el-07-questions-it-asks-voice"
+        src="assets/voice/07.wav"
+        data-start="62.379999999999995"
+        data-duration="10.752"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+
+      <div
+        id="el-08-refused"
+        class="scene"
+        data-composition-id="08-refused"
+        data-composition-src="compositions/frames/08-refused.html"
+        data-start="73.13199999999999"
+        data-duration="13.115"
+        data-track-index="1"
+      ></div>
+      <audio
+        id="el-08-refused-voice"
+        src="assets/voice/08.wav"
+        data-start="73.13199999999999"
+        data-duration="12.715"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+
+      <div
+        id="el-09-pipeline-never-moved"
+        class="scene"
+        data-composition-id="09-pipeline-never-moved"
+        data-composition-src="compositions/frames/09-pipeline-never-moved.html"
+        data-start="85.847"
+        data-duration="15.659"
+        data-track-index="0"
+      ></div>
+      <audio
+        id="el-09-pipeline-never-moved-voice"
+        src="assets/voice/09.wav"
+        data-start="85.847"
+        data-duration="15.659"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = gsap.timeline({ paused: true });
+      // ── frame transitions (injected by transitions.mjs) ──
+      (function () { var tl = window.__timelines["main"];
+        tl.to("#el-01-never-heard-of-it", { opacity: 0, duration: 0.5, ease: "power2.inOut" }, 6.912);
+        tl.fromTo("#el-02-so-name-it", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 6.912);
+        tl.to("#el-02-so-name-it", { opacity: 0, duration: 0.5, ease: "power2.inOut" }, 15.403);
+        tl.fromTo("#el-03-what-it-owns", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 15.403);
+        tl.to("#el-03-what-it-owns", { x: -1920, duration: 0.5, ease: "power3.inOut" }, 29.163);
+        tl.fromTo("#el-04-inherited-not-chosen", { x: 1920, opacity: 1 }, { x: 0, duration: 0.5, ease: "power3.inOut" }, 29.163);
+        tl.to("#el-04-inherited-not-chosen", { x: -1920, duration: 0.5, ease: "power3.inOut" }, 41.43);
+        tl.fromTo("#el-05-tab-already-knows", { x: 1920, opacity: 1 }, { x: 0, duration: 0.5, ease: "power3.inOut" }, 41.43);
+        tl.to("#el-05-tab-already-knows", { x: -1920, duration: 0.5, ease: "power3.inOut" }, 51.969);
+        tl.fromTo("#el-06-warned-not-blocked", { x: 1920, opacity: 1 }, { x: 0, duration: 0.5, ease: "power3.inOut" }, 51.969);
+        tl.to("#el-06-warned-not-blocked", { x: -1920, duration: 0.5, ease: "power3.inOut" }, 62.38);
+        tl.fromTo("#el-07-questions-it-asks", { x: 1920, opacity: 1 }, { x: 0, duration: 0.5, ease: "power3.inOut" }, 62.38);
+        tl.to("#el-07-questions-it-asks", { x: -1920, duration: 0.5, ease: "power3.inOut" }, 73.132);
+        tl.fromTo("#el-08-refused", { x: 1920, opacity: 1 }, { x: 0, duration: 0.5, ease: "power3.inOut" }, 73.132);
+        tl.to("#el-08-refused", { scale: 2.5, opacity: 0, filter: "blur(8px)", duration: 0.4, ease: "power3.in" }, 85.847);
+        tl.fromTo("#el-09-pipeline-never-moved", { scale: 0.5, opacity: 0, filter: "blur(8px)" }, { scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.4, ease: "power3.out" }, 85.847);
+        tl.to({}, { duration: 101.506 }, 0); // full-span anchor — main.duration() == composition total (Studio master duration)
+      })();
+    </script>
+  </body>
+</html>

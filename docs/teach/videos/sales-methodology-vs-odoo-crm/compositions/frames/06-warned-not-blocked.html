@@ -1,0 +1,397 @@
+<template>
+  <style>
+    /* Webfonts ship with the project — the render machine is clean headless Chrome.
+       Provenance: assets/fonts/README.md. font-display:block keeps the render deterministic. */
+    @font-face {
+      font-family: "Source Serif 4"; font-style: normal; font-weight: 400; font-display: block;
+      src: url(assets/fonts/SourceSerif4-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "Karla"; font-style: normal; font-weight: 400 500; font-display: block;
+      src: url(assets/fonts/Karla-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: block;
+      src: url(assets/fonts/IBMPlexMono-400-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: block;
+      src: url(assets/fonts/IBMPlexMono-500-latin.woff2) format("woff2");
+    }
+
+    #root {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      container-type: size;
+      container-name: f06;
+    }
+
+    /* Ground — warm cream paper on its own full-duration clip layer (never on #root). */
+    .f06-ground { position: absolute; inset: 0; background: #F3F4EF; }
+
+    /* Bottom pad runs deep so the last load-bearing line lands ~826px — clear of the
+       caption cutoff even though captions are disabled on this frame. */
+    .f06-pad {
+      position: absolute;
+      inset: 0;
+      padding: 4.2cqw 4.2cqw 6cqw;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* — chrome: the kicker-spike (mono, uppercase, 0.16em) —
+       The spike is ink-toned here, NOT coral: this frame spends its one accent
+       moment on the block-red refusal, and frame.md forbids a semantic accent
+       standing alongside coral. */
+    .f06-kicker {
+      margin: 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.46cqw;
+      font-weight: 500;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: rgba(27, 36, 48, 0.52);
+    }
+    .f06-kicker span { color: #B96A22; margin-right: 0.5em; } /* chrome glyph: coral on every frame, exempt from the accent ration */
+
+    /* — stage: left-anchored, optically centred in the safe area — */
+    .f06-stage {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      margin-top: 1.3cqh;
+    }
+
+    /* — the pressed action. The row hugs the button so the cursor and the ripple
+         rings can be positioned in percentages of the BUTTON's own box. — */
+    .f06-actionrow {
+      position: relative;
+      z-index: 5;
+      align-self: flex-start;
+    }
+    .f06-button {
+      display: inline-block;
+      font-family: "Karla", sans-serif;
+      font-size: 1.6cqw;
+      font-weight: 500;
+      line-height: 1;
+      color: #1B2430;
+      background: #E9EAE3;
+      border: 1px solid rgba(27, 36, 48, 0.2);
+      border-radius: 8px;
+      padding: 1.55cqh 1.8cqw;
+    }
+
+    /* ripple rings — in DOM from t=0 at the button's visual centre, centred by
+       MARGIN (never a CSS transform, which GSAP scale would overwrite). */
+    .f06-ring {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 100px;
+      height: 100px;
+      margin-left: -50px;
+      margin-top: -50px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(27, 36, 48, 0.3);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* — the oversized pointer: a real macOS-style arrow, ink with a cream outline
+         so it reads on the cream ground. ~63px tall — well above real-cursor scale.
+         Its TIP sits at 8.57% / 5.45% of the box, so the box is nudged back by that
+         offset in margin and the press pivots on the tip. — */
+    .f06-cursor {
+      position: absolute;
+      left: 52%;
+      top: 50%;
+      margin-left: -0.18cqw;
+      margin-top: -0.18cqw;
+      width: 2.1cqw;
+      height: 3.3cqw;
+      z-index: 60;
+      pointer-events: none;
+      transform-origin: 8.57% 5.45%;
+      filter: drop-shadow(0 2px 4px rgba(27, 36, 48, 0.16));
+    }
+    .f06-cursor svg { display: block; width: 100%; height: 100%; }
+
+    /* — the focal: the refusal. Block red #2E6B60 on #D9E8E3 — the frame's ONE
+         accent, and the only hue beyond ink and cream. — */
+    .f06-refusal {
+      position: relative;
+      z-index: 1;
+      box-sizing: border-box;
+      background: #D9E8E3;
+      border: 1px solid #2E6B60;
+      border-radius: 12px;
+      padding: 3cqw;
+      width: 74cqw;
+      max-width: 74cqw;
+      /* Tucked 7px UNDER the button (which sits at z-index 5) so the scaleY
+         growth genuinely emerges from behind it, anchored on its bottom edge. */
+      margin-top: -0.7cqh;
+    }
+    .f06-refusaltag {
+      margin: 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.25cqw;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #2E6B60;
+    }
+    /* section-rule — the only separator; draws on to introduce the refusal line. */
+    .f06-cardrule {
+      height: 1px;
+      background: rgba(162, 59, 59, 0.42);
+      margin: 1.5cqh 0 1.6cqh;
+    }
+    .f06-refusaltext {
+      margin: 0;
+      font-family: "Source Serif 4", serif;
+      font-size: 4.6cqw;
+      font-weight: 400;
+      line-height: 1.06;
+      letter-spacing: -0.018em;
+      color: #1B2430;
+    }
+    .f06-line { display: block; white-space: nowrap; }
+    .f06-word { display: inline-block; }
+    .f06-refusalreason {
+      margin: 2.2cqh 0 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.35cqw;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      color: #3E4A59;
+    }
+
+    /* — the three closing beats. Boxes reserved from t=0 (visibility, never
+         display) so the hard cuts never reflow the frame. — */
+    .f06-beats {
+      display: flex;
+      align-items: baseline;
+      gap: 2.4cqw;
+      margin-top: 3.4cqh;
+    }
+    .f06-beat {
+      font-family: "Karla", sans-serif;
+      font-size: 1.75cqw;
+      font-weight: 400;
+      line-height: 1.4;
+      color: rgba(27, 36, 48, 0.45);
+      visibility: hidden;
+    }
+    .f06-beat.last { color: #1B2430; font-weight: 500; }
+  </style>
+
+  <div data-hf-id="hf-5pl2" id="root" data-composition-id="06-warned-not-blocked" data-width="1920" data-height="1080" data-duration="10.911">
+    <div id="f06-ground" data-hf-id="hf-dpbi" class="clip f06-ground" data-start="0" data-duration="12.98" data-track-index="0"></div>
+
+    <div id="f06-pad" data-hf-id="hf-makb" class="clip f06-pad" data-start="0" data-duration="12.98" data-track-index="1">
+      <p data-hf-id="hf-r2wh" class="f06-kicker" id="f06-kicker"><span data-hf-id="hf-zak0">✱</span> Station 3 · Quotation</p>
+
+      <div data-hf-id="hf-0ng1" class="f06-stage">
+        <div data-hf-id="hf-jfo1" class="f06-actionrow" id="f06-actionrow">
+          <span data-hf-id="hf-kjnu" class="f06-button" id="f06-button">Create Quotation</span>
+
+          <div data-hf-id="hf-r001" class="f06-ring" id="f06-ring1"></div>
+          <div data-hf-id="hf-r002" class="f06-ring" id="f06-ring2"></div>
+          <div data-hf-id="hf-r003" class="f06-ring" id="f06-ring3"></div>
+
+          <div data-hf-id="hf-qyv8" class="f06-cursor" id="f06-cursor">
+            <svg viewBox="0 0 14 22" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M1.2 1.2 L1.2 18.4 L5.8 14.1 L8.5 20.7 L10.8 19.8 L8.1 13.3 L12.8 13.3 Z"
+                    fill="#1B2430" stroke="#F3F4EF" stroke-width="1.35"
+                    stroke-linejoin="round" paint-order="stroke"></path>
+            </svg>
+          </div>
+        </div>
+
+        <div data-hf-id="hf-5x8z" class="f06-refusal" id="f06-refusal">
+          <p data-hf-id="hf-exw3" class="f06-refusaltag" id="f06-refusaltag">Warned by MEDDIC</p>
+          <div data-hf-id="hf-cr01" class="f06-cardrule" id="f06-cardrule"></div>
+          <p data-hf-id="hf-vap4" class="f06-refusaltext"><span class="f06-word">Decision</span> <span class="f06-word">Process</span> <span class="f06-word">and</span> <span class="f06-word">Decision</span> <span class="f06-word">Criteria</span> <span class="f06-word">are</span> <span class="f06-word">missing.</span></p>
+          <p data-hf-id="hf-9zdm" class="f06-refusalreason" id="f06-refusalreason">Checkpoint: Quotation Created · Enforcement: Warn</p>
+        </div>
+
+        <div data-hf-id="hf-h4ig" class="f06-beats">
+          <span data-hf-id="hf-58mp" class="f06-beat">Flagged.</span>
+          <span data-hf-id="hf-1juf" class="f06-beat">Not stopped.</span>
+          <span data-hf-id="hf-24t2" class="f06-beat last">Quotation created.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js" integrity="sha384-sG0Hv1tP1lZCk9KQmrIbY/XNwi+OY84GQqhMscbnsoBFqAz8KNCil1kvfL3Hbbk2" crossorigin="anonymous"></script>
+  <script>
+    (function () {
+      var DUR = 10.411;
+
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+      window.__timelines["06-warned-not-blocked"] = tl;
+
+      var root = document.querySelector('[data-composition-id="06-warned-not-blocked"]');
+      var q = function (sel) { return root.querySelector(sel); };
+
+      var kicker = q("#f06-kicker");
+      var button = q("#f06-button");
+      var cursor = q("#f06-cursor");
+      var rings = [q("#f06-ring1"), q("#f06-ring2"), q("#f06-ring3")];
+      var card = q("#f06-refusal");
+      var tag = q("#f06-refusaltag");
+      var cardrule = q("#f06-cardrule");
+      var words = Array.prototype.slice.call(root.querySelectorAll(".f06-word"));
+      var reason = q("#f06-refusalreason");
+      var beats = Array.prototype.slice.call(root.querySelectorAll(".f06-beat"));
+
+      /* The camera is LOCKED for the whole frame — the blueprint's static-stage
+         pole, taken deliberately: the click must produce NO progression. Nothing
+         below ever tweens the stage, the pad, or the ground. */
+
+      /* -- Scene 1 (0.0-1.4s) — the station establishes and the pointer arrives.
+            Per the blueprint's static-stage form the surface is FULLY PRESENT
+            from the first frame — the push-slide LEFT hands it over already
+            composed, so the lone action never fades in; only the mono kicker
+            settles. Then cursor-click-ripple phase 1 — MOVE: an eased, decisive
+            glide from off-frame lower-right onto the button, 1.05s power3.out. -- */
+      tl.fromTo(kicker, { opacity: 0, y: -12 }, { opacity: 1, y: 0, duration: 0.42, ease: "power2.out" }, 0.02);
+      tl.fromTo(cursor, { x: 1760, y: 880 }, { x: 0, y: 0, duration: 1.05, ease: "power3.out" }, 0.25);
+
+      /* -- Scene 2 (1.4-3.0s) — cursor-click-ripple phases 2 + 3.
+            CLICK at 1.45 (the move settles at 1.30 — a 0.15s beat, neither
+            autopilot nor hesitation). Cursor and button CO-DEPRESS at the same
+            instant for the same 0.09s, the cursor compressing harder (0.85) than
+            the recipient (0.95); the return is authored as its own tween, never
+            yoyo/repeat, so the renderer can seek any frame. Three rings then
+            expand from the button's visual centre at a 0.085s stagger — the
+            multi-ring pulse the recipe reserves for a climactic click. Scale is
+            held at 3.2 so the widest ring dies inside the safe area.
+            And then NOTHING. 1.7s-3.0s the screen does not proceed. That withheld
+            progression is the beat — the silence is authored, not missing. -- */
+      tl.to(cursor, { scale: 0.85, duration: 0.09, ease: "power2.in" }, 1.45);
+      tl.to(cursor, { scale: 1, duration: 0.12, ease: "power2.out" }, 1.54);
+      tl.to(button, { scale: 0.95, duration: 0.09, ease: "power2.in" }, 1.45);
+      tl.to(button, { scale: 1, duration: 0.12, ease: "power2.out" }, 1.54);
+
+      tl.fromTo(
+        rings,
+        { scale: 0, opacity: 0.95 },
+        {
+          scale: 3.2,
+          opacity: 0,
+          duration: 0.86,
+          ease: "power2.out",
+          stagger: 0.085,
+          immediateRender: false
+        },
+        1.5
+      );
+
+      /* -- Scene 3 (3.0-6.0s) — on "it's a block": the spent button DIMS and the
+            block-red refusal GROWS IN FROM BEHIND IT — scaleY 0-to-1 anchored at
+            its own top edge, which sits on the button's bottom edge. Transform
+            only: no width/height tween, and the card's layout box is reserved
+            from t=0 so the closing beats below it never reflow. Its content stays
+            dark through the growth so nothing renders squashed; the mono tag
+            lands as the panel settles, then the block-red section-rule draws on
+            left-to-right to open the space the refusal line will fill. -- */
+      tl.to(button, { opacity: 0.4, duration: 0.5, ease: "power2.out" }, 2.96);
+      tl.fromTo(
+        card,
+        { scaleY: 0, transformOrigin: "left top" },
+        { scaleY: 1, transformOrigin: "left top", duration: 0.62, ease: "power3.out" },
+        3
+      );
+      tl.fromTo(tag, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.44, ease: "power2.out" }, 3.5);
+      tl.fromTo(
+        cardrule,
+        { opacity: 0, scaleX: 0 },
+        { opacity: 1, scaleX: 1, duration: 0.66, ease: "power2.out", transformOrigin: "left center" },
+        4.1
+      );
+
+      /* -- Scene 4 (6.0-9.0s) — on "says exactly why": dynamic-content-sequencing
+            across the refusal line — the seven words arrive one per beat on a
+            0.135s stagger, each lifting 16px into place, so the sentence is READ
+            rather than dropped. The mono reason line lands beneath it at 7.75s
+            and the card is now unambiguously the focal. -- */
+      tl.fromTo(
+        words,
+        { opacity: 0, y: 16 },
+        { opacity: 1, y: 0, duration: 0.5, ease: "power2.out", stagger: 0.135 },
+        6.02
+      );
+      tl.fromTo(reason, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 5.55);
+
+      /* -- Scene 5 (9.0-11.9s) — discrete-text-sequence: the three closing beats
+            HARD-CUT in, one per spoken cue. A sparse state array, reverse-searched
+            every frame off one linear driver; the jumps are instant (visibility,
+            boxes reserved from t=0) and never tweened — a fade here would soften
+            exactly the line that must not be softened. -- */
+      var SEQUENCE = [
+        { t: 0.0, shown: 0 },
+        { t: 6.95, shown: 1 },  // "Not a nudge."
+        { t: 7.85, shown: 2 },  // "Not a colored badge."
+        { t: 8.85, shown: 3 }  // "Refused."
+      ];
+
+      function shownAt(time) {
+        for (var i = SEQUENCE.length - 1; i >= 0; i--) {
+          if (time >= SEQUENCE[i].t) return SEQUENCE[i].shown;
+        }
+        return 0;
+      }
+
+      function applyBeats(time) {
+        var n = shownAt(time);
+        for (var i = 0; i < beats.length; i++) {
+          beats[i].style.visibility = i < n ? "visible" : "hidden";
+        }
+      }
+
+      applyBeats(0);
+
+      /* Zero-duration sets at the same thresholds, generated from the same array:
+         instant, tween-free, and immune to a seek that suppresses events (the
+         renderer seeks with events ON, but the static-frame verifier does not).
+         The driver below re-asserts exactly the same state each frame. */
+      for (var s = 1; s < SEQUENCE.length; s++) {
+        (function (state) {
+          tl.set(
+            beats.slice(0, state.shown),
+            { visibility: "visible" },
+            state.t
+          );
+        })(SEQUENCE[s]);
+      }
+
+      var driver = { t: 0 };
+      tl.to(
+        driver,
+        {
+          t: DUR,
+          duration: DUR,
+          ease: "none",
+          onUpdate: function () { applyBeats(driver.t); }
+        },
+        0
+      );
+
+      /* -- Scene 6 (11.9-12.48s) — held DEAD STILL. No jitter, no drift, no
+            aliveness of any kind: the cursor stays parked where it clicked and
+            not one property moves. This is the film's climax and its stillest
+            frame — the contrast against everything that just moved IS the effect.
+            No exit either; the root transition owns the hand-off out. -- */
+      tl.set({}, {}, DUR);
+    })();
+  </script>
+</template>
