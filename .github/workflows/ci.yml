@@ -34,7 +34,10 @@ jobs:
               - 'compose.yaml'
               - '.github/workflows/ci.yml'
             docs_build:
+              - '.github/workflows/ci.yml'
               - 'scripts/docs_build/**'
+              - 'docs/**'
+              - 'custom_addons/crm_methodology/static/docs/**/*.html'
       - uses: actions/checkout@v4
       - name: Build per-module change filters
         run: |
@@ -180,9 +183,11 @@ jobs:
         if: needs.changes.outputs.docs_build == 'true'
         with:
           python-version: '3.x'
-      - name: Run scripts/docs_build unit tests
+      - name: Run docs-build parity command and unit tests
         if: needs.changes.outputs.docs_build == 'true'
-        run: python3 -m unittest discover -s scripts/docs_build/tests -t .
+        run: |
+          python3 -m scripts.docs_build.parity_cli
+          python3 -m unittest discover -s scripts/docs_build/tests -t .
 
   test:
     name: Test (${{ matrix.module }})
