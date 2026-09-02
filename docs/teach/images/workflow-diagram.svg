@@ -8,6 +8,7 @@
     --amber:#B96A22; --amber-soft:#F0DFC7;
     --teal:#2E6B60; --teal-soft:#D9E8E3;
     --block:#A23B3B; --block-soft:#F3DBDB;
+    --shadow-1:rgba(27,36,48,.16); --shadow-2:rgba(27,36,48,.12);
   }
   @media (prefers-color-scheme: dark){
     :root{
@@ -16,11 +17,15 @@
       --amber:#E0954C; --amber-soft:#3B2C18;
       --teal:#6FBBAC; --teal-soft:#1D332E;
       --block:#E28080; --block-soft:#3A2222;
+      --shadow-1:rgba(0,0,0,.45); --shadow-2:rgba(0,0,0,.4);
     }
   }
   .canvas{ fill: var(--paper-0); }
   text{ font-family: 'IBM Plex Mono', ui-monospace, Consolas, monospace; fill: var(--ink-900); }
   .node{ font-size: 16px; }
+  .node-box, .node-decision, .node-block, .node-ok{
+    filter: drop-shadow(0 1px 2px var(--shadow-1)) drop-shadow(0 4px 10px var(--shadow-2));
+  }
   .node-box{ fill: var(--paper-1); stroke: var(--line); stroke-width: 1.5; }
   .node-decision{ fill: var(--amber-soft); stroke: var(--amber); stroke-width: 1.5; }
   .node-block{ fill: var(--block-soft); stroke: var(--block); stroke-width: 1.5; }

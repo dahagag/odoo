@@ -379,7 +379,7 @@ SALES_LAYOUT_TEMPLATE = """<!doctype html>
     color:var(--amber);
   }
 
-  img{ max-width:100%; height:auto; display:block; margin:0 auto; border:1px solid var(--line); border-radius:.6rem; box-shadow:var(--shadow); }
+  img{ max-width:100%; height:auto; display:block; margin:0 auto; }
 
   .table-wrap{ overflow-x:auto; border:1px solid var(--line); border-radius:.6rem; box-shadow:var(--shadow); }
   table{

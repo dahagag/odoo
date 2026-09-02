@@ -8,6 +8,7 @@
     --amber:#B96A22; --amber-soft:#F0DFC7;
     --teal:#2E6B60; --teal-soft:#D9E8E3;
     --violet:#5B5285; --violet-soft:#E5E2F0;
+    --shadow-1:rgba(27,36,48,.16); --shadow-2:rgba(27,36,48,.12);
   }
   @media (prefers-color-scheme: dark){
     :root{
@@ -16,6 +17,7 @@
       --amber:#E0954C; --amber-soft:#3B2C18;
       --teal:#6FBBAC; --teal-soft:#1D332E;
       --violet:#B0A6E0; --violet-soft:#2A2540;
+      --shadow-1:rgba(0,0,0,.45); --shadow-2:rgba(0,0,0,.4);
     }
   }
   .canvas{ fill: var(--paper-0); }
@@ -23,6 +25,9 @@
   .group{ fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 5 4; }
   .group-label{ font-size: 13px; fill: var(--ink-500); text-transform: uppercase; letter-spacing: .04em; }
   .node{ font-size: 15px; }
+  .node-team, .node-method, .node-lead{
+    filter: drop-shadow(0 1px 2px var(--shadow-1)) drop-shadow(0 4px 10px var(--shadow-2));
+  }
   .node-team{ fill: var(--teal-soft); stroke: var(--teal); stroke-width: 1.5; }
   .node-method{ fill: var(--amber-soft); stroke: var(--amber); stroke-width: 1.5; }
   .node-lead{ fill: var(--violet-soft); stroke: var(--violet); stroke-width: 1.5; }

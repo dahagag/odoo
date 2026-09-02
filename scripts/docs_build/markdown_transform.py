@@ -1068,9 +1068,6 @@ img{{
   height: auto;
   display: block;
   margin: 0 auto;
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  box-shadow: var(--shadow);
 }}
 .table-wrap{{
   overflow-x: auto;
@@ -1200,7 +1197,7 @@ _METHODOLOGIES_TEMPLATE = """<!doctype html>
   .method p:last-child{ margin-bottom:0; }
   .method strong{ color:var(--ink-900); }
   .method .label{ font-family:'IBM Plex Mono',monospace; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-500); display:block; margin-bottom:.2rem; }
-  img{ max-width:100%; height:auto; display:block; margin:0 auto; border:1px solid var(--line); border-radius:.6rem; box-shadow:var(--shadow); }
+  img{ max-width:100%; height:auto; display:block; margin:0 auto; }
 
   footer.reading{ margin-top:2.5rem; padding-top:1.5rem; border-top:1px solid var(--line); }
   footer.reading a{ font-size:.92rem; }
@@ -1325,9 +1322,6 @@ img{{
   height: auto;
   display: block;
   margin: 0 auto;
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  box-shadow: var(--shadow);
 }}
 .table-wrap{{
   overflow-x: auto;
