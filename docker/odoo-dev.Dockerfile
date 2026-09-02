@@ -6,21 +6,29 @@ ARG HOST_GID=1000
 
 USER root
 
-COPY requirements.txt /tmp/odoo-requirements.txt
-COPY --chmod=0755 docker/pip-install-requirements.sh /tmp/pip-install-requirements.sh
-
+# Node toolchain changes far less often than requirements.txt or the ruff pin below,
+# so it gets its own layer and won't be invalidated by their bumps.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs npm \
-    && /tmp/pip-install-requirements.sh \
-    && python3 -m pip install --no-cache-dir --break-system-packages ruff==0.16.1 \
     && npm install --global rtlcss \
     && wkhtmltopdf --version | grep -E '0\.12\.6' \
     && rtlcss --version \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt /tmp/odoo-requirements.txt
+COPY --chmod=0755 docker/pip-install-requirements.sh /tmp/pip-install-requirements.sh
+RUN /tmp/pip-install-requirements.sh \
+    && rm -rf /root/.cache /tmp/odoo-requirements.txt /tmp/pip-install-requirements.sh
+
+# Pinned in its own layer so a ruff version bump doesn't invalidate the
+# requirements.txt install above.
+RUN python3 -m pip install --no-cache-dir --break-system-packages ruff==0.16.1 \
     && ruff --version \
-    && groupmod --non-unique --gid "${HOST_GID}" odoo \
+    && rm -rf /root/.cache
+
+RUN groupmod --non-unique --gid "${HOST_GID}" odoo \
     && usermod --non-unique --uid "${HOST_UID}" --gid "${HOST_GID}" odoo \
-    && chown -R odoo:odoo /var/lib/odoo \
-    && rm -rf /var/lib/apt/lists/* /root/.cache /tmp/odoo-requirements.txt /tmp/pip-install-requirements.sh
+    && chown -R odoo:odoo /var/lib/odoo
 
 # Ubuntu's own "chromium" package is a snap-only stub on this base image (no real binary,
 # and snap doesn't work in a minimal container), so HttpCase browser/tour tests need Google

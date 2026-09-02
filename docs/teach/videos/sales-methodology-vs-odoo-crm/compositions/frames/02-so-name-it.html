@@ -1,0 +1,249 @@
+<template>
+  <style>
+    /* Webfonts ship with the project — the render machine is clean headless Chrome.
+       Provenance: assets/fonts/README.md. font-display:block keeps the render deterministic. */
+    @font-face {
+      font-family: "Source Serif 4"; font-style: normal; font-weight: 400; font-display: block;
+      src: url(assets/fonts/SourceSerif4-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "Karla"; font-style: normal; font-weight: 400 500; font-display: block;
+      src: url(assets/fonts/Karla-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: block;
+      src: url(assets/fonts/IBMPlexMono-400-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: block;
+      src: url(assets/fonts/IBMPlexMono-500-latin.woff2) format("woff2");
+    }
+
+    #root {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      container-type: size;
+      container-name: f02;
+    }
+
+    /* Ground — warm cream paper on its own full-duration clip layer (never on #root). */
+    .f02-ground { position: absolute; inset: 0; background: #F3F4EF; }
+
+    .f02-pad {
+      position: absolute;
+      inset: 0;
+      padding: 4.2cqw;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* — chrome: the ✱ kicker-spike (mono, uppercase, 0.16em) — */
+    .f02-kicker {
+      margin: 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.46cqw;
+      font-weight: 500;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: rgba(27, 36, 48, 0.52);
+    }
+    .f02-kicker span { color: #B96A22; margin-right: 0.5em; }
+
+    /* — stage: centred in the safe area, the fixed line + slot is the hero — */
+    .f02-stage {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 3.6cqh;
+    }
+
+    .f02-line { display: flex; align-items: baseline; gap: 1.2cqw; }
+
+    /* Foreground subject — the fixed line, Source Serif 4, full-strength ink. */
+    .f02-label {
+      margin: 0;
+      font-family: "Source Serif 4", serif;
+      font-size: 6.7cqw;
+      font-weight: 400;
+      line-height: 1.02;
+      letter-spacing: -0.022em;
+      color: #1B2430;
+    }
+
+    /* Foreground subject — the swap slot. Coral: the frame's one accent moment.
+       min-width + nowrap hold the hairline steady as the cycled words vary in length. */
+    .f02-slot {
+      display: inline-block;
+      min-width: 20cqw;
+      font-family: "Source Serif 4", serif;
+      font-size: 6.7cqw;
+      font-weight: 400;
+      line-height: 1.02;
+      letter-spacing: -0.022em;
+      color: #B96A22;
+      white-space: nowrap;
+      border-bottom: 1px solid rgba(27, 36, 48, 0.2); /* hairline-strong */
+      padding: 0 0.3cqw 0.3cqw;
+    }
+
+    /* Supporting — the mono inventory rail. Dim resting tone; JS steps ink-500 → ink-700
+       in lockstep with the slot's current value. */
+    .f02-inventory {
+      display: flex;
+      gap: 1.7cqw;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.35cqw;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+    .f02-rail-item { color: rgba(27, 36, 48, 0.46); }
+
+    /* Supporting — the one hairline section-rule; drawn left→right in Scene 4. */
+    .f02-rule {
+      height: 1px;
+      width: 26cqw;
+      background: rgba(27, 36, 48, 0.12);
+      transform-origin: left center;
+    }
+
+    /* Supporting — the thesis line. Karla lead, dimmed relative to the serif hero. */
+    .f02-thesis {
+      margin: 0;
+      max-width: 58cqw;
+      font-family: "Karla", sans-serif;
+      font-size: 2.08cqw;
+      font-weight: 400;
+      line-height: 1.5;
+      color: rgba(27, 36, 48, 0.72);
+    }
+    .f02-word { display: inline-block; }
+  </style>
+
+  <div data-hf-id="hf-y6d7" id="root" data-composition-id="02-so-name-it" data-width="1920" data-height="1080" data-duration="8.991">
+    <div id="f02-ground" data-hf-id="hf-lot5" class="clip f02-ground" data-start="0" data-duration="8.991" data-track-index="0"></div>
+
+    <div id="f02-pad" data-hf-id="hf-c5r8" class="clip f02-pad" data-start="0" data-duration="8.991" data-track-index="1">
+      <p data-hf-id="hf-q83k" class="f02-kicker" id="f02-kicker"><span data-hf-id="hf-zak0" id="f02-kicker-spike">✱</span> One record</p>
+
+      <div data-hf-id="hf-prjp" class="f02-stage">
+        <div data-hf-id="hf-mpf7" class="f02-line">
+          <span data-hf-id="hf-b15h" class="f02-label" id="f02-label">Methodology:</span>
+          <span data-hf-id="hf-1k76" class="f02-slot" id="f02-slot"></span>
+        </div>
+
+        <!-- the other named methodologies the slot cuts through — dims/brightens in lockstep -->
+        <div data-hf-id="hf-71t3" class="f02-inventory" id="f02-rail">
+          <span data-hf-id="hf-zejm" class="f02-rail-item" data-value="Sandler">Sandler</span>
+          <span data-hf-id="hf-hf8d" class="f02-rail-item" data-value="SPIN">SPIN</span>
+          <span data-hf-id="hf-tzbu" class="f02-rail-item" data-value="Your own">Your own</span>
+        </div>
+
+        <div data-hf-id="hf-l8g7" class="f02-rule" id="f02-rule"></div>
+
+        <p data-hf-id="hf-jsxy" class="f02-thesis" id="f02-thesis"><span class="f02-word">Attach</span> <span class="f02-word">it</span> <span class="f02-word">to</span> <span class="f02-word">a</span> <span class="f02-word">client,</span> <span class="f02-word">and</span> <span class="f02-word">Odoo</span> <span class="f02-word">starts</span> <span class="f02-word">holding</span> <span class="f02-word">the</span> <span class="f02-word">deal</span> <span class="f02-word">to</span> <span class="f02-word">it.</span></p>
+      </div>
+    </div>
+  </div>
+
+  <script src="../../assets/vendor/gsap-3.14.2.min.js"></script>
+  <script>
+    (function () {
+      var DUR = 8.491;
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+      window.__timelines["02-so-name-it"] = tl;
+
+      var root = document.querySelector('[data-composition-id="02-so-name-it"]');
+      var q = function (sel) { return root.querySelector(sel); };
+      var qa = function (sel) { return Array.prototype.slice.call(root.querySelectorAll(sel)); };
+
+      var kickerSpike = q("#f02-kicker-spike");
+      var kicker = q("#f02-kicker");
+      var label = q("#f02-label");
+      var slot = q("#f02-slot");
+      var rail = q("#f02-rail");
+      var railItems = qa(".f02-rail-item");
+      var rule = q("#f02-rule");
+      var words = qa(".f02-word");
+
+      var INK_700 = "rgba(27, 36, 48, 0.86)"; /* current option */
+      var INK_500 = "rgba(27, 36, 48, 0.46)"; /* passed / at-rest option */
+
+      /* ── Scene 1 (0.0–1.0s) — kicker settles. On "So name it", the fixed line
+            flashes in over an empty slot (hairline underline only, no text).
+            The slot is the show — nothing else enters yet. ── */
+      tl.fromTo(kickerSpike, { opacity: 0, scale: 0.92 }, { opacity: 1, scale: 1, duration: 0.35, ease: "power2.out" }, 0);
+      tl.fromTo(kicker, { opacity: 0, y: -10 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, 0);
+      tl.fromTo([label, slot], { opacity: 0 }, { opacity: 1, duration: 0.1, ease: "none" }, 0.12); // hard-cut flash, no fade/slide
+
+      /* ── Scene 2 (1.0–4.6s) — discrete-text-sequence: in-place token cycle, one
+            hard cut per spoken option (MEDDIC → Sandler → SPIN → "Your own"). The
+            mono inventory rail steps its dim state in lockstep: the option
+            currently in the slot reads ink-700, already-passed options ink-500. ── */
+      var CYCLE = [
+        { t: 0.0, value: "" },
+        { t: 1.0, value: "MEDDIC" },
+        { t: 1.9, value: "Sandler" },
+        { t: 2.8, value: "SPIN" },
+        { t: 3.7, value: "Your own" },
+        { t: 4.6, value: "MEDDIC" } // Scene 3 — cuts back to MEDDIC and rests
+      ];
+
+      function valueAt(time) {
+        for (var i = CYCLE.length - 1; i >= 0; i--) {
+          if (time >= CYCLE[i].t) return CYCLE[i].value;
+        }
+        return "";
+      }
+
+      function applyCycle(time) {
+        var v = valueAt(time);
+        slot.textContent = v;
+        for (var i = 0; i < railItems.length; i++) {
+          railItems[i].style.color = railItems[i].getAttribute("data-value") === v ? INK_700 : INK_500;
+        }
+      }
+
+      applyCycle(0);
+
+      // The rail itself only enters once the cycle starts — Scene 1 shows nothing but the fixed line.
+      tl.fromTo(rail, { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: 0.3, ease: "power2.out" }, 1.0);
+
+      var lastValue = null;
+      var driver = { t: 0 };
+      tl.to(
+        driver,
+        {
+          t: DUR,
+          duration: DUR,
+          ease: "none",
+          onUpdate: function () {
+            var v = valueAt(driver.t);
+            if (v !== lastValue) {
+              applyCycle(driver.t);
+              lastValue = v;
+            }
+          }
+        },
+        0
+      );
+
+      /* ── Scene 3 (4.6–5.6s) — the slot rests on MEDDIC, the rail fully dimmed
+            (handled above — no rail item matches "MEDDIC"). A deliberate held
+            beat before the thesis; nothing new enters. ── */
+
+      /* ── Scene 4 (5.6–8.0s) — the hairline rule draws left→right (plain scaleX
+            0→1 from a left transform-origin), then the thesis line reveals
+            per-word, paced to the closing narration. ── */
+      tl.fromTo(rule, { scaleX: 0 }, { scaleX: 1, duration: 0.4, ease: "power2.out" }, 5.6);
+      tl.fromTo(words, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.32, ease: "power2.out", stagger: 0.11 }, 6.0);
+
+      /* ── Scene 5 (8.0–8.491s) — resolved and held still. No exit: the root
+            transition owns the hand-off out of this frame. ── */
+      tl.set({}, {}, DUR);
+    })();
+  </script>
+</template>

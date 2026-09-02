@@ -1,6 +1,6 @@
 param(
     [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateSet('doctor', 'build', 'init', 'up', 'down', 'logs', 'shell', 'db-shell', 'scaffold', 'install', 'update', 'test', 'lint', 'reset')]
+    [ValidateSet('doctor', 'build', 'init', 'up', 'down', 'logs', 'shell', 'db-shell', 'scaffold', 'install', 'update', 'test', 'lint', 'docs-build', 'docs-build:doc', 'docs-build:video', 'reset')]
     [string]$Command,
 
     [Parameter(Position = 1)]
@@ -105,6 +105,69 @@ function Assert-Module {
             throw "Owned module '$Module' was not found under custom_addons/."
         }
     }
+}
+
+function Resolve-HostPython {
+    # docs-build:video shells out to the HyperFrames CLI (npx hyperframes render),
+    # which needs the local ffmpeg/ffprobe/Chrome-Headless-Shell toolchain
+    # installed on the host (see issue #36) - none of that is in the Odoo dev
+    # image, so unlike every other subcommand here, this one runs on the host,
+    # not via Invoke-Compose.
+    # Windows ships App Execution Alias stubs for python/python3 that resolve via
+    # Get-Command but only print a "Python was not found" hint and exit 49, so
+    # probe that each candidate actually runs before trusting it - otherwise
+    # docs-build:video silently renders nothing on a machine whose real
+    # interpreter is installed under a different name.
+    foreach ($candidate in @('python3', 'python', 'py')) {
+        $command = Get-Command $candidate -ErrorAction SilentlyContinue
+        if (-not $command) { continue }
+        & $command.Source '-c' '' 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { return $command.Source }
+    }
+    throw 'No working Python interpreter (python3/python/py) found on PATH.'
+}
+
+function Assert-RelativePath {
+    param([string]$Path, [string]$Label)
+    if (-not $Path) { throw "$Label requires a path argument." }
+    $normalized = $Path -replace '\\', '/'
+    if ([IO.Path]::IsPathRooted($Path) -or $normalized -split '/' -contains '..') {
+        throw "$Label path must be a relative path inside the repository."
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $script:RepoRoot $normalized))) {
+        throw "$Label path '$Path' does not exist."
+    }
+    return $normalized
+}
+
+function Invoke-DocsBuildDoc {
+    param([string]$Argument)
+    $cliArguments = @('run', '--rm', '--no-deps', 'odoo', 'python3', '-m', 'scripts.docs_build.cli')
+    if ($Argument) {
+        $cliArguments += Assert-RelativePath -Path $Argument -Label 'docs-build:doc'
+    }
+    Invoke-Compose -Arguments $cliArguments
+}
+
+function Invoke-DocsBuildVideo {
+    param([string]$ProjectPath)
+    $relativePath = Assert-RelativePath -Path $ProjectPath -Label 'docs-build:video'
+    $python = Resolve-HostPython
+    & $python -m scripts.docs_build.video_cli $relativePath
+    if ($LASTEXITCODE -ne 0) { throw "docs-build:video failed with exit code $LASTEXITCODE." }
+}
+
+function Get-DocsBuildVideoProjects {
+    # Authored HyperFrames projects live at docs/teach/videos/<stem>/ (see
+    # scripts/docs_build/video_cli.py and docs/adr/0008) - one per teach doc that
+    # has a walkthrough video authored for it. Bare `docs-build` re-renders every
+    # one it finds; a teach doc with no authored project simply has no video.
+    $videosDir = Join-Path $script:RepoRoot 'docs\teach\videos'
+    if (-not (Test-Path -LiteralPath $videosDir)) { return @() }
+    Get-ChildItem -LiteralPath $videosDir -Directory |
+        Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'hyperframes.json') } |
+        ForEach-Object { [System.IO.Path]::GetRelativePath($script:RepoRoot, $_.FullName) -replace '\\', '/' } |
+        Sort-Object
 }
 
 function Start-Database {
@@ -269,17 +332,20 @@ switch ($Command) {
     'test' { Invoke-ModuleTest $Argument $Extra $CleanupOnFailure.IsPresent }
     'lint' {
         $path = if ($Argument) { $Argument } else { 'custom_addons' }
-        if ([IO.Path]::IsPathRooted($path) -or $path -split '[\\/]' -contains '..') {
-            throw 'Lint path must be a relative path inside the repository.'
-        }
-        if (-not (Test-Path -LiteralPath (Join-Path $script:RepoRoot $path))) {
-            throw "Lint path '$path' does not exist."
-        }
+        $path = Assert-RelativePath -Path $path -Label 'Lint'
         $ruffArguments = @('run', '--rm', '--no-deps', 'odoo', 'ruff', 'check')
         if ($IsWindows) { $ruffArguments += @('--ignore', 'EXE002') }
-        $ruffArguments += "/workspace/$($path -replace '\\','/')"
+        $ruffArguments += "/workspace/$path"
         Invoke-Compose -Arguments $ruffArguments
     }
+    'docs-build' {
+        Invoke-DocsBuildDoc -Argument $null
+        foreach ($project in Get-DocsBuildVideoProjects) {
+            Invoke-DocsBuildVideo -ProjectPath $project
+        }
+    }
+    'docs-build:doc' { Invoke-DocsBuildDoc -Argument $Argument }
+    'docs-build:video' { Invoke-DocsBuildVideo -ProjectPath $Argument }
     'reset' {
         $project = Get-DevSetting 'COMPOSE_PROJECT_NAME' 'agentic-erp-dev'
         if ($project -notmatch '^[a-z0-9][a-z0-9_-]*$') { throw "Unsafe Compose project name '$project'." }

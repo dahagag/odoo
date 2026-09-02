@@ -1,0 +1,46 @@
+{
+  "provider": "auto",
+  "speed": 1,
+  "lines": [
+    {
+      "id": "01",
+      "text": "Your team runs MEDDIC. Your CRM has never heard of it. No field. No stage. Nowhere to put it."
+    },
+    {
+      "id": "02",
+      "text": "So name it. One record: MEDDIC, Sandler, SPIN — or your own. Attach it to a client, and Odoo starts holding the deal to it."
+    },
+    {
+      "id": "03",
+      "text": "A methodology owns two things. Requirements — a qualification field, the moment it's checked, and what happens if it's missing: block the deal, or just warn. And Playbook Questions, tied to an activity."
+    },
+    {
+      "id": "04",
+      "text": "Watch one opportunity. The client carries the methodology by default, so every new opportunity inherits it on creation — inherited, not chosen. A rep can still change it."
+    },
+    {
+      "id": "05",
+      "text": "The Qualification tab is live. One of six requirements filled. Four gaps that only warn. And one that blocks — the Economic Buyer, still unnamed."
+    },
+    {
+      "id": "06",
+      "text": "So the rep raises a quotation. Two requirements are missing at that checkpoint — but both only warn. The quotation goes through: flagged, not stopped."
+    },
+    {
+      "id": "07",
+      "text": "Mark the call done, and the Playbook Questions surface — the ones tied to that activity. Three questions, asked at exactly the moment they can still change the deal."
+    },
+    {
+      "id": "08",
+      "text": "Then the rep marks it Won. The Economic Buyer is still empty, and at this checkpoint it blocks. So Odoo refuses, and says exactly why. Not a nudge. Not a colored badge. Refused."
+    },
+    {
+      "id": "09",
+      "text": "And pull back. Your pipeline never moved. No business logic in the addon reads or writes a stage — your kanban, your views, your automations, untouched. It gates two actions, never your pipeline. A coaching layer with teeth."
+    }
+  ],
+  "bgm": {
+    "mode": "none"
+  },
+  "voice": "am_michael"
+}

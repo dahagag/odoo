@@ -15,7 +15,7 @@ CLEANUP_OPTION="${4:-}"
 COMPOSE=()
 
 usage() {
-    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|reset} [argument] [extra] [option]" >&2
+    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|docs-build|docs-build:doc|docs-build:video|reset} [argument] [extra] [option]" >&2
     exit 2
 }
 
@@ -71,6 +71,70 @@ assert_module() {
         echo "Owned module '$module' was not found under custom_addons/." >&2
         exit 1
     fi
+}
+
+resolve_host_python() {
+    # docs-build:video shells out to the HyperFrames CLI (npx hyperframes render),
+    # which needs the local ffmpeg/ffprobe/Chrome-Headless-Shell toolchain
+    # installed on the host (see issue #36) - none of that is in the Odoo dev
+    # image, so unlike every other subcommand here, this one runs on the host,
+    # not via compose.
+    # Windows ships App Execution Alias stubs for python/python3 that satisfy
+    # `command -v` but only print a "Python was not found" hint and exit 49, so
+    # probe that each candidate actually runs before trusting it - otherwise
+    # docs-build:video silently renders nothing on a machine whose real
+    # interpreter is installed under a different name.
+    local candidate
+    for candidate in python3 python py; do
+        command -v "$candidate" >/dev/null 2>&1 || continue
+        "$candidate" -c '' >/dev/null 2>&1 || continue
+        printf '%s
+' "$candidate"
+        return 0
+    done
+    return 1
+}
+
+assert_relative_path() {
+    local path="$1" label="$2"
+    [[ -n "$path" ]] || { echo "$label requires a path argument." >&2; exit 1; }
+    [[ "$path" != /* && "/$path/" != *"/../"* ]] || { echo "$label path must be a relative path inside the repository." >&2; exit 1; }
+    [[ -e "$path" ]] || { echo "$label path '$path' does not exist." >&2; exit 1; }
+}
+
+docs_build_doc() {
+    local argument="$1" docs_build_doc_args=()
+    if [[ -n "$argument" ]]; then
+        assert_relative_path "$argument" "docs-build:doc"
+        docs_build_doc_args=("$argument")
+    fi
+    compose run --rm --no-deps odoo python3 -m scripts.docs_build.cli "${docs_build_doc_args[@]}"
+}
+
+docs_build_video() {
+    local project_path="$1" host_python
+    assert_relative_path "$project_path" "docs-build:video"
+    # resolve_host_python runs in a subshell here, so it reports failure through
+    # its exit status rather than exiting the script itself.
+    if ! host_python="$(resolve_host_python)"; then
+        echo "docs-build:video needs a working Python interpreter (python3/python/py) on PATH." >&2
+        exit 1
+    fi
+    "$host_python" -m scripts.docs_build.video_cli "$project_path"
+}
+
+# Authored HyperFrames projects live at docs/teach/videos/<stem>/ (see
+# scripts/docs_build/video_cli.py and docs/adr/0008) - one per teach doc that has
+# a walkthrough video authored for it. Bare `docs-build` re-renders every one it
+# finds; a teach doc with no authored project simply has no video.
+docs_build_video_projects() {
+    local videos_dir="docs/teach/videos"
+    [[ -d "$videos_dir" ]] || return 0
+    find "$videos_dir" -mindepth 2 -maxdepth 2 -name hyperframes.json -print0 |
+        while IFS= read -r -d '' manifest; do
+            dirname "$manifest"
+        done |
+        sort
 }
 
 start_database() {
@@ -225,14 +289,22 @@ case "$COMMAND" in
     test) module_test "$ARGUMENT" "$EXTRA" "$CLEANUP_OPTION" ;;
     lint)
         lint_path="${ARGUMENT:-custom_addons}"
-        [[ "$lint_path" != /* && "/$lint_path/" != *"/../"* ]] || { echo "Lint path must be relative and inside the repository." >&2; exit 1; }
-        [[ -e "$lint_path" ]] || { echo "Lint path '$lint_path' does not exist." >&2; exit 1; }
+        assert_relative_path "$lint_path" "Lint"
         ruff_options=()
         case "$(uname -s)" in
             CYGWIN*|MINGW*|MSYS*) ruff_options=(--ignore EXE002) ;;
         esac
         compose run --rm --no-deps odoo ruff check "${ruff_options[@]}" "/workspace/$lint_path"
         ;;
+    docs-build)
+        docs_build_doc ""
+        while IFS= read -r project; do
+            [[ -n "$project" ]] || continue
+            docs_build_video "$project"
+        done < <(docs_build_video_projects)
+        ;;
+    docs-build:doc) docs_build_doc "$ARGUMENT" ;;
+    docs-build:video) docs_build_video "$ARGUMENT" ;;
     reset)
         project="$(setting COMPOSE_PROJECT_NAME agentic-erp-dev)"
         [[ "$project" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo "Unsafe Compose project name '$project'." >&2; exit 1; }

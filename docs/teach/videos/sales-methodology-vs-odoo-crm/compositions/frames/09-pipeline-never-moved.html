@@ -1,0 +1,441 @@
+<template>
+  <style>
+    /* Webfonts ship with the project — the render machine is clean headless Chrome.
+       Provenance: assets/fonts/README.md. font-display:block keeps the render deterministic. */
+    @font-face {
+      font-family: "Source Serif 4"; font-style: normal; font-weight: 400; font-display: block;
+      src: url(assets/fonts/SourceSerif4-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "Karla"; font-style: normal; font-weight: 400 500; font-display: block;
+      src: url(assets/fonts/Karla-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: block;
+      src: url(assets/fonts/IBMPlexMono-400-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: block;
+      src: url(assets/fonts/IBMPlexMono-500-latin.woff2) format("woff2");
+    }
+
+    #root {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      container-type: size;
+      container-name: f09;
+    }
+
+    /* Ground — warm cream paper on its own full-duration clip layer (never on #root,
+       and never on .f09-world: a world-borne background would scale with the camera). */
+    .f09-ground { position: absolute; inset: 0; background: #F3F4EF; }
+
+    /* The scene. overflow:hidden is REQUIRED — the camera opens at 5.6x. */
+    .f09-scene { position: absolute; inset: 0; overflow: hidden; }
+
+    /* The ONE camera wrapper. Everything lives inside it, authored at final 1x layout
+       from frame 0 — nothing assembles. transform is written only by applyCamera(). */
+    .f09-world {
+      position: absolute;
+      inset: 0;
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+
+    /* Bottom padding is 10.4cqh so nothing load-bearing crosses y ~= 968px. */
+    .f09-pad {
+      position: absolute;
+      inset: 0;
+      padding: 4.2cqw 4.2cqw 10.4cqh;
+      display: flex;
+      flex-direction: column;
+      gap: 2.2cqh;
+    }
+
+    /* — chrome: the ✱ kicker-spike (mono, uppercase, 0.16em) — */
+    .f09-kicker {
+      margin: 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.46cqw;
+      font-weight: 500;
+      line-height: 1.2;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: rgba(27, 36, 48, 0.52);
+    }
+    .f09-kicker span { color: #B96A22; margin-right: 0.5em; }
+
+    /* — the wide: the whole kanban, whole from frame 0, revealed by the pull-back — */
+    .f09-board {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.4cqw;
+      align-items: start;
+    }
+    .f09-col { display: flex; flex-direction: column; gap: 0.8cqh; }
+    .f09-colhead {
+      margin: 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.05cqw;
+      font-weight: 500;
+      line-height: 1.2;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #3E4A59;
+      padding-bottom: 0.6cqh;
+      border-bottom: 1px solid rgba(27, 36, 48, 0.2);
+    }
+
+    /* Neutral lead cards — half-step tile + hairline, two faint internal hairlines
+       so they read as cards at the wide. No content: they are not the subject. */
+    .f09-lead {
+      background: #E9EAE3;
+      border: 1px solid rgba(27, 36, 48, 0.12);
+      border-radius: 8px;
+      height: 10.5cqh;
+      padding: 0 1.5cqw;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 1.6cqh;
+    }
+    .f09-hair { display: block; height: 1px; background: rgba(27, 36, 48, 0.13); }
+    .f09-hair.w1 { width: 66%; }
+    .f09-hair.w2 { width: 38%; }
+
+    /* The one opportunity the film has been following — the close-up subject.
+       Authored as type / CSS only, so it survives 5.6x magnification. */
+    .f09-lead.ours {
+      background: #F0DFC7;
+      border-color: #B96A22;
+      height: 18.5cqh;
+      padding: 2.2cqh 1.5cqw;
+      justify-content: space-between;
+      gap: 0;
+    }
+    .f09-cardtitle {
+      margin: 0;
+      font-family: "Karla", sans-serif;
+      font-size: 1.5cqw;
+      font-weight: 500;
+      line-height: 1.22;
+      letter-spacing: -0.005em;
+      color: #1B2430;
+    }
+    /* the stage chip + the ink hairline that draws beneath it — the one field
+       the addon never writes, and the whole reason for the close-up */
+    .f09-cardstage {
+      align-self: flex-start;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.7cqh;
+    }
+    .f09-stagechip {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1cqw;
+      font-weight: 500;
+      line-height: 1.15;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #3E4A59;
+      background: rgba(27, 36, 48, 0.05);
+      border: 1px solid rgba(27, 36, 48, 0.22);
+      border-radius: 9999px;
+      padding: 0.45cqh 0.9cqw;
+      text-align: center;
+    }
+    .f09-stageline { height: 1px; background: rgba(27, 36, 48, 0.3); }
+    .f09-method {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.95cqw;
+      font-weight: 500;
+      line-height: 1.2;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #3E4A59;
+    }
+
+    /* — the closing stack, anchored to the bottom of the safe area — */
+    .f09-close { margin-top: auto; display: flex; flex-direction: column; gap: 1.2cqh; }
+    .f09-untouched { display: flex; gap: 1.6cqw; }
+    .f09-chip {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.25cqw;
+      font-weight: 500;
+      line-height: 1.2;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #2E6B60;
+      background: #D9E8E3;
+      border-radius: 9999px;
+      padding: 0.4cqh 1cqw;
+    }
+    /* two serif beats sharing one grid cell — the box is reserved from t=0, so the
+       hard cut between them cannot reflow the stack */
+    .f09-line {
+      margin: 0;
+      display: grid;
+      max-width: 72cqw;
+      font-family: "Source Serif 4", serif;
+      font-size: 5cqw;
+      font-weight: 400;
+      line-height: 1.06;
+      letter-spacing: -0.018em;
+      color: #1B2430;
+    }
+    .f09-line > span {
+      grid-area: 1 / 1;
+      visibility: hidden; /* hard-cut in by the discrete sequence */
+    }
+    .f09-distil {
+      margin: 0;
+      font-family: "Karla", sans-serif;
+      font-size: 2.08cqw;
+      font-weight: 500;
+      line-height: 1.2;
+      /* ink, not coral: the amber card border is this frame's one accent moment. */
+      color: #1B2430;
+    }
+    .f09-word { display: inline-block; margin-right: 0.26em; }
+  </style>
+
+  <div data-hf-id="hf-avxd" id="root" data-composition-id="09-pipeline-never-moved" data-width="1920" data-height="1080" data-duration="15.659">
+    <div id="f09-ground" data-hf-id="hf-s5o8" class="clip f09-ground" data-start="0" data-duration="15.659" data-track-index="0"></div>
+
+    <div id="f09-scene" data-hf-id="hf-yydt" class="clip f09-scene" data-start="0" data-duration="15.659" data-track-index="1">
+      <div class="f09-world" id="f09-world">
+        <div class="f09-pad">
+          <p data-hf-id="hf-di8p" class="f09-kicker"><span data-hf-id="hf-zak0">✱</span>The wide</p>
+
+          <div data-hf-id="hf-13mx" class="f09-board">
+            <div data-hf-id="hf-pi4b" class="f09-col">
+              <p data-hf-id="hf-9whi" class="f09-colhead">New</p>
+              <div data-hf-id="hf-hgb1" class="f09-lead"><span class="f09-hair w1"></span><span class="f09-hair w2"></span></div>
+              <div data-hf-id="hf-k075" class="f09-lead"><span class="f09-hair w1"></span><span class="f09-hair w2"></span></div>
+            </div>
+            <div data-hf-id="hf-rs8r" class="f09-col">
+              <p data-hf-id="hf-zvza" class="f09-colhead">Qualified</p>
+              <div data-hf-id="hf-tonu" class="f09-lead ours" id="f09-ours">
+                <p class="f09-cardtitle">Line 2 Expansion</p>
+                <div class="f09-cardstage">
+                  <span class="f09-stagechip" id="f09-stagechip">Qualified</span>
+                  <span class="f09-stageline" id="f09-stageline"></span>
+                </div>
+                <span class="f09-method">MEDDIC</span>
+              </div>
+              <div data-hf-id="hf-l748" class="f09-lead"><span class="f09-hair w1"></span><span class="f09-hair w2"></span></div>
+              <div data-hf-id="hf-kst7" class="f09-lead"><span class="f09-hair w1"></span><span class="f09-hair w2"></span></div>
+            </div>
+            <div data-hf-id="hf-rdxq" class="f09-col">
+              <p data-hf-id="hf-wkq8" class="f09-colhead">Proposition</p>
+              <div data-hf-id="hf-ita2" class="f09-lead"><span class="f09-hair w1"></span><span class="f09-hair w2"></span></div>
+            </div>
+            <div data-hf-id="hf-qzmp" class="f09-col">
+              <p data-hf-id="hf-hqh4" class="f09-colhead">Won</p>
+              <div data-hf-id="hf-iez1" class="f09-lead"><span class="f09-hair w1"></span><span class="f09-hair w2"></span></div>
+              <div data-hf-id="hf-jlw4" class="f09-lead"><span class="f09-hair w1"></span><span class="f09-hair w2"></span></div>
+            </div>
+          </div>
+
+          <div data-hf-id="hf-z82x" class="f09-close">
+            <div data-hf-id="hf-t8hg" class="f09-untouched">
+              <span data-hf-id="hf-6g8k" class="f09-chip">Kanban untouched</span>
+              <span data-hf-id="hf-558d" class="f09-chip">Views untouched</span>
+              <span data-hf-id="hf-cq0f" class="f09-chip">Automations untouched</span>
+            </div>
+            <p data-hf-id="hf-hxwq" class="f09-line" id="f09-line">
+              <span>It gates two actions.</span>
+              <span>Never your pipeline.</span>
+            </p>
+            <p data-hf-id="hf-d3hm" class="f09-distil" id="f09-distil"><span class="f09-word">A</span><span class="f09-word">coaching</span><span class="f09-word">layer</span><span class="f09-word">with</span><span class="f09-word">teeth.</span></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../../assets/vendor/gsap-3.14.2.min.js"></script>
+  <script>
+    (function () {
+      var DUR = 15.659;
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+      window.__timelines["09-pipeline-never-moved"] = tl;
+
+      var root = document.querySelector('[data-composition-id="09-pipeline-never-moved"]');
+      var q = function (sel) { return root.querySelector(sel); };
+
+      var world = q("#f09-world");
+      var ours = q("#f09-ours");
+      var stagechip = q("#f09-stagechip");
+      var stageline = q("#f09-stageline");
+      var chips = Array.prototype.slice.call(root.querySelectorAll(".f09-chip"));
+      var beats = Array.prototype.slice.call(root.querySelectorAll("#f09-line > span"));
+      var words = Array.prototype.slice.call(root.querySelectorAll(".f09-word"));
+
+      /* ══ CAMERA — viewport-change, single-wrapper composite transform ══
+         ONE .world, ONE cam object, ONE writer. Layout is font-metric independent
+         (explicit line-heights + explicit card heights), so the measured offset is
+         deterministic. T = -offset x S is the single-wrapper counter-translate
+         (NOT the nested-wrapper T = -offset).                                     */
+      var S0 = 5.6;   /* open: the amber card full-bleed (5.6 x 199.8px = 1119 > 1080) */
+      var S1 = 4.78;  /* dwell floor: 14.6% travel — under the 15% cap */
+      var DWELL_BIAS_Y = -26; /* world rides up a touch so the card BELOW peeks in,
+                                 while the column head above stays out of frame */
+
+      /* Measured ONCE, synchronously at build time — never from inside a callback.
+         The renderer seeks with suppressEvents=false and a cold render worker seeks
+         in non-linear order, so a measurement reachable from onUpdate would be
+         seek-order dependent and could poison the camera pose for the whole render.
+         The board is mounted and sized before this script runs, so this read is the
+         real laid-out geometry; everything downstream derives from this constant. */
+      var OFF = (function measureOffsetOnce() {
+        var x = 0, y = 0, n = ours;
+        while (n && n !== world) { x += n.offsetLeft; y += n.offsetTop; n = n.offsetParent; }
+        var W = world.offsetWidth, H = world.offsetHeight;
+        return {
+          x: x + ours.offsetWidth / 2 - W / 2,
+          y: y + ours.offsetHeight / 2 - H / 2
+        };
+      })();
+
+      var cam = { scale: S0, x: 0, y: 0 };
+      function applyCamera() {
+        world.style.transform = "translate(" + cam.x + "px, " + cam.y + "px) scale(" + cam.scale + ")";
+      }
+
+      var easeDwell = gsap.parseEase("power1.inOut");
+      var easeBurst = gsap.parseEase("expo.out");
+
+      var HOLD_END = 1.4;   /* Scene 1 — camera static in close-up */
+      var DWELL_END = 3.4;  /* Scene 2 — the gentle outward ease */
+      var LOCK_AT = 5.0;    /* Scene 3 — the burst ends; the frame LOCKS */
+
+      /* Poses, all derived from the one build-time measured offset. */
+      function pose(t) {
+        var o = OFF;
+        var p0 = { s: S0, x: -o.x * S0, y: -o.y * S0 };
+        var p1 = { s: S1, x: -o.x * S1, y: -o.y * S1 + DWELL_BIAS_Y };
+        var p, e;
+        if (t <= HOLD_END) return p0;
+        if (t < DWELL_END) {
+          e = easeDwell((t - HOLD_END) / (DWELL_END - HOLD_END));
+          return { s: p0.s + (p1.s - p0.s) * e, x: p0.x + (p1.x - p0.x) * e, y: p0.y + (p1.y - p0.y) * e };
+        }
+        if (t < LOCK_AT) {
+          e = easeBurst((t - DWELL_END) / (LOCK_AT - DWELL_END));
+          return { s: p1.s + (1 - p1.s) * e, x: p1.x + (0 - p1.x) * e, y: p1.y + (0 - p1.y) * e };
+        }
+        return { s: 1, x: 0, y: 0 }; /* wide. locked. */
+      }
+
+      function camAt(t) {
+        var p = pose(t);
+        cam.scale = p.s; cam.x = p.x; cam.y = p.y;
+        applyCamera();
+      }
+
+      camAt(0); /* seed frame 0 punched-in, before any seek */
+
+      /* The camera driver spans 0 -> LOCK_AT ONLY. Seeking past 5.0s renders it
+         complete (drv.t = 5.0 -> the wide pose), so NO camera tween exists on the
+         timeline after the lock: every later beat below is element motion. */
+      var drv = { t: 0 };
+      tl.to(
+        drv,
+        {
+          t: LOCK_AT,
+          duration: LOCK_AT,
+          ease: "none",
+          onUpdate: function () { camAt(drv.t); }
+        },
+        0
+      );
+
+      /* ── Scene 1 (0.0–1.4s) — full-bleed close-up, micro-action not a hold.
+            The "Qualified" stage chip pops (spring-pop-entrance, power3.out, no
+            overshoot) and the ink hairline draws beneath it left→right. ── */
+      tl.fromTo(stagechip, { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.56, ease: "power3.out", transformOrigin: "0% 50%" }, 0.12);
+      tl.fromTo(stageline, { scaleX: 0 }, { scaleX: 1, duration: 0.62, ease: "power2.out", transformOrigin: "left center" }, 0.66);
+
+      /* ── Scene 2 (1.4–3.4s) — the pre-reveal dwell. Camera only (above). ──
+         ── Scene 3 (3.4–5.0s) — the ONE decelerating zoom-out burst, expo.out,
+            to scale 1 / translate 0. Eases to a full stop. Frame LOCKS. ──
+         ── Scene 4 (5.0–7.0s) — locked wide, held still. The board simply reads.
+            No tween is scheduled in this window: the post-lock act begins from
+            stillness, as the blueprint requires. ── */
+
+      /* ── Scene 5 (7.0–11.0s) — "your kanban, your views, your automations":
+            the three teal untouched chips arrive ONE PER SPOKEN ITEM, left to
+            right (spring-pop-entrance, soft, power3.out, no overshoot).
+            Element motion only — the camera is locked. ── */
+      var CHIP_AT = [7.32, 8.46, 9.6];
+      for (var i = 0; i < chips.length; i++) {
+        tl.fromTo(
+          chips[i],
+          { scale: 0, opacity: 0, y: 14 },
+          { scale: 1, opacity: 1, y: 0, duration: 0.58, ease: "power3.out", transformOrigin: "0% 50%" },
+          CHIP_AT[i]
+        );
+      }
+
+      /* ── Scene 6 (11.0–13.4s) — discrete-text-sequence: the serif closing line
+            lands as TWO beats on their own spoken cues, hard cut between them.
+            Sparse state array + reverse search each frame; the jump is instant
+            (visibility), never tweened, and both beats share one grid cell so the
+            stack cannot reflow. ── */
+      var SEQUENCE = [
+        { t: 0.0, i: -1 },
+        { t: 11.0, i: 0 },  /* "It gates two actions." */
+        { t: 12.3, i: 1 }   /* "Never your pipeline."  */
+      ];
+
+      function beatAt(time) {
+        for (var k = SEQUENCE.length - 1; k >= 0; k--) {
+          if (time >= SEQUENCE[k].t) return SEQUENCE[k].i;
+        }
+        return -1;
+      }
+
+      function applyBeats(time) {
+        var shown = beatAt(time);
+        for (var k = 0; k < beats.length; k++) {
+          beats[k].style.visibility = k === shown ? "visible" : "hidden";
+        }
+      }
+
+      applyBeats(0);
+
+      var textDrv = { t: 0 };
+      tl.to(
+        textDrv,
+        {
+          t: DUR,
+          duration: DUR,
+          ease: "none",
+          onUpdate: function () { applyBeats(textDrv.t); }
+        },
+        0
+      );
+
+      /* ── Scene 7 (13.4–15.659s) — "A coaching layer with teeth": the ink
+            distillation line reveals per word — the frame's one accent moment and
+            the film's last word — then holds still to the end. No exit move. ── */
+      for (var w = 0; w < words.length; w++) {
+        tl.fromTo(
+          words[w],
+          { opacity: 0, y: 12 },
+          { opacity: 1, y: 0, duration: 0.42, ease: "power2.out" },
+          13.4 + w * 0.09
+        );
+      }
+
+      /* Hold to the composition edge — the video ends here; the root owns nothing
+         after it, and there is no exit. */
+      tl.set({}, {}, DUR);
+    })();
+  </script>
+</template>
