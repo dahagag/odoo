@@ -36,6 +36,7 @@ _HORIZONTAL_RULE_RE = re.compile(r"^(-{3,}|\*{3,}|_{3,})$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _TABLE_SEPARATOR_RE = re.compile(r"^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$")
 _EXTERNAL_LINK_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:|^//")
+_INLINE_HTML_RE = re.compile(r"</?(?:span|mark|sup|sub|kbd|br)(?:\s+[^<>]*)?/?>")
 
 LinkResolver = Callable[[str], str]
 ImageResolver = Callable[[str], str]
@@ -365,15 +366,24 @@ def _render_inline(
     link_resolver: LinkResolver | None = None,
     image_resolver: ImageResolver | None = None,
 ) -> str:
-    escaped = html.escape(text, quote=True)
-
-    code_spans = []
+    code_spans: list[str] = []
 
     def _stash_code(match: re.Match) -> str:
         code_spans.append(match.group(1))
         return f"\x00CODE{len(code_spans) - 1}\x00"
 
-    escaped = _INLINE_CODE_RE.sub(_stash_code, escaped)
+    # Code spans are pulled out of the raw text first so an allowlisted tag written
+    # literally inside backticks (e.g. `` `<span>` ``) is shown as text, not rendered.
+    text_without_code = _INLINE_CODE_RE.sub(_stash_code, text)
+
+    html_tags: list[str] = []
+
+    def _stash_html_tag(match: re.Match) -> str:
+        html_tags.append(match.group(0))
+        return f"\x00HTML{len(html_tags) - 1}\x00"
+
+    text_with_placeholders = _INLINE_HTML_RE.sub(_stash_html_tag, text_without_code)
+    escaped = html.escape(text_with_placeholders, quote=True)
 
     def _rewrite_image(match: re.Match) -> str:
         alt, href = match.group(1), match.group(2)
@@ -399,8 +409,11 @@ def _render_inline(
     escaped = _BOLD_RE.sub(r"<strong>\1</strong>", escaped)
     escaped = _ITALIC_RE.sub(lambda m: f"<em>{m.group(1) or m.group(2)}</em>", escaped)
 
+    for index, tag in enumerate(html_tags):
+        escaped = escaped.replace(f"\x00HTML{index}\x00", tag)
+
     for index, code in enumerate(code_spans):
-        escaped = escaped.replace(f"\x00CODE{index}\x00", f"<code>{code}</code>")
+        escaped = escaped.replace(f"\x00CODE{index}\x00", f"<code>{html.escape(code, quote=True)}</code>")
 
     return escaped
 
@@ -524,6 +537,18 @@ th{{
 td{{
   background: var(--paper-1);
 }}
+.pill, .demo-badge{{
+  display: inline-block;
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+}}
+.pill.new{{ background: var(--teal-soft); color: var(--teal); }}
+.pill.ext{{ background: var(--violet-soft); color: var(--violet); }}
+.pill.same{{ background: var(--block-soft); color: var(--block); }}
+.demo-badge{{ background: var(--teal-soft); color: var(--teal); }}
 @media (prefers-reduced-motion: reduce){{
   *{{ transition: none !important; }}
 }}
