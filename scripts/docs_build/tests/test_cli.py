@@ -275,7 +275,27 @@ class BuildDocImageEmbeddingTests(unittest.TestCase):
 
 
 class BuildDocVideoEmbedTests(unittest.TestCase):
-    def test_embeds_sibling_video_that_already_exists_in_the_output_dir(self):
+    def test_authored_video_project_is_explicit_and_independent_of_output_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            teach_dir = Path(tmp) / "docs" / "teach"
+            teach_dir.mkdir(parents=True)
+            source = teach_dir / "doc.md"
+            source.write_text("# Doc\n\nBody.", encoding="utf-8")
+            project_dir = teach_dir / "videos" / "doc"
+            project_dir.mkdir(parents=True)
+            (project_dir / "hyperframes.json").write_text("{}", encoding="utf-8")
+            clean_output = Path(tmp) / "clean"
+            populated_output = Path(tmp) / "populated"
+            populated_output.mkdir()
+            (populated_output / "doc.mp4").write_bytes(b"fake-mp4-bytes")
+
+            clean_html = build_doc(source, clean_output).read_bytes()
+            populated_html = build_doc(source, populated_output).read_bytes()
+
+            self.assertEqual(clean_html, populated_html)
+            self.assertIn(b'<video src="doc.mp4" controls', clean_html)
+
+    def test_ignores_undeclared_video_left_in_the_output_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "doc.md"
             source.write_text("# Doc\n\nBody.", encoding="utf-8")
@@ -286,7 +306,7 @@ class BuildDocVideoEmbedTests(unittest.TestCase):
             output_path = build_doc(source, output_dir)
 
             html = output_path.read_text(encoding="utf-8")
-            self.assertIn('<video src="doc.mp4" controls', html)
+            self.assertNotIn("<video", html)
 
     def test_omits_video_tag_when_no_sibling_video_exists(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -299,7 +319,7 @@ class BuildDocVideoEmbedTests(unittest.TestCase):
             html = output_path.read_text(encoding="utf-8")
             self.assertNotIn("<video", html)
 
-    def test_each_closure_member_gets_its_own_sibling_video_lookup(self):
+    def test_each_closure_member_gets_its_own_authored_video_declaration(self):
         with tempfile.TemporaryDirectory() as tmp:
             teach_dir = Path(tmp) / "docs" / "teach"
             teach_dir.mkdir(parents=True)
@@ -307,9 +327,10 @@ class BuildDocVideoEmbedTests(unittest.TestCase):
                 "# Main\n\nSee [the other doc](other.md).", encoding="utf-8",
             )
             (teach_dir / "other.md").write_text("# Other\n\nBody.", encoding="utf-8")
+            other_project = teach_dir / "videos" / "other"
+            other_project.mkdir(parents=True)
+            (other_project / "hyperframes.json").write_text("{}", encoding="utf-8")
             output_dir = Path(tmp) / "out"
-            output_dir.mkdir()
-            (output_dir / "other.mp4").write_bytes(b"fake-mp4-bytes")
 
             output_path = build_doc(teach_dir / "main.md", output_dir)
 
@@ -373,6 +394,29 @@ class BuildAllTests(unittest.TestCase):
             self.assertEqual(
                 sorted(p.name for p in output_dir.iterdir()),
                 ["0005-thing.html", "alpha.html", "beta.html"],
+            )
+
+    def test_removes_stale_html_and_preserves_sibling_media(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            teach_dir = root / "docs" / "teach"
+            teach_dir.mkdir(parents=True)
+            (teach_dir / "alpha.md").write_text("# Alpha\n\nBody.", encoding="utf-8")
+            output_dir = root / "out"
+            output_dir.mkdir()
+            (output_dir / "stale.html").write_text("stale", encoding="utf-8")
+            (output_dir / "alpha.mp4").write_bytes(b"fake-video")
+            project_dir = teach_dir / "videos" / "alpha"
+            project_dir.mkdir(parents=True)
+            (project_dir / "hyperframes.json").write_text("{}", encoding="utf-8")
+
+            build_all(teach_dir, output_dir)
+
+            self.assertFalse((output_dir / "stale.html").exists())
+            self.assertEqual((output_dir / "alpha.mp4").read_bytes(), b"fake-video")
+            self.assertIn(
+                '<video src="alpha.mp4" controls',
+                (output_dir / "alpha.html").read_text(encoding="utf-8"),
             )
 
     def test_failure_in_one_entry_names_the_offending_file(self):
