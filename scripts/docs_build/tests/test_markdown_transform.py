@@ -318,6 +318,99 @@ class RenderMarkdownDocumentTests(unittest.TestCase):
         self.assertIn('<a href="sibling.html#section"', html)
 
 
+class RenderMarkdownDocumentMainLayoutTests(unittest.TestCase):
+    def test_document_without_directive_renders_deep_dive_layout_unchanged(self):
+        markdown_text = "# Title\n\n## Section One\n\nBody one.\n\n## Section Two\n\nBody two."
+
+        html_out = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('max-width: 840px', html_out)
+        self.assertNotIn('class="toc"', html_out)
+        self.assertNotIn("<section", html_out)
+
+    def test_layout_main_directive_selects_multi_section_layout(self):
+        markdown_text = (
+            "<!-- layout: main -->\n"
+            "# Title\n\n"
+            "## Section One\n\nBody one.\n\n"
+            "## Section Two\n\nBody two."
+        )
+
+        html_out = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn("max-width: 1180px", html_out)
+        self.assertIn('grid-template-columns: 230px minmax(0, 1fr)', html_out)
+        self.assertIn("max-width: 860px", html_out)
+        self.assertIn('position: sticky', html_out)
+
+    def test_layout_main_toc_lists_every_section_with_working_anchors(self):
+        markdown_text = (
+            "<!-- layout: main -->\n"
+            "# Title\n\n"
+            "## First Section\n\nBody one.\n\n"
+            "## Second Section\n\nBody two."
+        )
+
+        html_out = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('<li><a href="#first-section">First Section</a></li>', html_out)
+        self.assertIn('<li><a href="#second-section">Second Section</a></li>', html_out)
+        self.assertIn('<section id="first-section">', html_out)
+        self.assertIn('<section id="second-section">', html_out)
+        self.assertIn("<h1>Title</h1>", html_out)
+
+    def test_layout_main_toc_has_no_javascript(self):
+        markdown_text = "<!-- layout: main -->\n## Only Section\n\nBody."
+
+        html_out = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertNotIn("<script", html_out)
+
+    def test_layout_main_duplicate_heading_text_gets_distinct_slugs(self):
+        markdown_text = (
+            "<!-- layout: main -->\n"
+            "## Overview\n\nFirst.\n\n"
+            "## Overview\n\nSecond."
+        )
+
+        html_out = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('<section id="overview">', html_out)
+        self.assertIn('<section id="overview-1">', html_out)
+        self.assertIn('href="#overview"', html_out)
+        self.assertIn('href="#overview-1"', html_out)
+
+    def test_layout_directive_only_recognized_before_first_heading(self):
+        markdown_text = "# Title\n\n<!-- layout: main -->\n\n## Section\n\nBody."
+
+        html_out = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('max-width: 840px', html_out)
+        self.assertNotIn('class="toc"', html_out)
+
+    def test_unrecognized_layout_value_falls_back_to_deep_dive(self):
+        markdown_text = "<!-- layout: sidebar -->\n# Title\n\n## Section\n\nBody."
+
+        html_out = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('max-width: 840px', html_out)
+
+    def test_directive_line_is_not_rendered_as_paragraph_text(self):
+        markdown_text = "<!-- layout: main -->\n## Section\n\nBody."
+
+        html_out = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertNotIn("layout: main", html_out)
+
+    def test_layout_main_preserves_intro_content_before_first_section(self):
+        markdown_text = "<!-- layout: main -->\n# Title\n\nIntro paragraph.\n\n## Section\n\nBody."
+
+        html_out = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn("<p>Intro paragraph.</p>", html_out)
+        self.assertLess(html_out.index("<p>Intro paragraph.</p>"), html_out.index('<section id="section">'))
+
+
 class RenderMarkdownDocumentVideoEmbedTests(unittest.TestCase):
     def test_no_video_tag_when_video_src_omitted(self):
         html = render_markdown_document("# Doc\n\nBody.", fallback_title="Doc")
