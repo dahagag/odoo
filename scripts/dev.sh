@@ -15,7 +15,7 @@ CLEANUP_OPTION="${4:-}"
 COMPOSE=()
 
 usage() {
-    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|docs-build|docs-build:doc|docs-build:video|reset} [argument] [extra] [option]" >&2
+    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|docs-build|docs-build:doc|docs-build:parity|docs-build:video|reset} [argument] [extra] [option]" >&2
     exit 2
 }
 
@@ -109,6 +109,10 @@ docs_build_doc() {
         docs_build_doc_args=("$argument")
     fi
     compose run --rm --no-deps odoo python3 -m scripts.docs_build.cli "${docs_build_doc_args[@]}"
+}
+
+docs_build_parity() {
+    compose run --rm --no-deps odoo python3 -m scripts.docs_build.parity_cli
 }
 
 docs_build_video() {
@@ -304,6 +308,7 @@ case "$COMMAND" in
         done < <(docs_build_video_projects)
         ;;
     docs-build:doc) docs_build_doc "$ARGUMENT" ;;
+    docs-build:parity) docs_build_parity ;;
     docs-build:video) docs_build_video "$ARGUMENT" ;;
     reset)
         project="$(setting COMPOSE_PROJECT_NAME agentic-erp-dev)"
