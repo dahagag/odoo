@@ -10,7 +10,9 @@ issue #37 for the local-image embedding its `image_resolver` hook exists to supp
 (the filesystem crawl and data-URI encoding both live in `scripts.docs_build.cli`,
 not here — this module still never touches the filesystem). A local image reference
 without an `image_resolver` cannot be embedded and is a `MarkdownSyntaxError`; an
-external (http(s)) image reference always passes through unchanged.
+external (http(s)) image reference always passes through unchanged. Per docs/adr/0009,
+"side-effect-free" is about this transform's own execution, not the pages it emits:
+generated HTML loads the Google Fonts stylesheet over the network at view time.
 """
 
 from __future__ import annotations
@@ -42,6 +44,8 @@ _SLUG_INVALID_RE = re.compile(r"[^a-z0-9]+")
 
 LinkResolver = Callable[[str], str]
 ImageResolver = Callable[[str], str]
+
+_TAG_LABELS = {"s": "Sales", "r": "R&D", "c": "Consultants"}
 
 
 def is_local_markdown_link(href: str) -> bool:
@@ -139,6 +143,14 @@ def render_markdown_document(
     layout: each top-level (H2) heading and the blocks under it become a
     `<section>`, preceded by a static (JS-free) anchor-link table of
     contents. Its absence renders today's single-column deep-dive layout.
+
+    A `<!-- tags: s c -->` comment directive placed immediately above an
+    `<h2>` sets that section's audience (space-separated values from
+    `{s, r, c}` — Sales, R&D, Consultants). It renders as `.tag` badges next
+    to the heading and a `data-tags="s c"` attribute on the generated
+    `<section>`, for the audience-filter script to read. An `<h2>` with no
+    directive above it gets neither. Raises `MarkdownSyntaxError` on an
+    unrecognized tag value.
     """
     directives, markdown_text = _extract_document_directives(markdown_text)
     blocks = _parse_blocks(markdown_text)
@@ -164,24 +176,46 @@ def _extract_document_directives(markdown_text: str) -> tuple[dict[str, str], st
     """Parse `<!-- key: value -->` lines before the first heading; strip them out.
 
     Per ADR 0009, this is a single flat parser shared by every document- and
-    section-level directive (`layout`, and the section-level `tags` a future
-    ticket adds) — no YAML dependency, matching this module's stdlib-only
-    design.
+    section-level directive (`layout`, and the section-level `tags`) — no
+    YAML dependency, matching this module's stdlib-only design.
     """
     lines = markdown_text.splitlines()
     directives: dict[str, str] = {}
     remaining_lines: list[str] = []
     seen_heading = False
-    for line in lines:
+    for index, line in enumerate(lines):
         if not seen_heading and _HEADING_RE.match(line):
             seen_heading = True
         if not seen_heading:
             match = _DIRECTIVE_RE.match(line.strip())
-            if match:
+            if match and not _is_section_tags_directive(match, lines, index):
                 directives[match.group(1)] = match.group(2)
                 continue
         remaining_lines.append(line)
     return directives, "\n".join(remaining_lines)
+
+
+def _is_section_tags_directive(match: re.Match, lines: list[str], index: int) -> bool:
+    """True if `match` is a `tags` directive immediately above an `<h2>`.
+
+    Such a directive is section-scoped (see `_parse_blocks`), not document-level,
+    even when it appears before the document's first heading (e.g. a doc whose
+    first heading is the H2 it tags, with no preceding H1).
+    """
+    if match.group(1) != "tags" or index + 1 >= len(lines):
+        return False
+    next_heading_match = _HEADING_RE.match(lines[index + 1])
+    return bool(next_heading_match and len(next_heading_match.group(1)) == 2)
+
+
+def _parse_tags_directive(value: str) -> list[str]:
+    tags = value.split()
+    for tag in tags:
+        if tag not in _TAG_LABELS:
+            raise MarkdownSyntaxError(
+                f"unrecognized tags directive value {tag!r}, expected one of {sorted(_TAG_LABELS)}",
+            )
+    return tags
 
 
 def _slugify(text: str, seen_slugs: dict[str, int]) -> str:
@@ -193,27 +227,35 @@ def _slugify(text: str, seen_slugs: dict[str, int]) -> str:
 
 def _split_into_sections(
     blocks: list[_Block],
-) -> tuple[list[_Block], list[tuple[str, str, list[_Block]]]]:
+) -> tuple[list[_Block], list[tuple[str, str, list[str] | None, list[_Block]]]]:
     """Split blocks into leading (pre-first-H2) blocks and H2-headed sections.
 
     Each section's blocks include its own heading, so `_render_block` needs
     no special-casing to render it.
     """
     intro_blocks: list[_Block] = []
-    sections: list[tuple[str, str, list[_Block]]] = []
+    sections: list[tuple[str, str, list[str] | None, list[_Block]]] = []
     current_section: list[_Block] | None = None
     seen_slugs: dict[str, int] = {}
     for block in blocks:
         if isinstance(block, _Heading) and block.level == 2:
             slug = _slugify(block.text, seen_slugs)
             current_section = [block]
-            sections.append((block.text, slug, current_section))
+            sections.append((block.text, slug, block.tags, current_section))
             continue
         if current_section is None:
             intro_blocks.append(block)
         else:
             current_section.append(block)
     return intro_blocks, sections
+
+
+def _render_tags_badges(tags: list[str]) -> str:
+    spans = "".join(
+        f'<span class="tag {tag}" title="{html.escape(_TAG_LABELS[tag], quote=True)}">{tag.upper()}</span>'
+        for tag in tags
+    )
+    return f'<span class="tags">{spans}</span>'
 
 
 def _render_main_layout(
@@ -227,12 +269,19 @@ def _render_main_layout(
     intro_html = _render_blocks(intro_blocks, link_resolver, image_resolver)
     toc_items = "".join(
         f'<li><a href="#{html.escape(slug, quote=True)}">{html.escape(heading_text, quote=False)}</a></li>'
-        for heading_text, slug, _ in sections
+        for heading_text, slug, _tags, _ in sections
     )
     sections_html = "".join(
-        f'<section id="{html.escape(slug, quote=True)}">'
-        f'{_render_blocks(section_blocks, link_resolver, image_resolver)}</section>'
-        for _heading_text, slug, section_blocks in sections
+        f'<section id="{html.escape(slug, quote=True)}"'
+        + (f' data-tags="{html.escape(" ".join(tags), quote=True)}"' if tags else "")
+        + ">"
+        + '<div class="sec-head">'
+        + _render_block(section_blocks[0], link_resolver, image_resolver)
+        + (_render_tags_badges(tags) if tags else "")
+        + "</div>"
+        + _render_blocks(section_blocks[1:], link_resolver, image_resolver)
+        + "</section>"
+        for _heading_text, slug, tags, section_blocks in sections
     )
     return _MAIN_TEMPLATE.format(
         title=escaped_title,
@@ -247,6 +296,7 @@ def _render_main_layout(
 class _Heading:
     level: int
     text: str
+    tags: list[str] | None = None
 
 
 @dataclass
@@ -312,6 +362,14 @@ def _parse_blocks(markdown_text: str) -> list[_Block]:
                     f"unterminated fenced code block starting at line {fence_start}",
                 )
             blocks.append(_CodeBlock(code="\n".join(code_lines)))
+            continue
+
+        tags_directive_match = _DIRECTIVE_RE.match(line.strip())
+        if tags_directive_match and _is_section_tags_directive(tags_directive_match, lines, index):
+            next_heading_match = _HEADING_RE.match(lines[index + 1])
+            tags = _parse_tags_directive(tags_directive_match.group(2))
+            blocks.append(_Heading(level=2, text=next_heading_match.group(2).strip(), tags=tags))
+            index += 2
             continue
 
         heading_match = _HEADING_RE.match(line)
@@ -833,6 +891,33 @@ nav.toc a:hover{{
 section + section{{
   margin-top: 3rem;
 }}
+.sec-head{{
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}}
+.sec-head h2{{
+  margin: 0;
+}}
+.tags{{
+  display: inline-flex;
+  gap: 0.3rem;
+}}
+.tag{{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.7rem;
+  color: #fff;
+}}
+.tag.s{{ background: var(--teal); }}
+.tag.r{{ background: var(--violet); }}
+.tag.c{{ background: var(--amber); }}
 @media (prefers-reduced-motion: reduce){{
   *{{ transition: none !important; }}
 }}

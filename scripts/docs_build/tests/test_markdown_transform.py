@@ -411,6 +411,58 @@ class RenderMarkdownDocumentMainLayoutTests(unittest.TestCase):
         self.assertLess(html_out.index("<p>Intro paragraph.</p>"), html_out.index('<section id="section">'))
 
 
+class RenderMarkdownDocumentSectionTagsTests(unittest.TestCase):
+    def test_tags_directive_produces_badges_and_data_tags_attribute(self):
+        markdown_text = (
+            "<!-- layout: main -->\n"
+            "# Title\n\n"
+            "<!-- tags: s c -->\n"
+            "## Section One\n\nBody one."
+        )
+
+        html_out = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('<section id="section-one" data-tags="s c">', html_out)
+        self.assertIn('<span class="tag s" title="Sales">S</span>', html_out)
+        self.assertIn('<span class="tag c" title="Consultants">C</span>', html_out)
+        self.assertIn(
+            '<div class="sec-head"><h2>Section One</h2><span class="tags">',
+            html_out,
+        )
+
+    def test_section_without_directive_has_no_tags_and_no_data_tags(self):
+        markdown_text = "<!-- layout: main -->\n## Section One\n\nBody one."
+
+        html_out = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertIn('<section id="section-one">', html_out)
+        self.assertNotIn("data-tags", html_out)
+        self.assertNotIn('class="tag', html_out)
+
+    def test_tags_directive_line_is_not_rendered_as_paragraph_text(self):
+        markdown_text = "<!-- layout: main -->\n<!-- tags: r -->\n## Section\n\nBody."
+
+        html_out = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertNotIn("tags: r", html_out)
+
+    def test_unrecognized_tag_value_raises(self):
+        markdown_text = "<!-- layout: main -->\n<!-- tags: x -->\n## Section\n\nBody."
+
+        with self.assertRaises(MarkdownSyntaxError):
+            render_markdown_document(markdown_text, fallback_title="Doc")
+
+    def test_tags_directive_only_applies_to_the_immediately_following_h2(self):
+        # A tags directive above anything other than an h2 (here, separated by a
+        # blank line) is not a recognized directive position and is left as-is
+        # rather than silently attaching to a later, non-adjacent heading.
+        markdown_text = "<!-- layout: main -->\n<!-- tags: s -->\n\n## Section\n\nBody."
+
+        html_out = render_markdown_document(markdown_text, fallback_title="Doc")
+
+        self.assertNotIn("data-tags", html_out)
+
+
 class RenderMarkdownDocumentVideoEmbedTests(unittest.TestCase):
     def test_no_video_tag_when_video_src_omitted(self):
         html = render_markdown_document("# Doc\n\nBody.", fallback_title="Doc")
