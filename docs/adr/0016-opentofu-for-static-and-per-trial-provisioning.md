@@ -58,6 +58,18 @@ undo a Suspended instance. The per-trial module's instance resource is declared 
 explicit running/stopped assumption for exactly this reason: OpenTofu must never contend with the
 runtime for power state.
 
+**Instance profile / `iam:PassRole` boundary:** a Trial Org's own EC2 instance is launched
+**without an attached IAM instance profile** — it has no reason to call AWS APIs itself (it's a
+demo Odoo instance for the customer, not an AWS-facing workload), so `RunInstances` doesn't
+reference an instance profile and the ECS task role therefore doesn't need `iam:PassRole` for
+one. This is a deliberate simplification, not an oversight: attaching a role would both need
+`iam:PassRole` scoped to that specific role on the ECS task's own IAM policy (missing that
+permission is a documented way for `RunInstances` to fail outright when a profile is requested)
+and would put an AWS-scoped credential inside a customer-facing Trial Org instance, which is a
+posture this ADR doesn't want. If a future feature needs the instance to reach AWS APIs (e.g. an
+in-guest CloudWatch agent), that decision must explicitly add both the instance profile *and* the
+matching `iam:PassRole` grant to the ECS task role together — never one without the other.
+
 **State-key/workspace boundary:** the per-trial-org OpenTofu module is invoked (by the ECS/Fargate
 task, not by Odoo) against a deterministic remote-state key derived from the Trial Org's own
 database id — e.g. state key `trial-orgs/<trial_org_id>/terraform.tfstate` in the shared S3
