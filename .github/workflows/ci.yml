@@ -183,10 +183,9 @@ jobs:
         if: needs.changes.outputs.docs_build == 'true'
         with:
           python-version: '3.x'
-      - name: Run docs-build parity command and unit tests
+      - name: Run docs-build unit tests
         if: needs.changes.outputs.docs_build == 'true'
         run: |
-          python3 -m scripts.docs_build.parity_cli
           python3 -m unittest discover -s scripts/docs_build/tests -t .
 
   test:

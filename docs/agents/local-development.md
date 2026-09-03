@@ -78,7 +78,6 @@ Use `./scripts/dev.ps1 <command>` on PowerShell or `bash scripts/dev.sh <command
 | `test <module> [tags] [cleanup option]` | Runs focused tests in a unique database. Passing databases are dropped; failed databases are preserved and named unless exact cleanup is requested. |
 | `lint [path]` | Runs Ruff, defaulting to `custom_addons/`. The path must stay inside the repository. |
 | `docs-build:doc [file]` | Renders one `docs/teach/*.md` entry file, plus the closure of every local `.md` file it links to (transitively), into self-contained static HTML pages under `custom_addons/crm_methodology/static/docs/` with internal links rewritten to match (see docs/adr/0007, [#35](https://github.com/dahagag/odoo/issues/35), [#38](https://github.com/dahagag/odoo/issues/38)). With no argument, rebuilds every `docs/teach/*.md` file (except `docs/teach/DESIGN-TOKENS.md`, an implementation reference, never rendered) and their combined closure in one pass, then removes stale HTML outside that closure while preserving sibling media. A failure anywhere exits non-zero naming the offending file, and two runs against unchanged declared inputs produce byte-identical output (see [#41](https://github.com/dahagag/odoo/issues/41)). |
-| `docs-build:parity` | Runs the production renderer into a fresh temporary directory, then compares its complete managed HTML file set and bytes with the committed approved output plus frozen manifest hashes. It reports all missing, unexpected, and changed outputs together without modifying the publishing directory. This is the same parity command CI runs. |
 | `docs-build:video <project-dir>` | Mechanically re-renders an already-authored HyperFrames project to `custom_addons/crm_methodology/static/docs/<project-dir name>.mp4`, so `docs-build:doc` picks it up as a sibling video. Runs on the host, not in the Odoo container (see docs/adr/0008, [#40](https://github.com/dahagag/odoo/issues/40)). |
 | `docs-build` | Runs `docs-build:doc` (whole-directory build, no file argument) and then `docs-build:video` for every authored HyperFrames project it finds under `docs/teach/videos/*/` (any directory containing `hyperframes.json`), so a routine full rebuild stays one command. `docs-build:doc` and `docs-build:video` remain independently callable for a quick doc-only fix that shouldn't pay the video re-render cost (see [#42](https://github.com/dahagag/odoo/issues/42)). |
 | `reset` | Displays exact project volume names and requires the project name before deleting local data. |
@@ -95,7 +94,6 @@ Examples:
 ./scripts/dev.ps1 lint custom_addons/service_dispatch
 ./scripts/dev.ps1 docs-build:doc docs/teach/methodologies.md
 ./scripts/dev.ps1 docs-build:doc
-./scripts/dev.ps1 docs-build:parity
 ./scripts/dev.ps1 docs-build:video docs/teach/videos/methodologies
 ./scripts/dev.ps1 docs-build
 ```
@@ -110,7 +108,6 @@ bash scripts/dev.sh test service_dispatch '/service_dispatch' --cleanup-on-failu
 bash scripts/dev.sh lint custom_addons/service_dispatch
 bash scripts/dev.sh docs-build:doc docs/teach/methodologies.md
 bash scripts/dev.sh docs-build:doc
-bash scripts/dev.sh docs-build:parity
 bash scripts/dev.sh docs-build:video docs/teach/videos/methodologies
 bash scripts/dev.sh docs-build
 ```

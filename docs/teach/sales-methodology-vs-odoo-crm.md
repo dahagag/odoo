@@ -91,7 +91,7 @@ The addon ships three demo users spanning the roles that matter to this workflow
 | Salesperson | jordan.lee@example.com | jordan.lee |
 | Viewer (read-only) | morgan.ito@example.com | morgan.ito |
 
-Sign in at [odoo-ckp0.onrender.com](https://odoo-ckp0.onrender.com/) as the Salesperson or Sales Manager and open a demo client's opportunity to see live completion/warning/blocker state. To reset the instance after poking at it, sign in as the **Sales Manager** and go to **Configuration > Reset Demo Data** — gated so it only works on this demo database.
+Sign in at [method.dev.factory1.io](https://method.dev.factory1.io/) as the Salesperson or Sales Manager and open a demo client's opportunity to see live completion/warning/blocker state. To reset the instance after poking at it, sign in as the **Sales Manager** and go to **Configuration > Reset Demo Data** — gated so it only works on this demo database.
 
 > **For consultants.** The Render demo is a free-tier instance — it spins down after ~15 minutes idle, so the first click after a while takes about a minute to wake up. Don't take that as a product issue when showing a client.
 
