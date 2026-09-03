@@ -63,7 +63,6 @@ Use `./scripts/dev.ps1 <command>` on PowerShell or `bash scripts/dev.sh <command
 | `test <module> [tags]`           | Runs focused module tests in an ephemeral database. Add `-CleanupOnFailure` in PowerShell or `--cleanup-on-failure` in Bash to delete a failing test database. |
 | `lint [path]`                    | Runs Ruff, defaulting to `custom_addons/`; paths must remain inside the repository.                                                                            |
 | `docs-build:doc [file]`          | Renders one `docs/teach/*.md` entry and its linked Markdown closure, or all teach docs when no file is supplied.                                               |
-| `docs-build:parity`              | Compares a fresh docs render with the committed managed output and manifests without modifying them.                                                           |
 | `docs-build:video <project-dir>` | Re-renders an authored HyperFrames project into its sibling documentation video.                                                                               |
 | `docs-build`                     | Rebuilds all teach docs and every authored documentation video.                                                                                                |
 | `reset`                          | Deletes local development data after an exact project-name confirmation.                                                                                       |

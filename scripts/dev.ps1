@@ -21,7 +21,7 @@ Set-Location -LiteralPath $script:RepoRoot
 
 function Show-Usage {
     param([int]$ExitCode = 2)
-    Write-Host 'Usage: ./scripts/dev.ps1 {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|docs-build|docs-build:doc|docs-build:parity|docs-build:video|reset} [argument] [extra] [-CleanupOnFailure]'
+    Write-Host 'Usage: ./scripts/dev.ps1 {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|docs-build|docs-build:doc|docs-build:video|reset} [argument] [extra] [-CleanupOnFailure]'
     exit $ExitCode
 }
 
@@ -152,10 +152,6 @@ function Invoke-DocsBuildDoc {
         $cliArguments += Assert-RelativePath -Path $Argument -Label 'docs-build:doc'
     }
     Invoke-Compose -Arguments $cliArguments
-}
-
-function Invoke-DocsBuildParity {
-    Invoke-Compose -Arguments @('run', '--rm', '--no-deps', 'odoo', 'python3', '-m', 'scripts.docs_build.parity_cli')
 }
 
 function Invoke-DocsBuildVideo {
@@ -357,7 +353,6 @@ switch ($Command) {
         }
     }
     'docs-build:doc' { Invoke-DocsBuildDoc -Argument $Argument }
-    'docs-build:parity' { Invoke-DocsBuildParity }
     'docs-build:video' { Invoke-DocsBuildVideo -ProjectPath $Argument }
     'reset' {
         $project = Get-DevSetting 'COMPOSE_PROJECT_NAME' 'agentic-erp-dev'
