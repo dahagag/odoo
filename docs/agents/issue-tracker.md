@@ -33,6 +33,33 @@ Create a GitHub issue.
 
 Run `gh issue view <number> --comments`.
 
+## Stacked PRs follow the issue dependency graph
+
+Precedent: [#90](https://github.com/dahagag/odoo/issues/90). When a ticket tree (spec + sub-issues,
+or a wayfinder map + children) has blocking edges between its tickets — native issue dependencies
+where available, a `Blocked by:` line otherwise — implementation PRs stack in that same order:
+each ticket's PR sets `--base` to the branch of the ticket that blocks it (its nearest blocker),
+not to the default branch. A ticket with no blocker bases its PR on the default branch as usual.
+Merge strictly bottom-up: a PR only merges once every PR it's based on has merged, and each
+still-open PR above it is rebased/retargeted onto the default branch as its base layer lands.
+This makes the dependency graph and the PR stack the same shape — no separate stacking scheme to
+keep in sync with the tracker's own blocking edges.
+
+## /to-tickets output: sub-issues of the spec, first one always commits its ADRs/docs
+
+When `/to-tickets` breaks a spec ticket into tracer-bullet tickets, publish each resulting ticket
+as a GitHub **sub-issue** of the spec ticket (the sub-issues API — see the Wayfinding child-ticket
+mechanics below, which apply the same way here), not merely a sibling linked by blocking edges.
+Blocking edges between the sub-issues still use native issue dependencies per the stacking
+convention above.
+
+**The first sub-issue in the tree is always**: commit the ADR(s) and `CONTEXT.md`/`CONTEXT-MAP.md`
+updates produced by the `/grill-with-docs` session that led to the spec (if that session didn't
+already commit them itself). Every other sub-issue in the tree is blocked by it. This guarantees
+an agent picking up any later ticket in the tree — which may run in a fresh context with no memory
+of the grilling session — can read the settled decisions and vocabulary from the repo itself
+rather than needing them re-explained.
+
 ## Wayfinding operations
 
 Used by `/wayfinder`. The **map** is a single issue with **child** issues as tickets.

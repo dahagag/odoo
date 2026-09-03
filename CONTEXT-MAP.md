@@ -174,8 +174,25 @@ Detailed glossaries are created lazily under `docs/contexts/<context>/CONTEXT.md
 
 **Consumes:** Employees from People Operations; parts and movements from Inventory; expense and valuation capabilities from Accounting.
 
+### Hosting Operations
+
+**Responsibility:** Provision and operate isolated Odoo instances for prospects and customers outside the primary agentic-erp deployment — sales trials today, paid hosting later.
+
+**Boundary:** Owns Trial Org lifecycle (issuance, seats, suspend/wake, extension, auto-destroy) and the AWS infrastructure it runs on. It does not own the commercial decision to issue a trial (that's CRM's Opportunity) or billing for paid hosting (future Accounting/Sales concern).
+
+**Addon anchors:** `hosting` (installed on every Trial Org/customer instance; namespace `hosting`; shows that org's own registration info — name, domain, seats, expiry); `hosting_admin` (installed only on the factory1 Platform instance; namespace `hosting.admin`; owns the Trial Org model across all orgs, AWS/OpenTofu integration, suspend/wake control, cost dashboard). `crm_methodology` gets a thin "Issue Trial" / "Extend" action on the Opportunity that calls into `hosting_admin`.
+
+**Business concepts:** Trial Org, Seat, Active, Suspended, Wake, Auto-Destroy, Extension, Hosting Account, Org Registration.
+
+**Produces:** A live, reachable demo/hosting environment for a given Opportunity's prospect domain.
+
+**Consumes:** Opportunity and prospect-domain data from CRM; sales-methodology qualification state for gating Extension.
+
+Detailed glossary: [`docs/contexts/hosting/CONTEXT.md`](docs/contexts/hosting/CONTEXT.md)
+
 ## Relationships
 
+- **CRM → Hosting Operations:** a qualified Opportunity can request a Trial Org; Hosting Operations owns the deployed instance's lifecycle and reports its state back onto the Opportunity.
 - **Foundation → all contexts:** supplies identity, company, contact, product-reference, currency, unit, activity, and communication capabilities; consuming contexts assign their own business roles.
 - **CRM → Sales:** a qualified opportunity can become a quotation; Sales owns the resulting commercial commitment.
 - **Sales → Inventory:** confirmed product demand requests reservation and delivery; Inventory owns fulfillment state.

@@ -1,4 +1,12 @@
+---
+status: superseded by ADR-0015
+---
+
 # Render Hobby CD deployment
+
+**Superseded:** production is migrating to AWS (Platform Account) — see
+[ADR-0015](0015-production-migrates-to-aws-platform-account.md). This record is kept for the
+zero-cost-POC reasoning below, which no longer applies once the migration completes.
 
 The client-demo instance runs on Render's free web service + free Postgres, promoted by
 merging a release PR from `dev/19.0` into a new `main/19.0` branch, which Render watches for
