@@ -55,6 +55,13 @@ def handler(event, _context):
     compressed = base64.b64decode(event["awslogs"]["data"])
     payload = json.loads(gzip.decompress(compressed))
 
+    # CloudWatch Logs also delivers periodic CONTROL_MESSAGE payloads (health checks) on the same
+    # subscription, carrying one synthetic logEvents entry with no real log content — these have
+    # no logGroup/logStream, so forwarding one would post a webhook with log_group="" and
+    # trial_org_id=None. Only DATA_MESSAGE payloads carry real Trial Org log events.
+    if payload.get("messageType") != "DATA_MESSAGE":
+        return {"forwarded": 0}
+
     log_group = payload.get("logGroup", "")
     log_events = payload.get("logEvents", [])
     if not log_events:

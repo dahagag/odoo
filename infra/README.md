@@ -67,6 +67,12 @@ manual, credentialed step performed by a human operator, tracked as its own foll
 automatically, but only via the state machine's ECS task running inside AWS itself — never from a
 developer machine or CI runner.
 
+After `foundation`'s first apply, the operator must also **delegate `var.root_domain` to the
+zone's name servers** (the `route53_name_servers` output) at the domain's registrar or parent
+zone. Until that one-time delegation is done, the zone `foundation` creates is not publicly
+authoritative: ACM's DNS validation for the wildcard certificate cannot complete, and Trial Org
+DNS records written to the zone will not resolve. See `infra/foundation/dns.tf`.
+
 ## Tagging / ABAC convention
 
 Every resource this code creates that participates in an `aws:ResourceTag` ABAC condition (see

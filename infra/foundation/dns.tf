@@ -40,3 +40,10 @@ resource "aws_acm_certificate_validation" "wildcard" {
   certificate_arn         = aws_acm_certificate.wildcard.arn
   validation_record_fqdns = [for r in aws_route53_record.wildcard_cert_validation : r.fqdn]
 }
+
+# This zone is only authoritative for var.root_domain once its name servers (exported below as
+# route53_name_servers, see outputs.tf) are delegated at the registrar or parent zone for
+# var.root_domain. Until that manual, one-time delegation is done (tracked alongside the
+# apply itself — see infra/README.md's "tofu apply is a deliberate human/ops action" section),
+# ACM DNS validation above cannot complete and Trial Org DNS records written to this zone will
+# not resolve publicly.

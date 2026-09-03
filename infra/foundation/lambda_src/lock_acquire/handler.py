@@ -30,14 +30,19 @@ def handler(event, _context):
     trial_org_id = str(event["trial_org_id"])
     execution_arn = event["execution_arn"]
 
+    now = int(time.time())
     try:
         _table().put_item(
             Item={
                 "trial_org_id": trial_org_id,
                 "owner": execution_arn,
-                "expires_at": int(time.time()) + LOCK_TTL_SECONDS,
+                "expires_at": now + LOCK_TTL_SECONDS,
             },
-            ConditionExpression="attribute_not_exists(trial_org_id)",
+            # DynamoDB TTL deletion is asynchronous/best-effort (can lag well past expires_at), so
+            # a lock whose TTL has already passed can still be present as an item here. Accept
+            # taking over such a stale lock instead of only ever accepting a wholly-absent item.
+            ConditionExpression="attribute_not_exists(trial_org_id) OR expires_at < :now",
+            ExpressionAttributeValues={":now": now},
         )
     except ClientError as exc:
         if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":

@@ -23,6 +23,11 @@ output "route53_zone_name" {
   description = "Route53 hosted zone name."
 }
 
+output "route53_name_servers" {
+  value       = aws_route53_zone.root.name_servers
+  description = "Route53 hosted zone name servers. var.root_domain is only publicly authoritative once these are delegated at the registrar or parent zone (a manual, one-time operator step — see dns.tf and infra/README.md)."
+}
+
 output "acm_certificate_arn" {
   value       = aws_acm_certificate_validation.wildcard.certificate_arn
   description = "Validated ACM wildcard certificate ARN covering *.<root_domain> and *.<dev_subdomain>."

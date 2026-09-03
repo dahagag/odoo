@@ -123,13 +123,14 @@
     },
 
     "RunTofu": {
+      "Comment": "ClientToken folds in $$.State.RetryCount alongside $.job_id (ADR-0019's job identity) so a Step Functions-level Retry of this Task actually launches a fresh RunTask attempt instead of ECS's own ClientToken dedup handing back the already-failed original task. Within one attempt, repeated calls (e.g. the AWS SDK's own transport-level retries) still share one token, preserving the duplicate-launch protection ADR-0019 describes.",
       "Type": "Task",
       "Resource": "arn:aws:states:::ecs:runTask.sync",
       "Parameters": {
         "Cluster": "${ecs_cluster_arn}",
         "TaskDefinition": "${tofu_runner_task_definition_arn}",
         "LaunchType": "FARGATE",
-        "ClientToken.$": "$.job_id",
+        "ClientToken.$": "States.Format('{}-{}', $.job_id, $$.State.RetryCount)",
         "NetworkConfiguration": {
           "AwsvpcConfiguration": {
             "Subnets": ${private_subnet_ids_json},
@@ -171,6 +172,7 @@
     },
 
     "ReleaseLock": {
+      "Comment": "If this execution outlives the lock's TTL backstop (ADR-0020), DynamoDB's best-effort TTL sweep can delete the item before this runs, so the conditional delete fails with DynamoDB.ConditionalCheckFailedException. That's not a transient fault worth retrying (the condition will never start passing), and it means the lock is already gone either way, so it's treated as successful cleanup rather than an execution failure.",
       "Type": "Task",
       "Resource": "arn:aws:states:::dynamodb:deleteItem",
       "Parameters": {
@@ -188,6 +190,10 @@
       },
       "ResultPath": null,
       "Retry": [
+        {
+          "ErrorEquals": ["DynamoDB.ConditionalCheckFailedException"],
+          "MaxAttempts": 0
+        },
         {
           "ErrorEquals": ["States.ALL"],
           "MaxAttempts": ${retry_max_attempts},
@@ -195,10 +201,23 @@
           "IntervalSeconds": ${retry_interval_seconds}
         }
       ],
+      "Catch": [
+        {
+          "ErrorEquals": ["DynamoDB.ConditionalCheckFailedException"],
+          "ResultPath": null,
+          "Next": "LockAlreadyReleased"
+        }
+      ],
       "End": true
     },
 
+    "LockAlreadyReleased": {
+      "Type": "Succeed",
+      "Comment": "The lock item was already gone (TTL-expired and swept) by the time ReleaseLock ran; the lifecycle action itself already completed successfully."
+    },
+
     "ReleaseLockOnFailure": {
+      "Comment": "Same TTL-expiry race as ReleaseLock above, but on the failure path: the conditional delete's own DynamoDB.ConditionalCheckFailedException must not be retried (it won't start passing) or replace $.error (ResultPath null keeps it), so LifecycleActionFailed still reports the original failure.",
       "Type": "Task",
       "Resource": "arn:aws:states:::dynamodb:deleteItem",
       "Parameters": {
@@ -217,10 +236,21 @@
       "ResultPath": null,
       "Retry": [
         {
+          "ErrorEquals": ["DynamoDB.ConditionalCheckFailedException"],
+          "MaxAttempts": 0
+        },
+        {
           "ErrorEquals": ["States.ALL"],
           "MaxAttempts": ${retry_max_attempts},
           "BackoffRate": ${retry_backoff_rate},
           "IntervalSeconds": ${retry_interval_seconds}
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["DynamoDB.ConditionalCheckFailedException"],
+          "ResultPath": null,
+          "Next": "LifecycleActionFailed"
         }
       ],
       "Next": "LifecycleActionFailed"

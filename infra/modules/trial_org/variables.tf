@@ -16,6 +16,11 @@ variable "trial_org_id" {
 variable "trial_org_subdomain_label" {
   type        = string
   description = "DNS label for this Trial Org, e.g. \"acme-widgets\" to produce acme-widgets.<root_domain>. Distinct from trial_org_id since it may derive from the prospect's name for readability."
+
+  validation {
+    condition     = can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.trial_org_subdomain_label))
+    error_message = "trial_org_subdomain_label must be one lowercase DNS label of at most 63 characters (letters, digits, and internal hyphens only — no dots, no leading/trailing hyphen)."
+  }
 }
 
 variable "dns_environment" {

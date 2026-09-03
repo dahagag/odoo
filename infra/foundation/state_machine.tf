@@ -32,8 +32,12 @@ resource "aws_sfn_state_machine" "trial_org_lifecycle" {
   })
 
   logging_configuration {
-    log_destination        = "${aws_cloudwatch_log_group.state_machine.arn}:*"
-    include_execution_data = true
+    log_destination = "${aws_cloudwatch_log_group.state_machine.arn}:*"
+    # false: execution input/output (trial_org_id, job_id, and — on Suspend/Wake — instance_id)
+    # are tenant-identifying and must not land in the retained CloudWatch log group. Operators
+    # needing execution-level detail can still use states:GetExecutionHistory; state-transition
+    # logging itself (level = "ALL") is unaffected.
+    include_execution_data = false
     level                  = "ALL"
   }
 }

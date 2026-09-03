@@ -519,12 +519,50 @@ data "aws_iam_policy_document" "ecs_task" {
     }
   }
 
-  # Per-Trial-Org DNS record under the shared zone.
+  # Per-Trial-Org DNS record under the shared zone. The task role is shared across every Trial
+  # Org's provisioning invocation, so this can't be scoped to one exact record name — instead it's
+  # narrowed to only the two hostname patterns modules/trial_org ever writes
+  # (*.<root_domain>/*.<dev_subdomain>), to record type A, and to the UPSERT/DELETE actions the
+  # aws_route53_record resource actually issues (never CREATE). This still lets one Trial Org's
+  # task touch another Trial Org's record under the same pattern — full per-Trial-Org isolation
+  # would need a per-Trial-Org IAM identity or an identity check ahead of the DNS change, which is
+  # out of scope here.
   statement {
     sid       = "ManageTrialOrgDnsRecords"
     effect    = "Allow"
     actions   = ["route53:ChangeResourceRecordSets"]
     resources = [aws_route53_zone.root.arn]
+
+    condition {
+      test     = "ForAllValues:StringLike"
+      variable = "route53:ChangeResourceRecordSetsNormalizedRecordNames"
+      values   = ["*.${var.root_domain}", "*.${var.dev_subdomain}"]
+    }
+    condition {
+      test     = "Null"
+      variable = "route53:ChangeResourceRecordSetsNormalizedRecordNames"
+      values   = ["false"]
+    }
+    condition {
+      test     = "ForAllValues:StringEquals"
+      variable = "route53:ChangeResourceRecordSetsRecordTypes"
+      values   = ["A"]
+    }
+    condition {
+      test     = "Null"
+      variable = "route53:ChangeResourceRecordSetsRecordTypes"
+      values   = ["false"]
+    }
+    condition {
+      test     = "ForAllValues:StringEquals"
+      variable = "route53:ChangeResourceRecordSetsActions"
+      values   = ["UPSERT", "DELETE"]
+    }
+    condition {
+      test     = "Null"
+      variable = "route53:ChangeResourceRecordSetsActions"
+      values   = ["false"]
+    }
   }
 
   statement {

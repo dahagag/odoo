@@ -35,8 +35,12 @@ def handler(event, _context):
         client.stop_instances(InstanceIds=[instance_id])
         waiter = client.get_waiter("instance_stopped")
 
-    # Default waiter config: 40 attempts * 15s delay = up to 10 minutes, well inside the state
-    # machine's own 30-minute Task timeout.
-    waiter.wait(InstanceIds=[instance_id])
+    # The Lambda's own function timeout and the state machine's Task timeout are both
+    # ec2_power_timeout_seconds (default 600s / 10 minutes, see foundation/variables.tf) — the
+    # SAME budget the waiter runs inside, not a larger one. The waiter's own default config (40
+    # attempts * 15s = 600s) would consume that whole budget by itself, leaving no headroom for
+    # the start/stop API call or Lambda/Step Functions overhead, so an explicit smaller budget is
+    # used here instead.
+    waiter.wait(InstanceIds=[instance_id], WaiterConfig={"Delay": 15, "MaxAttempts": 30})
 
     return {"instance_id": instance_id, "action": action, "reached_target_state": True}
