@@ -34,8 +34,9 @@ data "aws_iam_policy_document" "instance_trust" {
 }
 
 resource "aws_iam_role" "instance" {
-  name               = local.instance_role_name
-  assume_role_policy = data.aws_iam_policy_document.instance_trust.json
+  name                 = local.instance_role_name
+  assume_role_policy   = data.aws_iam_policy_document.instance_trust.json
+  permissions_boundary = var.instance_role_permissions_boundary_arn
 
   tags = local.tags
 }
@@ -116,12 +117,11 @@ resource "aws_security_group" "instance" {
 # ---------------------------------------------------------------------------
 
 resource "aws_instance" "trial_org" {
-  ami                         = var.ami_id
-  instance_type               = var.instance_type
-  subnet_id                   = var.subnet_id
-  vpc_security_group_ids      = [aws_security_group.instance.id]
-  iam_instance_profile        = aws_iam_instance_profile.instance.name
-  associate_public_ip_address = true
+  ami                    = var.ami_id
+  instance_type          = var.instance_type
+  subnet_id              = var.subnet_id
+  vpc_security_group_ids = [aws_security_group.instance.id]
+  iam_instance_profile   = aws_iam_instance_profile.instance.name
 
   metadata_options {
     http_tokens   = "required" # IMDSv2 only
@@ -134,13 +134,31 @@ resource "aws_instance" "trial_org" {
 
   tags = merge(local.tags, { Name = "trial-org-${var.trial_org_id}" })
 
-  lifecycle {
-    # Power state (running/stopped) is owned exclusively by the state machine's Suspend/Wake
-    # Task state (ADR-0021), never by OpenTofu. There's no `aws_instance` attribute that tracks
-    # power state, so nothing to ignore_changes on here — this lifecycle block exists to make
-    # that boundary explicit for reviewers, not because it changes provider behavior.
-    ignore_changes = []
-  }
+  # No `lifecycle` block, deliberately: power state (running/stopped) is owned exclusively by
+  # the state machine's Suspend/Wake Task state (ADR-0021), never by OpenTofu, and the AWS
+  # provider's aws_instance resource has no power-state argument to begin with — so there's
+  # nothing here that could reassert a running/stopped assumption on a later `tofu apply`.
+}
+
+# ---------------------------------------------------------------------------
+# Elastic IP
+#
+# Suspend/Wake stop/start this instance directly via the EC2 API, outside of OpenTofu (ADR-0021).
+# Without an EIP, StopInstances releases the instance's public IP and StartInstances assigns a
+# new one, silently staling out the DNS record below until the next `tofu apply` happened to
+# notice — an EIP keeps the address (and therefore the DNS record) stable across every
+# Suspend/Wake power cycle.
+# ---------------------------------------------------------------------------
+
+resource "aws_eip" "trial_org" {
+  domain = "vpc"
+
+  tags = merge(local.tags, { Name = "trial-org-${var.trial_org_id}" })
+}
+
+resource "aws_eip_association" "trial_org" {
+  instance_id   = aws_instance.trial_org.id
+  allocation_id = aws_eip.trial_org.id
 }
 
 # ---------------------------------------------------------------------------
@@ -152,5 +170,5 @@ resource "aws_route53_record" "trial_org" {
   name    = local.domain
   type    = "A"
   ttl     = 300
-  records = [aws_instance.trial_org.public_ip]
+  records = [aws_eip.trial_org.public_ip]
 }

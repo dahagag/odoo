@@ -20,6 +20,4 @@ resource "aws_dynamodb_table" "trial_org_lock" {
   point_in_time_recovery {
     enabled = true
   }
-
-  tags = local.tags
 }

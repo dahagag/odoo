@@ -105,11 +105,6 @@ variable "tofu_state_lock_table" {
 # Cross-account IAM (hosting_admin, Platform Account)
 # ---------------------------------------------------------------------------
 
-variable "platform_account_id" {
-  type        = string
-  description = "AWS account id of the Platform Account, whose native role hosting_admin assumes cross-account into this narrow role (ADR-0013, ADR-0019)."
-}
-
 variable "hosting_admin_trusted_role_arn" {
   type        = string
   description = "ARN of the IAM role/principal in the Platform Account that hosting_admin runs as and that is allowed to assume this account's narrow hosting_admin-facing role."
@@ -149,6 +144,30 @@ variable "sfn_retry_interval_seconds" {
   default     = 5
 }
 
+variable "ec2_power_timeout_seconds" {
+  type        = number
+  description = "TimeoutSeconds on the Suspend/Wake Task state that invokes the ec2_power_control Lambda (which itself waits, via a boto3 EC2 waiter, for the instance to reach its target power state before returning)."
+  default     = 600
+}
+
+variable "lambda_invoke_timeout_seconds" {
+  type        = number
+  description = "TimeoutSeconds on the AcquireLock Task state that invokes the lock_acquire Lambda."
+  default     = 60
+}
+
+variable "lock_retry_max_attempts" {
+  type        = number
+  description = "MaxAttempts for AcquireLock's own Retry entry when the lock is already held (distinct from sfn_retry_max_attempts, which covers unexpected/transient errors on every Task state)."
+  default     = 5
+}
+
+variable "lock_retry_interval_seconds" {
+  type        = number
+  description = "IntervalSeconds for AcquireLock's lock-already-held Retry entry."
+  default     = 3
+}
+
 # ---------------------------------------------------------------------------
 # DynamoDB orchestration lock table (ADR-0020)
 # ---------------------------------------------------------------------------
@@ -181,10 +200,30 @@ variable "log_forwarder_hmac_secret_ssm_parameter" {
   default     = "/hosting/log-forwarder/hmac-secret"
 }
 
-variable "lambda_log_retention_days" {
+variable "log_forwarder_hmac_secret_kms_key_arn" {
+  type        = string
+  description = "ARN of the KMS key the log_forwarder_hmac_secret_ssm_parameter SecureString is encrypted under (e.g. the account's aws/ssm managed key, or a customer-managed key), so the shared log-forwarding Lambda can decrypt it."
+}
+
+variable "log_retention_days" {
   type        = number
-  description = "CloudWatch Logs retention for the Lambda functions' own log groups."
+  description = <<-EOT
+    CloudWatch Logs retention (days) applied to every log group this module creates directly:
+    the Lambda functions' own log groups, the ECS tofu-runner task's log group, and the state
+    machine's execution-history log group. Distinct from the per-Trial-Org application log
+    group's own retention, which is `log_group_retention_days` in infra/modules/trial_org.
+  EOT
   default     = 30
+}
+
+variable "trial_org_log_group_prefix" {
+  type        = string
+  description = <<-EOT
+    CloudWatch log group name prefix every Trial Org's own log group is created under (see
+    infra/modules/trial_org). Shared here so this module's IAM policies and the trial_org
+    module's log group naming can never drift apart from hardcoding the same string twice.
+  EOT
+  default     = "/hosting/trial-orgs/"
 }
 
 # ---------------------------------------------------------------------------

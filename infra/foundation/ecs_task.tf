@@ -13,7 +13,7 @@ resource "aws_ecs_task_definition" "tofu_runner" {
 
   container_definitions = jsonencode([
     {
-      name      = "tofu-runner"
+      name      = local.tofu_runner_container_name
       image     = var.tofu_runner_image
       essential = true
       # TRIAL_ORG_ID, ACTION and JOB_ID are supplied per-invocation as container overrides by the
@@ -33,6 +33,4 @@ resource "aws_ecs_task_definition" "tofu_runner" {
       }
     }
   ])
-
-  tags = local.tags
 }

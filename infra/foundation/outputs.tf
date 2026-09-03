@@ -62,3 +62,13 @@ output "ecs_task_role_arn" {
   value       = aws_iam_role.ecs_task.arn
   description = "ECS task role the tofu-runner container runs as."
 }
+
+output "trial_org_instance_permissions_boundary_arn" {
+  value       = aws_iam_policy.trial_org_instance_boundary.arn
+  description = "Permissions boundary ARN, for use as an input to trial_org module invocations (ADR-0021) — the ECS task role's iam:CreateRole grant requires every per-Trial-Org instance role to have this attached."
+}
+
+output "trial_org_log_group_prefix" {
+  value       = var.trial_org_log_group_prefix
+  description = "CloudWatch log group name prefix, for use as an input to trial_org module invocations so the two modules never disagree on the naming convention."
+}

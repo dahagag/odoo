@@ -4,13 +4,18 @@ output "instance_id" {
 }
 
 output "public_ip" {
-  value       = aws_instance.trial_org.public_ip
-  description = "Public IP address of the Trial Org instance."
+  value       = aws_eip.trial_org.public_ip
+  description = "Elastic IP address of the Trial Org instance — stable across Suspend/Wake power cycles, unlike the instance's own ephemeral public IP."
 }
 
 output "ami_id" {
   value       = aws_instance.trial_org.ami
   description = "AMI id this instance was actually launched from (ADR-0024 — recorded by the caller as the Trial Org's deployment-versioning audit trail)."
+}
+
+output "module_git_sha" {
+  value       = var.module_git_sha
+  description = "Echoes var.module_git_sha back out (ADR-0024) so the caller can persist it on the Trial Org record without having to remember its own input alongside this module's other outputs."
 }
 
 output "domain" {

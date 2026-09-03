@@ -18,13 +18,20 @@ variable "trial_org_subdomain_label" {
   description = "DNS label for this Trial Org, e.g. \"acme-widgets\" to produce acme-widgets.<root_domain>. Distinct from trial_org_id since it may derive from the prospect's name for readability."
 }
 
-variable "environment" {
+variable "dns_environment" {
   type        = string
-  description = "Environment this trial belongs to: \"prod\" for *.<root_domain>, or \"dev\" for *.<dev_subdomain>."
+  description = <<-EOT
+    Which of the zone's two wildcard domains this trial's DNS record is created under: "prod"
+    for *.<root_domain>, or "dev" for *.<dev_subdomain>. Deliberately not named `environment` —
+    that name is used elsewhere (e.g. the foundation module's `environment` input) for a broader,
+    differently-valued concept (a short deployment-name label like "hosting"), and reusing it
+    here for this narrower prod/dev choice caused exactly the kind of mix-up this comment now
+    prevents.
+  EOT
 
   validation {
-    condition     = contains(["prod", "dev"], var.environment)
-    error_message = "environment must be \"prod\" or \"dev\"."
+    condition     = contains(["prod", "dev"], var.dns_environment)
+    error_message = "dns_environment must be \"prod\" or \"dev\"."
   }
 }
 
@@ -92,9 +99,39 @@ variable "log_group_retention_days" {
   default     = 14
 }
 
+variable "log_group_prefix" {
+  type        = string
+  description = "CloudWatch log group name prefix (foundation's trial_org_log_group_prefix output) this Trial Org's own log group is created under — kept as an input rather than hardcoded here so it can never drift from the foundation IAM policies that reference the same convention."
+  default     = "/hosting/trial-orgs/"
+}
+
 variable "log_forwarder_lambda_arn" {
   type        = string
   description = "ARN of the shared log-forwarding Lambda (foundation's log_forwarder_lambda_arn output) that this Trial Org's subscription filter targets. Declared once in the foundation, not created here (ADR-0023)."
+}
+
+# ---------------------------------------------------------------------------
+# IAM
+# ---------------------------------------------------------------------------
+
+variable "instance_role_permissions_boundary_arn" {
+  type        = string
+  description = "Permissions boundary ARN (foundation's trial_org_instance_permissions_boundary_arn output) attached to this Trial Org's instance role — an IAM-enforced backstop on ADR-0021's narrow, logs-only guarantee, required by the foundation ECS task role's own iam:CreateRole grant."
+}
+
+# ---------------------------------------------------------------------------
+# Deployment versioning (ADR-0024)
+# ---------------------------------------------------------------------------
+
+variable "module_git_sha" {
+  type        = string
+  description = <<-EOT
+    Git SHA of this module's own source tree at apply time, supplied by whatever invokes this
+    module (the ECS tofu-runner task/CI knows its own checkout SHA). Recorded as a tag and
+    exposed as an output so the caller can persist it as the Trial Org's audit trail of "what
+    infra code actually provisioned this" (ADR-0024) — this module has no way to determine its
+    own git SHA from inside itself.
+  EOT
 }
 
 # ---------------------------------------------------------------------------

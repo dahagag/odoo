@@ -5,8 +5,6 @@ resource "aws_ecs_cluster" "hosting" {
     name  = "containerInsights"
     value = "enabled"
   }
-
-  tags = local.tags
 }
 
 resource "aws_ecs_cluster_capacity_providers" "hosting" {
@@ -21,9 +19,7 @@ resource "aws_ecs_cluster_capacity_providers" "hosting" {
 
 resource "aws_cloudwatch_log_group" "tofu_runner" {
   name              = "/ecs/${var.ecs_cluster_name}/tofu-runner"
-  retention_in_days = var.lambda_log_retention_days
-
-  tags = local.tags
+  retention_in_days = var.log_retention_days
 }
 
 resource "aws_security_group" "tofu_runner" {

@@ -31,10 +31,10 @@ module "trial_org" {
 
   trial_org_id              = var.trial_org_id
   trial_org_subdomain_label = var.trial_org_subdomain_label
-  environment                = var.environment
+  dns_environment           = var.dns_environment # "prod" or "dev" — distinct from the foundation's own `environment` input
 
-  vpc_id    = var.vpc_id     # foundation's vpc_id output
-  subnet_id = var.subnet_id  # one of foundation's public_subnet_ids outputs
+  vpc_id    = var.vpc_id    # foundation's vpc_id output
+  subnet_id = var.subnet_id # one of foundation's public_subnet_ids outputs
 
   ami_id = var.ami_id # foundation's base_ami_id output
 
@@ -43,6 +43,11 @@ module "trial_org" {
   dev_subdomain   = var.dev_subdomain
 
   log_forwarder_lambda_arn = var.log_forwarder_lambda_arn # foundation's log_forwarder_lambda_arn output
+  log_group_prefix         = var.log_group_prefix         # foundation's trial_org_log_group_prefix output
+
+  instance_role_permissions_boundary_arn = var.instance_role_permissions_boundary_arn # foundation's trial_org_instance_permissions_boundary_arn output
+
+  module_git_sha = var.module_git_sha # this module's own git SHA at apply time, known by the CI/ECS task invoking it
 }
 ```
 

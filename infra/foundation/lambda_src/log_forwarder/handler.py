@@ -17,8 +17,13 @@ import urllib.request
 
 WEBHOOK_URL_PARAM = os.environ["WEBHOOK_URL_SSM_PARAMETER"]
 HMAC_SECRET_PARAM = os.environ["HMAC_SECRET_SSM_PARAMETER"]
+LOG_GROUP_PREFIX = os.environ.get("LOG_GROUP_PREFIX", "/hosting/trial-orgs/")
 
 _ssm = None
+# Cached across warm invocations of the same execution environment. Both parameters change rarely
+# (an ops rotation, not a per-invocation value), so re-fetching them from SSM on every log batch
+# would just add latency and API calls for no freshness benefit within one container's lifetime.
+_parameter_cache = {}
 
 
 def _ssm_client():
@@ -31,8 +36,10 @@ def _ssm_client():
 
 
 def _get_parameter(name, decrypt=False):
-    resp = _ssm_client().get_parameter(Name=name, WithDecryption=decrypt)
-    return resp["Parameter"]["Value"]
+    if name not in _parameter_cache:
+        resp = _ssm_client().get_parameter(Name=name, WithDecryption=decrypt)
+        _parameter_cache[name] = resp["Parameter"]["Value"]
+    return _parameter_cache[name]
 
 
 def _sign(body_bytes, secret):
@@ -53,10 +60,11 @@ def handler(event, _context):
     if not log_events:
         return {"forwarded": 0}
 
-    # Trial Org id is the path segment after "/hosting/trial-orgs/" in the log group name set by
-    # infra/modules/trial_org (e.g. "/hosting/trial-orgs/482").
-    prefix = "/hosting/trial-orgs/"
-    trial_org_id = log_group[len(prefix):] if log_group.startswith(prefix) else None
+    # Trial Org id is the path segment after LOG_GROUP_PREFIX in the log group name set by
+    # infra/modules/trial_org (e.g. "/hosting/trial-orgs/482" -> "482").
+    trial_org_id = (
+        log_group[len(LOG_GROUP_PREFIX):] if log_group.startswith(LOG_GROUP_PREFIX) else None
+    )
 
     body = json.dumps(
         {

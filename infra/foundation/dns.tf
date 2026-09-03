@@ -3,8 +3,6 @@
 # live under the same parent).
 resource "aws_route53_zone" "root" {
   name = var.root_domain
-
-  tags = local.tags
 }
 
 # ACM wildcard certificate covering both *.method.factory1.io and *.dev.method.factory1.io.
@@ -19,8 +17,6 @@ resource "aws_acm_certificate" "wildcard" {
   lifecycle {
     create_before_destroy = true
   }
-
-  tags = local.tags
 }
 
 resource "aws_route53_record" "wildcard_cert_validation" {

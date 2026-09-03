@@ -14,8 +14,6 @@ resource "aws_cloudwatch_event_rule" "trial_org_lifecycle_failure" {
       stateMachineArn = [aws_sfn_state_machine.trial_org_lifecycle.arn]
     }
   })
-
-  tags = local.tags
 }
 
 resource "aws_cloudwatch_event_target" "trial_org_lifecycle_failure_cleanup" {

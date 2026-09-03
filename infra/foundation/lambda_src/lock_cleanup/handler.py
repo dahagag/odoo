@@ -6,6 +6,7 @@ owner-token-conditional delete the state machine's own release step does, so an 
 was stopped externally or timed out at the top level (neither of which a Catch block sees) still
 releases its lock promptly instead of relying solely on the DynamoDB TTL backstop.
 """
+import json
 import os
 
 import boto3
@@ -35,8 +36,6 @@ def handler(event, _context):
         return {"released": False, "reason": "no executionArn in event"}
 
     raw_input = detail.get("input", "{}")
-    import json
-
     try:
         trial_org_id = json.loads(raw_input).get("trial_org_id")
     except (json.JSONDecodeError, AttributeError):
