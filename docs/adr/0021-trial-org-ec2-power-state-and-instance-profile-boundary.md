@@ -22,14 +22,22 @@ rather than at its target state, the Suspend/Wake Task state waits (an EC2 waite
 in Odoo always reflects the instance's actual power state rather than just that the API call was
 accepted.
 
-**Instance profile / `iam:PassRole` boundary.** A Trial Org's own EC2 instance is launched
-**without an attached IAM instance profile** — it has no reason to call AWS APIs itself (it's a
-demo Odoo instance for the customer, not an AWS-facing workload), so `RunInstances` doesn't
-reference an instance profile and the ECS task role therefore doesn't need `iam:PassRole` for one.
-This is a deliberate simplification, not an oversight: attaching a role would both need
-`iam:PassRole` scoped to that specific role on the ECS task's own IAM policy (missing that
-permission is a documented way for `RunInstances` to fail outright when a profile is requested)
-and would put an AWS-scoped credential inside a customer-facing Trial Org instance, which is a
-posture this design doesn't want. If a future feature needs the instance to reach AWS APIs (e.g.
-an in-guest CloudWatch agent), that decision must explicitly add both the instance profile *and*
-the matching `iam:PassRole` grant to the ECS task role together — never one without the other.
+**Instance profile / `iam:PassRole` boundary (superseded in part — see Update below).**
+A Trial Org's own EC2 instance was originally launched **without an attached IAM instance
+profile** — it had no reason to call AWS APIs itself (it's a demo Odoo instance for the customer,
+not an AWS-facing workload), so `RunInstances` didn't reference an instance profile and the ECS
+task role didn't need `iam:PassRole` for one. This was a deliberate simplification, not an
+oversight: attaching a role would both need `iam:PassRole` scoped to that specific role on the ECS
+task's own IAM policy (missing that permission is a documented way for `RunInstances` to fail
+outright when a profile is requested) and would put an AWS-scoped credential inside a
+customer-facing Trial Org instance, a posture this design didn't want.
+
+**Update:** the observability design ([ADR-0023](0023-real-time-trial-org-log-viewer.md)) needs
+the Trial Org's own Odoo application log pushed to CloudWatch for a live support-diagnosis log
+viewer, which — per this ADR's own original closing line — requires exactly the instance profile
+this section declined to attach. That instance profile is now attached, but scoped as narrowly as
+the reasoning above demanded: only `logs:PutLogEvents`/`logs:CreateLogStream`, resource-scoped to
+that specific Trial Org's own CloudWatch log group (never a broader CloudWatch agent policy, never
+general AWS API access). The ECS task role's matching `iam:PassRole` grant is scoped to that one
+narrow role's ARN, per the "never one without the other" rule this section already set. See
+ADR-0023 for the full log-viewer design this serves.

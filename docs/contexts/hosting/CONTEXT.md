@@ -36,3 +36,7 @@ The AWS Organizations member account holding agentic-erp's own production instan
 **Org Registration**:
 The read-only summary of a Trial Org's own standing — name, domain, seats used/total, expiry date — surfaced inside that org's own Odoo instance via the `hosting` addon. The prelude to a self-service view paid hosting customers will later see (plan, billing) once that tier exists.
 _Avoid_: Subscription info (not yet a subscription — no billing exists for Trial Orgs)
+
+**Deployment Version**:
+The base AMI and OpenTofu module version a Trial Org was provisioned from, recorded on its record as an audit fact ("what code was this demo actually running"). Not an upgrade mechanism — a Trial Org needing newer code is destroyed and reissued, never patched in place.
+_Avoid_: Release, build (this identifies what a specific Trial Org runs, not a shippable artifact)
