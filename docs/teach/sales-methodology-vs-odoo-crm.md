@@ -1,152 +1,132 @@
-# Sales Methodology vs. OOTB Odoo CRM
+<!-- layout: main -->
+<!-- dependencies: methodologies.md ../contexts/crm/CONTEXT.md ../adr/0005-methodology-requirements-reference-properties-by-key.md ../research/b2b-sales-methodologies-odoo.md -->
+# Sales Methodology, Explained
 
-*A teach doc for Sales, R&D, and Odoo consultants. Point-in-time onboarding narrative — the living reference for terminology is [`docs/contexts/crm/CONTEXT.md`](../contexts/crm/CONTEXT.md).*
+What the custom `crm.methodology` addon does, why it exists, and exactly how it differs from stock Odoo 19 CRM — for Sales, R&D, and the consultants who have to explain it to a client.
 
-## 1. How to read this doc
+<!-- section: tldr s c -->
+## TL;DR
 
-This is one document for three audiences, not three documents. Sections carry a tag telling you who they're mainly for — **S**ales, **R**&D, **C**onsultants — but everyone should read the narrative sections (2–6); only R&D and consultants need the technical appendix (7) onward. Inline callouts (`> For Consultants:`, `> For R&D:`) flag audience-specific asides without breaking the story.
+The `crm.methodology` addon lets a Sales Manager define named qualification frameworks — MEDDIC, Sandler, or an in-house one — and attach them per client. Each framework declares **Requirements**: qualification fields that must (or should) be filled in before an opportunity can move to a quotation or be marked Won, plus **Playbook Questions** that surface during discovery activities. It's a coaching and gating layer, not a pipeline replacement.
 
-## 2. TL;DR *(S/C)*
+The reason it exists: stock Odoo 19 CRM has no concept of a named B2B sales methodology at all — confirmed against the actual vendored Odoo source in this repo. See [§10, how this compares to the broader market](#market).
 
-The `crm.methodology` addon lets a Sales Manager define named qualification frameworks (MEDDIC, Sandler, or a custom in-house one) and attach them per client. Each framework declares **Requirements** — qualification fields that must (or should) be filled in before an opportunity can move to a quotation or be marked Won — plus **Playbook Questions** that surface during discovery activities. It's a coaching and gating layer, not a pipeline replacement.
+<!-- section: why s r c -->
+## Why this exists
 
-The reason it exists: OOTB Odoo 19 CRM has no concept of a named B2B sales methodology at all. That's confirmed against the actual vendored Odoo source in this repo (`addons/crm/`, `addons/sale_crm/`, `addons/sales_team/`, `addons/mail/`) — see [§10](#10-how-this-compares-to-the-broader-market-c).
+Internal research surveyed [eight named B2B methodologies](methodologies.md) — MEDDIC/MEDDPICC, Sandler, Challenger Sale, SPIN Selling, Solution Selling, CustomerCentric Selling, ValueSelling, Consultative Selling — from primary, trademark-holder sources, then checked whether stock Odoo 19 CRM already supported any of them. It found nothing: no methodology-specific fields, stages, or terminology anywhere in the vendored CRM, Sales, or Mail modules. See [The Eight B2B Sales Methodologies](methodologies.md) for what each one actually claims, in its own trademark holder's words, and how it maps onto a Sales Methodology configuration.
 
-## 3. Why this exists *(S/R/C)*
+The addon's founding commit frames the need directly: Sales Managers define named Sales Methodologies; opportunities inherit their client's methodology; reps are blocked with a clear error when a Block-enforcement Requirement is unmet. The core engine shipped first, followed by demo personas so the workflow could be shown live, and a "Reset Demo Data" action so the demo can be replayed without polluting real data.
 
-`docs/research/b2b-sales-methodologies-odoo.md` researched [eight named B2B methodologies](methodologies.md) (MEDDIC/MEDDPICC, Sandler, Challenger Sale, SPIN Selling, Solution Selling, CustomerCentric Selling, ValueSelling, Consultative Selling) from primary/trademark-holder sources, then checked whether OOTB Odoo 19 CRM already supported any of them. It found nothing — no methodology-specific fields, stages, or terminology anywhere in the vendored CRM/Sales/Mail modules. See [The Eight B2B Sales Methodologies](methodologies.md) for what each one actually claims, in its own trademark holder's words, and how it maps onto a `crm.methodology` configuration.
+![Workflow: a new opportunity inherits its client's default methodology, shows live completion in the Qualification tab, and is gated at two points — creating a quotation and marking Won — each either refused with a clear error when a Block Requirement is unmet, or proceeding (through an activity-done Playbook Question wizard, in the quotation case) to Won.](images/workflow-diagram.svg)
 
-The addon's founding commit (`570fb6da`, "Implements #3") frames the need directly: Sales Managers define named Sales Methodologies; opportunities inherit their client's methodology; reps are blocked with a clear error when a Block-enforcement Requirement is unmet. The core engine shipped first, followed by demo personas so the workflow could be shown live, and a "Reset Demo Data" action so that demo can be re-run without polluting real data.
+The addon deliberately does **not** try to own qualification-field storage itself. Requirements reference Odoo's native per-team `lead_properties` Properties mechanism by string key, rather than defining bespoke fields — and the reason is simple: Sales Teams already configure their own Properties, and a second, addon-owned field system would immediately fork from whatever fields a team actually uses, forcing reps to fill in the same information twice under two different names. Referencing by key keeps one field, one place, one name — the addon adds enforcement on top of data that already exists, instead of asking teams to maintain it twice. More on that trade-off in [§8](#decisions).
 
-```mermaid
-flowchart LR
-    A["Client's default\nmethodology"] --> B["New opportunity\ninherits it"]
-    B --> C["Qualification tab:\ncompletion / warnings / blockers"]
-    C --> D{"Create quotation"}
-    D -- "Block Requirement unmet" --> D1["Refused,\nclear error"]
-    D -- "met" --> E["Activity marked done"]
-    E --> F["Playbook Question\nwizard (if matched)"]
-    F --> G{"Mark Won"}
-    G -- "Block Requirement unmet" --> G1["Refused,\nclear error"]
-    G -- "met" --> H["Won"]
-```
+<!-- section: vocabulary r c -->
+## Core vocabulary
 
-The addon deliberately does **not** try to own qualification-field storage itself. Requirements reference Odoo's native per-team `lead_properties` Properties mechanism by string key, rather than defining bespoke fields — and the reason is simple: Sales Teams already configure their own Properties, and a second, addon-owned field system would immediately fork from whatever fields a team actually uses, forcing reps to fill in the same information twice under two different names. Referencing by key keeps one field, one place, one name — the addon adds enforcement on top of data that already exists, instead of asking teams to maintain it twice. The cost is a reconciliation step when a Requirement's key doesn't yet exist on a team's Properties definition yet (see [§8](#8-design-decisions--trade-offs-rc) and [ADR 0005](../adr/0005-methodology-requirements-reference-properties-by-key.md) for the full trade-off record).
+Five terms, used consistently everywhere in the codebase and its docs. Reuse them as-is — don't invent synonyms.
 
-## 4. Core vocabulary *(R/C — plain-English glosses for S)*
-
-These five terms are defined canonically in [`docs/contexts/crm/CONTEXT.md`](../contexts/crm/CONTEXT.md). This doc reuses them as-is:
-
-| Term | Plain-English gloss |
+| Term | Definition |
 |---|---|
-| **Sales Methodology** | A named qualification framework (e.g. MEDDIC), owning a set of Requirements and Playbook Questions. |
-| **Requirement** | One qualification field a methodology cares about, tied to a Checkpoint and an Enforcement level. |
-| **Checkpoint** | The moment in an opportunity's life a Requirement is checked: Quotation Created, Marked Won, Marked Lost, or Continuous. |
-| **Enforcement** | What happens if a Requirement isn't met at its Checkpoint: **Block** (can't proceed) or **Warn** (flagged, proceeds anyway). |
-| **Playbook Question** | A discovery question tied to an activity type, surfaced when a rep marks a matching activity done. |
+| Sales Methodology | A named qualification framework (e.g. MEDDIC), owning a set of Requirements and Playbook Questions. |
+| Requirement | One qualification field a methodology cares about, tied to a Checkpoint and an Enforcement level. |
+| Checkpoint | The moment in an opportunity's life a Requirement is checked: Quotation Created, Marked Won, Marked Lost, or Continuous. |
+| Enforcement | **Block** — can't proceed without it. **Warn** — flagged, but proceeds anyway. |
+| Playbook Question | A discovery question tied to an activity type, surfaced when a rep marks a matching activity done. |
 
-## 5. The workflow story *(S primarily, C secondary)*
+<!-- section: workflow s c -->
+## The workflow story
 
 Trace one opportunity through the addon:
 
-1. A client (`res.partner`) has a default `methodology_id`. Every new opportunity for that client inherits it automatically on creation, but a rep can change it afterward — the assignment isn't retroactively locked.
-2. The opportunity's Qualification tab shows live completion state: percentage complete, which Requirements are still missing as warnings, and which are missing as hard blockers — computed from the methodology's Requirements checked against the opportunity's `lead_properties` values.
-3. Creating a quotation from the opportunity checks every `quotation`-checkpoint Block Requirement. If one's unmet, quotation creation is refused with a clear error — this is the addon's hook into `sale.order` creation, not a stage change.
-4. When a rep marks a matching activity (e.g. a discovery call) done, a wizard surfaces any Playbook Questions tied to that activity type, before or instead of the standard activity feedback flow.
-5. Marking the opportunity Won checks every `won`-checkpoint Block Requirement the same way quotation creation does — an unmet one blocks `action_set_won()`.
-6. If a Requirement's Properties key doesn't yet exist on the client's Sales Team's Properties definition, a rep can use "Sync to Team" to add it in one action rather than asking an admin to hand-configure it.
+1. A client has a default methodology. Every new opportunity for that client inherits it automatically on creation — a rep can change it afterward, it isn't locked retroactively.
+2. The opportunity's Qualification tab shows live completion: percentage complete, which Requirements are missing as warnings, and which are missing as hard blockers.
+3. Creating a quotation checks every quotation-checkpoint Block Requirement. If one's unmet, quotation creation is refused with a clear error — a hook into quote creation, not a stage change.
+4. When a rep marks a matching activity — a discovery call, say — done, a wizard surfaces any Playbook Questions tied to that activity type.
+5. Marking the opportunity Won checks every won-checkpoint Block Requirement the same way quotation creation does.
+6. If a Requirement's key doesn't yet exist on the client's Sales Team's Properties, a rep can use "Sync to Team" to add it in one action.
 
-> **For Consultants:** none of this touches the kanban pipeline. A lead can sit in any `crm.stage` throughout this entire flow — the gating is orthogonal to where the opportunity is in the pipeline.
+> **For consultants.** None of this touches the kanban pipeline. A lead can sit in any stage throughout this entire flow — the gating is orthogonal to where the opportunity is in the pipeline.
 
-## 6. What's explicitly untouched: the pipeline (`crm.stage`) *(C/R primarily, S reassurance)*
+<!-- section: untouched c r s -->
+## What's explicitly untouched: the pipeline
 
 The addon never reads or writes Odoo's pipeline-stage field (`stage_id`) or its OOTB won/lost stage flag (`is_won`) from any of its business logic. (Two test files read `stage_id`, read-only, only to assert demo-data invariants in tests — not to gate or move opportunities through the pipeline.)
 
-> **For Consultants:** this is the single most important thing when mapping this addon onto a client's existing Odoo instance. **It does not replace, extend, or interact with stage-based pipeline customization.** A client's existing stage configuration, kanban views, and stage-change automations are completely unaffected — Requirements gate *quotation creation* and *marking Won*, two specific actions, never which stage an opportunity sits in.
+> **For consultants.** This is the single most important thing when mapping this addon onto a client's existing Odoo instance. **It does not replace, extend, or interact with stage-based pipeline customization.** A client's existing stage configuration, kanban views, and stage-change automations are completely unaffected — Requirements gate *quotation creation* and *marking Won*, two specific actions, never which stage an opportunity sits in.
 
-## 7. Technical appendix: model-by-model comparison *(R/C)*
+<!-- section: appendix r c -->
+## Technical appendix: model by model
 
-| Model | What the addon adds | OOTB equivalent / New | Notes |
+| Model | What the addon adds | OOTB status | Notes |
 |---|---|---|---|
-| `crm.methodology` | New model: a named framework, owning Requirements and Playbook Questions. Enforces exactly one default "None" methodology system-wide (can't delete/archive/un-default it). | **New** — no OOTB equivalent | `_check_single_default`, `_unlink_except_default` guard the invariant. |
-| `crm.methodology.requirement` | New model: binds a `property_key` (string key into `lead_properties`) to a Checkpoint and an Enforcement level. Reconciles against a Sales Team's Properties definition. | **New**, but built on the OOTB Properties mechanism | See ADR 0005. |
-| `crm.methodology.playbook.question` | New model: a discovery question tied to an OOTB `mail.activity.type`. | **New** | |
-| `crm.lead` (extended) | `methodology_id`, computed `methodology_completion`, `methodology_warning_labels`, `methodology_block_labels`, `methodology_properties_to_sync`; `action_set_won()` overridden to block on unmet Won-checkpoint Requirements. | Extends OOTB `addons/crm/models/crm_lead.py` | Also reuses OOTB `lead_properties` (`fields.Properties`) for storage. |
-| `crm.stage` | **Untouched.** | OOTB, unmodified | Confirmed by grep — see [§6](#6-whats-explicitly-untouched-the-pipeline-crmstage-cr-primarily-s-reassurance). |
-| `crm.team` | Not extended by a new class, but its OOTB `lead_properties_definition` (`fields.PropertiesDefinition`) is written to at runtime by `action_sync_methodology_properties`. | OOTB field, addon writes to it at runtime | Runtime dependency, not a schema change. |
-| `res.partner` (extended) | `methodology_id` — the client's default methodology. | Extends OOTB `addons/base/` / `addons/mail/` partner model | |
-| `sale.order` (extended) | On creation from an opportunity, checks the `quotation`-checkpoint Block Requirements via `crm.lead._check_methodology_checkpoint`. | Extends `addons/sale_crm/models/sale_order.py`'s OOTB `opportunity_id` link | |
-| `mail.activity` (extended) | `action_feedback()` overridden to surface matching Playbook Questions via a wizard. | Extends OOTB `addons/mail/models/mail_activity.py` | Signature matches OOTB's `action_feedback(self, feedback=False, attachment_ids=None)`. |
+| crm.methodology | Named framework, owning Requirements and Playbook Questions. Exactly one default "None" methodology, always. | <span class="pill new">New</span> | No OOTB equivalent. |
+| crm.methodology.requirement | Binds a Properties key to a Checkpoint + Enforcement level. Reconciles against a team's Properties definition. | <span class="pill new">New</span> | Built on OOTB Properties, not a parallel field system. |
+| crm.methodology.playbook.question | A discovery question tied to an activity type. | <span class="pill new">New</span> | &nbsp; |
+| crm.lead | Adds methodology + computed completion/warning/blocker fields; blocks Won on unmet Requirements. | <span class="pill ext">Extended</span> | Reuses OOTB Properties storage. |
+| crm.stage | Nothing. | <span class="pill same">Unchanged</span> | Confirmed by code search — see §5. |
+| crm.team | Not extended by a new class — its Properties definition is written to at runtime when a rep syncs a Requirement. | <span class="pill ext">Runtime dep.</span> | Not a schema change. |
+| res.partner | Adds the client's default methodology. | <span class="pill ext">Extended</span> | &nbsp; |
+| sale.order | Checks quotation-checkpoint Block Requirements on creation from an opportunity. | <span class="pill ext">Extended</span> | Uses OOTB opportunity link. |
+| mail.activity | Surfaces matching Playbook Questions via a wizard on activity feedback. | <span class="pill ext">Extended</span> | Matches OOTB feedback signature. |
 
-## 8. Design decisions & trade-offs *(R/C)*
+<!-- section: decisions r c -->
+## Design decisions & trade-offs
 
-[ADR 0005](../adr/0005-methodology-requirements-reference-properties-by-key.md) — Requirements reference `lead_properties` by string key instead of owning field definitions themselves. This keeps qualification data inside the same Properties system Sales Teams already use, avoiding a second parallel field system. The trade-off: a Requirement's key can drift out of sync with a team's actual Properties definition, which is why the addon includes reconciliation/"Sync to Team" logic rather than assuming they always match.
+Requirements reference the Properties system by key instead of owning field definitions themselves. This keeps qualification data inside the same Properties system Sales Teams already use, avoiding a second parallel field system. The trade-off: a Requirement's key can drift out of sync with a team's actual Properties definition, which is why the addon includes reconciliation and "Sync to Team" logic rather than assuming they always match.
 
-```mermaid
-flowchart TB
-    subgraph Team["crm.team"]
-        PD["lead_properties_definition\n(OOTB Properties, owned by the Sales Team)"]
-    end
-    subgraph Methodology["crm.methodology"]
-        R["crm.methodology.requirement\nproperty_key = 'economic_buyer'\n(a reference, never a definition)"]
-    end
-    subgraph Lead["crm.lead"]
-        LP["lead_properties\n(the actual stored value)"]
-    end
-    R -- "looks up key in" --> PD
-    PD -- "defines the field\nthat backs" --> LP
-    R -. "reads/checks value from" .-> LP
-    R -- "key missing?\nSync to Team" --> PD
-```
+![Properties reference: the Sales Team owns the Properties Definition; a Sales Methodology's Requirement holds a key that looks up that definition (and can trigger Sync to Team when the key is missing); the Properties Definition defines the field that backs the Opportunity's own Properties, where the Requirement reads and checks the actual stored value.](images/properties-reference-diagram.svg)
 
-The addon also follows OCA-style module versioning (`19.0.1.1.0` in the manifest) — the `19.0` prefix is the target Odoo series, the rest tracks the addon's own feature/fix increments independently of Odoo core.
+The addon also follows OCA-style module versioning — the target Odoo series comes first, and the rest tracks the addon's own feature and fix increments independently of Odoo core.
 
-## 9. Try it yourself: demo personas *(S/C)*
+<!-- section: demo s c -->
+## Try it yourself
 
-The addon ships three demo users spanning the roles that matter to this workflow: a Sales Manager (defines methodologies and Requirements), a Salesperson (works opportunities under those Requirements), and a Viewer (read-only). Three named methodologies are seeded and ready to explore — **MEDDIC** (6 Requirements, 3 Playbook Questions), **Sandler Selling System** (3 Requirements, 2 Playbook Questions), and **SPIN Selling** (playbook-only, 0 Requirements) — each already assigned to a demo client (Nimbus Robotics, Falcon Logistics, and Comet Analytics respectively).
-
-**On the live demo instance** ([odoo-ckp0.onrender.com](https://odoo-ckp0.onrender.com/)):
+The addon ships three demo users spanning the roles that matter to this workflow: a Sales Manager who defines methodologies and Requirements, a Salesperson who works opportunities under those Requirements, and a Viewer with read-only access. Three named methodologies are seeded and ready to explore — **MEDDIC** (6 Requirements, 3 Playbook Questions), **Sandler Selling System** (3 Requirements, 2 Playbook Questions), and **SPIN Selling** (playbook-only) — each already assigned to a demo client.
 
 | Persona | Login | Password |
 |---|---|---|
-| Sales Manager | `priya.shah@example.com` | `priya.shah` |
-| Salesperson | `jordan.lee@example.com` | `jordan.lee` |
-| Viewer (read-only) | `morgan.ito@example.com` | `morgan.ito` |
+| Sales Manager | priya.shah@example.com | priya.shah |
+| Salesperson | jordan.lee@example.com | jordan.lee |
+| Viewer (read-only) | morgan.ito@example.com | morgan.ito |
 
-Sign in as the Salesperson or Sales Manager and open one of the three demo clients' opportunities to see live completion/warning/blocker state. To reset the instance back to its seeded state after poking at it, sign in as the **Sales Manager** and go to **Configuration > Reset Demo Data** — this replays the original demo data and removes anything the personas created since. The action is gated so it only works on this demo database; it's a no-op on any real deployment.
+Sign in at [odoo-ckp0.onrender.com](https://odoo-ckp0.onrender.com/) as the Salesperson or Sales Manager and open a demo client's opportunity to see live completion/warning/blocker state. To reset the instance after poking at it, sign in as the **Sales Manager** and go to **Configuration > Reset Demo Data** — gated so it only works on this demo database.
 
-> **For Consultants:** the Render demo is a free-tier instance — it spins down after ~15 minutes idle, so the first click after a while takes about a minute to wake up. Don't take that as a product issue when showing a client.
+> **For consultants.** The Render demo is a free-tier instance — it spins down after ~15 minutes idle, so the first click after a while takes about a minute to wake up. Don't take that as a product issue when showing a client.
 
-## 10. How this compares to the broader market *(C, R secondary)*
+<!-- section: market c r -->
+## How this compares to the broader market
 
-`docs/research/b2b-sales-methodologies-odoo.md`'s Phase 3 surveyed how competing CRMs handle named methodologies: Salesforce Path (stage-scoped required fields), HubSpot Playbooks, Membrain Scorecards, and others. The pattern across the market is "configurable only" or "third-party app only" — no major CRM ships a named methodology natively either. Odoo isn't behind the field here; this addon puts the repo in the same category as the market leaders.
+Prior research surveyed how competing CRMs handle named methodologies: Salesforce Path (stage-scoped required fields), HubSpot Playbooks, Membrain Scorecards, and others. The pattern across the market is "configurable only" or "third-party app only" — no major CRM ships a named methodology natively either. Odoo isn't behind the field here; this addon puts the repo in the same category as the market leaders.
 
-**"Why not just pay for Enterprise / Salesforce / HubSpot instead?"** A Phase 4 addendum (2026-09-01) answers this directly, sourced from each vendor's own pricing and docs:
+**"Why not just pay for Enterprise / Salesforce / HubSpot instead?"**
 
 | Option | What it costs | How close does it get? |
 |---|---|---|
-| **Odoo Enterprise** | Enterprise/Custom pricing | Confirmed via the vendored source and Odoo's own docs: Enterprise offers **nothing equivalent**. Predictive Lead Scoring — Odoo's closest qualification-adjacent feature — is actually a **Community** feature already in this repo, not an Enterprise upsell, and it's an ML win-probability score, not a captured qualification field anyway. |
-| **Salesforce Path + Einstein Scoring** | Path is bundled broadly; Einstein Opportunity Scoring requires Enterprise/Performance/Unlimited editions ($165–550+/user/mo) | Path's "key fields" are guidance only — enforcing them needs a separate Validation Rule, and there's no built-in warn-vs-block distinction or per-client methodology switching. |
-| **HubSpot Playbooks** | First available at the Professional tier (~$90–100/seat/month) | Free-text content blocks plus questions that write back to properties — no Checkpoint concept, no enforcement levels. |
-| **Membrain Scorecards** | Available from its entry Prospecting tier (~$49/user/month) — the cheapest and closest of the three | Weighted questions rolling into a strength score, plus rule-driven Playbook branching — the closest match found, but still no explicit block-vs-warn axis the way this addon's Enforcement field provides. |
+| **Odoo Enterprise** | Enterprise/Custom pricing | Nothing equivalent. Predictive Lead Scoring — Odoo's closest qualification-adjacent feature — is a **Community** feature already in this repo, and it's an ML score, not a captured qualification field. |
+| **Salesforce Path + Einstein** | Scoring needs Enterprise/Performance/Unlimited ($165–550+/user/mo) | Path's key fields are guidance only — enforcing them needs a separate Validation Rule; no built-in warn/block distinction. |
+| **HubSpot Playbooks** | Professional tier (~$90–100/seat/mo) | Content blocks + property-writing questions — no Checkpoint concept, no enforcement levels. |
+| **Membrain Scorecards** | Entry Prospecting tier (~$49/user/mo) | Closest match found — weighted scoring + rule-driven branching — but still no explicit block-vs-warn axis. |
 
-None of the three externally-priced options combine per-methodology switching, named Requirements, lifecycle Checkpoints, and a Block/Warn enforcement axis the way `crm.methodology` does — they each cover a piece of it. The research doc's "patterns worth borrowing" list (stage-scoped required fields, weighted scoring rubrics) is a forward-looking idea list drawn from these comparisons, not a commitment — see [§11](#11-non-goals--open-gaps-cr).
+None of the three externally-priced options combine per-methodology switching, named Requirements, lifecycle Checkpoints, and a Block/Warn enforcement axis the way this addon does — each covers a piece of it.
 
-## 11. Non-goals / open gaps *(C/R)*
+<!-- section: nongoals c r -->
+## Non-goals & open gaps
 
 So consultants don't over-promise to clients, today the addon does **not**:
 
-- Scope Requirements to specific pipeline stages (à la Salesforce Path) — Checkpoints are lifecycle moments (quotation/won/lost/continuous), not stage-bound.
-- Provide a weighted scoring rubric across Requirements — completion is presence/absence, not scored.
-- Give a Requirement its own field definition. A Requirement can never define or own a field — it always references a field that already exists in the Sales Team's Properties, by key (see ADR 0005's trade-off).
+- Scope Requirements to specific pipeline stages, the way Salesforce Path does — Checkpoints are lifecycle moments, not stage-bound.
+- Provide a weighted scoring rubric across Requirements — completion is presence or absence, not scored.
+- Give a Requirement its own field definition. A Requirement can never define or own a field — it always references a field that already exists in the Sales Team's Properties, by key.
 
-## 12. Further reading
+<!-- section: reading s r c -->
+## Further reading
 
-- [The Eight B2B Sales Methodologies](methodologies.md) — deep-dive teaching page: each methodology's own framework, the problem it claims to solve, and how it maps onto `crm.methodology`
-- [`docs/contexts/crm/CONTEXT.md`](../contexts/crm/CONTEXT.md) — canonical CRM glossary
-- [`docs/adr/0005-methodology-requirements-reference-properties-by-key.md`](../adr/0005-methodology-requirements-reference-properties-by-key.md)
-- [`docs/research/b2b-sales-methodologies-odoo.md`](../research/b2b-sales-methodologies-odoo.md) — full primary-source research: the eight methodologies, OOTB Odoo Community/Enterprise coverage, and six competing platforms
-- `custom_addons/crm_methodology/` — the addon source
+- [The Eight B2B Sales Methodologies — deep-dive teaching page](methodologies.md)
+- [CRM context glossary — docs/contexts/crm/CONTEXT.md (repo)](https://github.com/dahagag/odoo/blob/dev/19.0/docs/contexts/crm/CONTEXT.md)
+- [ADR 0005 — Requirements reference Properties by key (repo)](https://github.com/dahagag/odoo/blob/dev/19.0/docs/adr/0005-methodology-requirements-reference-properties-by-key.md)
+- [B2B sales methodologies research — 8 methodologies, OOTB Community/Enterprise, 6 platforms (repo)](https://github.com/dahagag/odoo/blob/dev/19.0/docs/research/b2b-sales-methodologies-odoo.md)
+- [Addon source — custom_addons/crm_methodology/ (repo)](https://github.com/dahagag/odoo/tree/dev/19.0/custom_addons/crm_methodology)
 
----
-*Verified against code as of 2026-09-01: 6/7 technical claims checked directly against current `custom_addons/crm_methodology/` and vendored `addons/crm/`, `addons/sale_crm/`, `addons/mail/` source; the 7th (crm.stage untouched) confirmed for all business logic, with two read-only test-file references to `stage_id` noted in §6.*
+*Verified against code as of 2026-09-01 — six of seven technical claims checked directly against current addon and vendored Odoo source; the seventh (pipeline untouched) confirmed for all business logic, with two read-only test-file references noted in §5. Source of truth: docs/teach/sales-methodology-vs-odoo-crm.md.*

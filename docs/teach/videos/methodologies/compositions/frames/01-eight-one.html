@@ -1,0 +1,115 @@
+<template>
+  <style>
+    /* Webfonts ship with the project — the render machine is clean headless Chrome. */
+    @font-face {
+      font-family: "Source Serif 4"; font-style: normal; font-weight: 400; font-display: block;
+      src: url(assets/fonts/SourceSerif4-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "Karla"; font-style: normal; font-weight: 400 500; font-display: block;
+      src: url(assets/fonts/Karla-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: block;
+      src: url(assets/fonts/IBMPlexMono-400-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: block;
+      src: url(assets/fonts/IBMPlexMono-500-latin.woff2) format("woff2");
+    }
+
+    #root { position: relative; width: 100%; height: 100%; overflow: hidden; container-type: size; container-name: f01; }
+    .f01-ground { position: absolute; inset: 0; background: #F3F4EF; }
+    .f01-pad { position: absolute; inset: 0; padding: 4.2cqw; display: flex; flex-direction: column; }
+
+    .f01-kicker {
+      margin: 0; font-family: "IBM Plex Mono", monospace; font-size: 1.46cqw; font-weight: 500;
+      letter-spacing: 0.16em; text-transform: uppercase; color: rgba(27, 36, 48, 0.52);
+    }
+    .f01-kicker span { color: #B96A22; margin-right: 0.5em; }
+
+    .f01-stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2.4cqh; position: relative; }
+
+    .f01-rollcall { position: relative; height: 9cqw; display: flex; align-items: center; justify-content: center; }
+    .f01-name {
+      position: absolute; margin: 0; font-family: "Source Serif 4", serif; font-size: 7.4cqw;
+      font-weight: 400; line-height: 1; letter-spacing: -0.02em; color: #1B2430;
+      visibility: hidden; text-align: center;
+    }
+
+    .f01-wordmark {
+      margin: 0; font-family: "Source Serif 4", serif; font-size: 6.4cqw; font-weight: 400;
+      line-height: 1; letter-spacing: -0.02em; color: #1B2430; text-align: center; opacity: 0;
+    }
+    .f01-wordmark b { color: #B96A22; font-weight: 400; }
+
+    .f01-rule { height: 1px; width: 100%; background: rgba(27, 36, 48, 0.12); margin-bottom: 1.2cqw; }
+    .f01-foot {
+      margin: 0; font-family: "IBM Plex Mono", monospace; font-size: 1.35cqw; font-weight: 500;
+      letter-spacing: 0.14em; line-height: 1.2; text-transform: uppercase; color: #3E4A59; text-align: center;
+    }
+  </style>
+
+  <div id="root" data-composition-id="01-eight-one" data-width="1920" data-height="1080" data-duration="9.929">
+    <div id="f01-ground" class="clip f01-ground" data-start="0" data-duration="9.929" data-track-index="0"></div>
+
+    <div id="f01-pad" class="clip f01-pad" data-start="0" data-duration="9.929" data-track-index="1">
+      <p class="f01-kicker" id="f01-kicker"><span>✱</span>Eight methodologies</p>
+
+      <div class="f01-stage">
+        <div class="f01-rollcall" id="f01-rollcall">
+          <h1 class="f01-name" id="f01-n1">MEDDIC</h1>
+          <h1 class="f01-name" id="f01-n2">Sandler</h1>
+          <h1 class="f01-name" id="f01-n3">SPIN</h1>
+          <h1 class="f01-name" id="f01-n4">Five more.</h1>
+        </div>
+        <h1 class="f01-wordmark" id="f01-wordmark">crm<b>.</b>methodology</h1>
+      </div>
+
+      <div class="f01-rule" id="f01-rule"></div>
+      <p class="f01-foot" id="f01-foot">One addon, underneath all of them.</p>
+    </div>
+  </div>
+
+  <script src="assets/vendor/gsap-3.14.2.min.js"></script>
+  <script>
+    (function () {
+      var DUR = 9.929;
+      var root = document.querySelector('[data-composition-id="01-eight-one"]');
+      var q = function (sel) { return root.querySelector(sel); };
+
+      var kicker = q('#f01-kicker');
+      var rule = q('#f01-rule');
+      var foot = q('#f01-foot');
+      var wordmark = q('#f01-wordmark');
+      var names = [q('#f01-n1'), q('#f01-n2'), q('#f01-n3'), q('#f01-n4')];
+
+      var tl = gsap.timeline({ paused: true });
+      window.__timelines = window.__timelines || {};
+      window.__timelines['01-eight-one'] = tl;
+
+      // Chrome settles first (0.0-0.6s).
+      tl.fromTo(kicker, { opacity: 0, y: -14 }, { opacity: 1, y: 0, duration: 0.5, ease: 'power2.out' }, 0.04);
+      tl.fromTo(rule, { opacity: 0, scaleX: 0.82 }, { opacity: 1, scaleX: 1, duration: 0.55, ease: 'power2.out', transformOrigin: 'left center' }, 0.15);
+
+      // Roll-call: hard-cut discrete sequence, one name per spoken cue.
+      var SEQUENCE = [0.28, 1.32, 2.12, 2.9];
+      names.forEach(function (el, i) {
+        tl.set(el, { visibility: 'visible', opacity: 0, scale: 1.04 }, SEQUENCE[i]);
+        tl.to(el, { opacity: 1, scale: 1, duration: 0.28, ease: 'power2.out' }, SEQUENCE[i]);
+        var hideAt = i < SEQUENCE.length - 1 ? SEQUENCE[i + 1] - 0.08 : 4.6;
+        tl.to(el, { opacity: 0, duration: 0.16, ease: 'power2.in' }, hideAt);
+        tl.set(el, { visibility: 'hidden' }, hideAt + 0.16);
+      });
+
+      // Roll-call collapses; the wordmark settles in on its own long-tail arrival.
+      tl.to(q('#f01-rollcall'), { opacity: 0, scale: 0.92, duration: 0.4, ease: 'power2.in' }, 4.9);
+      tl.fromTo(wordmark, { opacity: 0, scale: 1.1 }, { opacity: 1, scale: 1, duration: 1.1, ease: 'power3.out' }, 5.3);
+
+      tl.fromTo(foot, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.5, ease: 'power2.out' }, 8.0);
+
+      // Held resolved through the 0.5s transition tail.
+      tl.set({}, {}, DUR);
+    })();
+  </script>
+</template>

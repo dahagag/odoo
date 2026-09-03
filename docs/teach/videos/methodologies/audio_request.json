@@ -1,0 +1,30 @@
+{
+  "provider": "auto",
+  "speed": 1,
+  "lines": [
+    {
+      "id": "01",
+      "text": "MEDDIC. Sandler. SPIN. Five more. Eight named sales methodologies, one addon underneath every one of them: crm methodology."
+    },
+    {
+      "id": "02",
+      "text": "It owns three mechanisms. Requirements: what has to be known. Checkpoints: the moment it's checked. Enforcement: block the deal, or just warn."
+    },
+    {
+      "id": "03",
+      "text": "Three methodologies are seeded today. MEDDIC: six Requirements, three Playbook Questions. Sandler: three Requirements, two questions. SPIN: zero Requirements, playbook only, by design."
+    },
+    {
+      "id": "04",
+      "text": "Five more aren't configured yet, but the mapping already holds. CustomerCentric Selling and Solution Selling become Requirements. The Challenger Sale and ValueSelling read as a Playbook Question or a value figure. Consultative Selling implies no fixed set at all."
+    },
+    {
+      "id": "05",
+      "text": "Same three mechanisms, whichever methodology your team already runs. Configure it once, and Odoo holds every deal to it."
+    }
+  ],
+  "bgm": {
+    "mode": "none"
+  },
+  "voice": "am_michael"
+}

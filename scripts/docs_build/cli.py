@@ -30,14 +30,17 @@ referencing document and the missing file, the same way a broken internal
 still embeds, but prints a build warning, since a large embedded image bloats
 every view of the page it's on.
 
-If a document's own output directory already holds a sibling MP4 (named
-`<stem>.mp4`, matching the generated `<stem>.html`) — written there by a prior
-`docs-build:video` run, mechanically re-rendering an already-authored
-HyperFrames project (see docs/adr/0008 and issue #40) — the generated page
-embeds it as a `<video>` tag at the top of the page. It is never base64-encoded
-like an image: video doesn't compress usefully into a data URI and can't
-stream or seek from one. A document with no sibling MP4 renders with no video
-tag at all.
+If a document has an authored HyperFrames project at
+`<document-dir>/videos/<stem>/hyperframes.json`, the generated page embeds the
+expected sibling `<stem>.mp4` as a `<video>` tag. The project declaration, not
+leftover output-directory state, controls the HTML, so clean and repeated
+builds agree before `docs-build:video` mechanically re-renders the media (see
+docs/adr/0008 and issue #40). Video is never base64-encoded like an image: it
+doesn't compress usefully into a data URI and couldn't stream or seek from one.
+
+A whole-directory build removes HTML files outside the discovered document
+closure after every successful render. Cleanup is deliberately limited to
+`*.html`; sibling media is independently governed and remains untouched.
 
 A document is only rendered because something in the closure links to it —
 this is not a whole-repo Markdown build.
@@ -129,7 +132,19 @@ def build_all(teach_dir: Path, output_dir: Path) -> list[Path]:
 
     closure = _discover_closure(entries)
     output_paths = _render_closure(closure, output_dir)
+    _remove_stale_html(output_dir, set(output_paths.values()))
     return [output_paths[entry] for entry in entries]
+
+
+def _remove_stale_html(output_dir: Path, generated_paths: set[Path]) -> None:
+    """Remove HTML outside the whole-directory closure without touching media."""
+    for candidate in output_dir.glob("*.html"):
+        if candidate in generated_paths:
+            continue
+        try:
+            candidate.unlink()
+        except OSError as exc:
+            raise DocsBuildError(f"could not remove stale output {candidate} ({exc})") from exc
 
 
 def _render_closure(closure: dict[Path, _Document], output_dir: Path) -> dict[Path, Path]:
@@ -142,9 +157,7 @@ def _render_closure(closure: dict[Path, _Document], output_dir: Path) -> dict[Pa
 
     for doc_path, document in closure.items():
         fallback_title = _title_from_filename(doc_path.stem)
-        output_path = output_paths[doc_path]
-        video_path = output_path.with_suffix(".mp4")
-        video_src = video_path.name if video_path.is_file() else None
+        video_src = _declared_video_src(doc_path)
 
         def resolve_href(href: str, _local_links: dict[str, Path] = document.local_links) -> str:
             target = _local_links[href]
@@ -166,9 +179,15 @@ def _render_closure(closure: dict[Path, _Document], output_dir: Path) -> dict[Pa
         except MarkdownSyntaxError as exc:
             raise DocsBuildError(f"{doc_path}: {exc}") from exc
 
-        output_paths[doc_path].write_text(rendered_html, encoding="utf-8")
+        output_paths[doc_path].write_text(rendered_html, encoding="utf-8", newline="\n")
 
     return output_paths
+
+
+def _declared_video_src(doc_path: Path) -> str | None:
+    """Return the expected sibling MP4 when an authored project declares it."""
+    project_manifest = doc_path.parent / "videos" / doc_path.stem / "hyperframes.json"
+    return f"{doc_path.stem}.mp4" if project_manifest.is_file() else None
 
 
 def _embed_image_as_data_uri(image_path: Path, *, referencing_doc: Path) -> str:

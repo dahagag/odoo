@@ -54,6 +54,9 @@
   h1.title{ font-family:'Source Serif 4',Georgia,serif; font-weight:600; font-size:clamp(1.9rem,4.4vw,2.8rem); line-height:1.1; margin:0 0 .9rem; text-wrap:balance; }
   .dek{ font-size:1.05rem; color:var(--ink-700); max-width:60ch; line-height:1.55; }
 
+  .video-embed{ margin: 0 0 2.5rem; }
+  .video-embed video{ display:block; width:100%; border-radius:.7rem; box-shadow:var(--shadow); }
+
   .ilo{
     background:var(--paper-1); border:1px solid var(--line); border-radius:.7rem;
     padding:1.4rem 1.6rem; margin-bottom:2.5rem; box-shadow:var(--shadow);
@@ -77,6 +80,7 @@
   .method p:last-child{ margin-bottom:0; }
   .method strong{ color:var(--ink-900); }
   .method .label{ font-family:'IBM Plex Mono',monospace; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-500); display:block; margin-bottom:.2rem; }
+  img{ max-width:100%; height:auto; display:block; margin:0 auto; }
 
   footer.reading{ margin-top:2.5rem; padding-top:1.5rem; border-top:1px solid var(--line); }
   footer.reading a{ font-size:.92rem; }
@@ -88,9 +92,10 @@
   <header class="hero">
     <p class="eyebrow">Deep-dive teaching branch</p>
     <h1 class="title">The Eight B2B Sales Methodologies</h1>
-    <p class="dek">Branches off <a href="https://claude.ai/code/artifact/34b9bfe1-df69-41f9-a912-adf3d73c50d3">Sales Methodology, Explained</a>. Every claim here traces to the trademark holder's or originating author's own site — full citations live in the underlying research doc.</p>
+    <p class="dek">Branches off <a href="sales-methodology-vs-odoo-crm.html">Sales Methodology, Explained</a>. Every claim here traces to the trademark holder's or originating author's own site — full citations live in the underlying research doc.</p>
   </header>
 
+<div class="video-embed"><video src="methodologies.mp4" controls preload="metadata"></video></div>
   <div class="ilo">
     <h2>Intended Learning Outcomes</h2>
     <ul>
@@ -171,7 +176,7 @@
   </main>
 
   <footer class="reading">
-    <a class="backlink" href="https://claude.ai/code/artifact/34b9bfe1-df69-41f9-a912-adf3d73c50d3">&larr; Back to Sales Methodology, Explained</a>
+    <a class="backlink" href="sales-methodology-vs-odoo-crm.html">&larr; Back to Sales Methodology, Explained</a>
   </footer>
 </div>
 </body>

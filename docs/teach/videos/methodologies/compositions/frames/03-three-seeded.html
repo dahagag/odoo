@@ -1,0 +1,139 @@
+<template>
+  <style>
+    @font-face {
+      font-family: "Source Serif 4"; font-style: normal; font-weight: 400; font-display: block;
+      src: url(assets/fonts/SourceSerif4-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "Karla"; font-style: normal; font-weight: 400 500; font-display: block;
+      src: url(assets/fonts/Karla-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: block;
+      src: url(assets/fonts/IBMPlexMono-400-latin.woff2) format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: block;
+      src: url(assets/fonts/IBMPlexMono-500-latin.woff2) format("woff2");
+    }
+
+    #root { position: relative; width: 100%; height: 100%; overflow: hidden; container-type: size; container-name: f03; }
+    .f03-ground { position: absolute; inset: 0; background: #F3F4EF; }
+    .f03-pad { position: absolute; inset: 0; padding: 4.2cqw; display: flex; flex-direction: column; gap: 2.4cqh; }
+
+    .f03-kicker {
+      margin: 0; font-family: "IBM Plex Mono", monospace; font-size: 1.46cqw; font-weight: 500;
+      letter-spacing: 0.16em; text-transform: uppercase; color: rgba(27, 36, 48, 0.52);
+    }
+    .f03-kicker span { color: #B96A22; margin-right: 0.5em; }
+
+    .f03-cols { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2cqw; align-items: stretch; }
+    .f03-card {
+      background: #FFFFFF; border: 1px solid #D9E8E3; border-radius: 12px;
+      padding: 2cqw; display: flex; flex-direction: column; gap: 1.2cqh;
+      box-shadow: 0 1px 3px rgba(27, 36, 48, 0.08), 0 4px 16px rgba(27, 36, 48, 0.04);
+      opacity: 0;
+    }
+    .f03-badge {
+      align-self: flex-start; font-family: "IBM Plex Mono", monospace; font-size: 1.05cqw; font-weight: 500;
+      letter-spacing: 0.08em; text-transform: uppercase; color: #2E6B60; background: #D9E8E3;
+      border-radius: 9999px; padding: 0.35cqh 0.8cqw;
+    }
+    .f03-title {
+      font-family: "Source Serif 4", serif; font-size: 2.7cqw; font-weight: 400; line-height: 1.05;
+      letter-spacing: -0.01em; color: #1B2430; margin: 0;
+    }
+    .f03-stats { display: flex; flex-direction: column; gap: 0.7cqh; margin-top: auto; }
+    .f03-stat { display: flex; align-items: baseline; gap: 0.6cqw; opacity: 0; }
+    .f03-stat b {
+      font-family: "IBM Plex Mono", monospace; font-size: 2.1cqw; font-weight: 500; color: #1B2430;
+    }
+    .f03-stat span {
+      font-family: "Karla", sans-serif; font-size: 1.3cqw; color: #3E4A59;
+    }
+    .f03-tag {
+      font-family: "IBM Plex Mono", monospace; font-size: 1cqw; font-weight: 500; letter-spacing: 0.05em;
+      color: #6B7688; margin-top: 0.4cqh; opacity: 0;
+    }
+
+    .f03-rule { height: 1px; width: 100%; background: rgba(27, 36, 48, 0.12); }
+    .f03-foot {
+      margin: 0; font-family: "IBM Plex Mono", monospace; font-size: 1.35cqw; font-weight: 500;
+      letter-spacing: 0.14em; text-transform: uppercase; color: #3E4A59; opacity: 0;
+    }
+  </style>
+
+  <div id="root" data-composition-id="03-three-seeded" data-width="1920" data-height="1080" data-duration="14.153">
+    <div id="f03-ground" class="clip f03-ground" data-start="0" data-duration="14.153" data-track-index="0"></div>
+
+    <div id="f03-pad" class="clip f03-pad" data-start="0" data-duration="14.153" data-track-index="1">
+      <p class="f03-kicker" id="f03-kicker"><span>✱</span>Seeded in the demo today</p>
+
+      <div class="f03-cols">
+        <div class="f03-card" id="f03-meddic">
+          <span class="f03-badge">Client: Nimbus Robotics</span>
+          <h2 class="f03-title">MEDDIC</h2>
+          <div class="f03-stats">
+            <div class="f03-stat" id="f03-meddic-req"><b>6</b><span>Requirements</span></div>
+            <div class="f03-stat" id="f03-meddic-q"><b>3</b><span>Playbook Questions</span></div>
+          </div>
+        </div>
+        <div class="f03-card" id="f03-sandler">
+          <span class="f03-badge">Client: Falcon Logistics</span>
+          <h2 class="f03-title">Sandler</h2>
+          <div class="f03-stats">
+            <div class="f03-stat" id="f03-sandler-req"><b>3</b><span>Requirements</span></div>
+            <div class="f03-stat" id="f03-sandler-q"><b>2</b><span>Playbook Questions</span></div>
+          </div>
+        </div>
+        <div class="f03-card" id="f03-spin">
+          <span class="f03-badge">Client: Comet Analytics</span>
+          <h2 class="f03-title">SPIN</h2>
+          <div class="f03-stats">
+            <div class="f03-stat" id="f03-spin-req"><b>0</b><span>Requirements</span></div>
+            <div class="f03-stat" id="f03-spin-q"><b>4</b><span>Playbook Questions</span></div>
+          </div>
+          <p class="f03-tag" id="f03-spin-tag">Playbook only, by design</p>
+        </div>
+      </div>
+
+      <div class="f03-rule"></div>
+      <p class="f03-foot" id="f03-foot">Every figure is the addon's own seeded demo data</p>
+    </div>
+  </div>
+
+  <script src="assets/vendor/gsap-3.14.2.min.js"></script>
+  <script>
+    (function () {
+      var DUR = 14.153;
+      var root = document.querySelector('[data-composition-id="03-three-seeded"]');
+      var q = function (sel) { return root.querySelector(sel); };
+
+      var tl = gsap.timeline({ paused: true });
+      window.__timelines = window.__timelines || {};
+      window.__timelines['03-three-seeded'] = tl;
+
+      tl.fromTo(q('#f03-kicker'), { opacity: 0, y: -14 }, { opacity: 1, y: 0, duration: 0.5, ease: 'power2.out' }, 0.04);
+
+      // "MEDDIC: six Requirements, three Playbook Questions." (~2.2s)
+      tl.fromTo(q('#f03-meddic'), { opacity: 0, y: 22 }, { opacity: 1, y: 0, duration: 0.55, ease: 'power2.out' }, 2.2);
+      tl.fromTo(q('#f03-meddic-req'), { opacity: 0, x: -10 }, { opacity: 1, x: 0, duration: 0.35, ease: 'power2.out' }, 2.7);
+      tl.fromTo(q('#f03-meddic-q'), { opacity: 0, x: -10 }, { opacity: 1, x: 0, duration: 0.35, ease: 'power2.out' }, 3.4);
+
+      // "Sandler: three Requirements, two questions." (~5.0s)
+      tl.fromTo(q('#f03-sandler'), { opacity: 0, y: 22 }, { opacity: 1, y: 0, duration: 0.55, ease: 'power2.out' }, 5.0);
+      tl.fromTo(q('#f03-sandler-req'), { opacity: 0, x: -10 }, { opacity: 1, x: 0, duration: 0.35, ease: 'power2.out' }, 5.5);
+      tl.fromTo(q('#f03-sandler-q'), { opacity: 0, x: -10 }, { opacity: 1, x: 0, duration: 0.35, ease: 'power2.out' }, 6.1);
+
+      // "SPIN: zero Requirements, playbook only, by design." (~7.6s)
+      tl.fromTo(q('#f03-spin'), { opacity: 0, y: 22 }, { opacity: 1, y: 0, duration: 0.55, ease: 'power2.out' }, 7.6);
+      tl.fromTo(q('#f03-spin-req'), { opacity: 0, x: -10 }, { opacity: 1, x: 0, duration: 0.35, ease: 'power2.out' }, 8.1);
+      tl.fromTo(q('#f03-spin-q'), { opacity: 0, x: -10 }, { opacity: 1, x: 0, duration: 0.35, ease: 'power2.out' }, 8.7);
+      tl.fromTo(q('#f03-spin-tag'), { opacity: 0 }, { opacity: 1, duration: 0.4, ease: 'power2.out' }, 9.5);
+
+      tl.fromTo(q('#f03-foot'), { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.5, ease: 'power2.out' }, 11.6);
+
+      tl.set({}, {}, DUR);
+    })();
+  </script>
+</template>

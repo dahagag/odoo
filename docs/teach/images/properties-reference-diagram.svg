@@ -1,0 +1,102 @@
+<svg viewBox="0 0 700 800" width="700" height="800" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="pr-title pr-desc">
+<title id="pr-title">Requirements reference Properties by key, never own the definition</title>
+<desc id="pr-desc">A Sales Team owns its Properties Definition. A Sales Methodology's Requirement holds a key that references that definition — it looks up the key in the Properties Definition, and can trigger Sync to Team when the key is missing. The Properties Definition defines the field that backs the Opportunity's own Properties, where the Requirement reads and checks the actual stored value.</desc>
+<style>
+  :root{
+    --ink-900:#1B2430; --ink-700:#3E4A59; --ink-500:#6B7688;
+    --paper-0:#F3F4EF; --paper-1:#FFFFFF; --line:#D3D6CC;
+    --amber:#B96A22; --amber-soft:#F0DFC7;
+    --teal:#2E6B60; --teal-soft:#D9E8E3;
+    --violet:#5B5285; --violet-soft:#E5E2F0;
+    --shadow-1:rgba(27,36,48,.16); --shadow-2:rgba(27,36,48,.12);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --ink-900:#ECEAE2; --ink-700:#C7CCC0; --ink-500:#93998C;
+      --paper-0:#181B17; --paper-1:#20241F; --line:#3A3F35;
+      --amber:#E0954C; --amber-soft:#3B2C18;
+      --teal:#6FBBAC; --teal-soft:#1D332E;
+      --violet:#B0A6E0; --violet-soft:#2A2540;
+      --shadow-1:rgba(0,0,0,.45); --shadow-2:rgba(0,0,0,.4);
+    }
+  }
+  .canvas{ fill: var(--paper-0); }
+  text{ font-family: 'IBM Plex Mono', ui-monospace, Consolas, monospace; fill: var(--ink-900); }
+  .group{ fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 5 4; }
+  .group-label{ font-size: 13px; fill: var(--ink-500); text-transform: uppercase; letter-spacing: .04em; }
+  .node{ font-size: 15px; }
+  .node-team, .node-method, .node-lead{
+    filter: drop-shadow(0 1px 2px var(--shadow-1)) drop-shadow(0 4px 10px var(--shadow-2));
+  }
+  .node-team{ fill: var(--teal-soft); stroke: var(--teal); stroke-width: 1.5; }
+  .node-method{ fill: var(--amber-soft); stroke: var(--amber); stroke-width: 1.5; }
+  .node-lead{ fill: var(--violet-soft); stroke: var(--violet); stroke-width: 1.5; }
+  .edge{ stroke: var(--ink-700); stroke-width: 1.8; fill: none; }
+  .edge-dashed{ stroke-dasharray: 6 5; }
+  .edge-label{ font-size: 13px; fill: var(--ink-700); }
+  .edge-label-bg{ fill: var(--paper-0); }
+</style>
+<rect class="canvas" x="0" y="0" width="700" height="800"/>
+
+<defs>
+  <marker id="pr-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="var(--ink-700)"/>
+  </marker>
+</defs>
+
+<!-- group containers -->
+<rect class="group" x="150" y="20" width="340" height="140" rx="10"/>
+<text class="group-label" x="170" y="42">Sales Team</text>
+
+<rect class="group" x="150" y="300" width="390" height="160" rx="10"/>
+<text class="group-label" x="170" y="322">Sales Methodology</text>
+
+<rect class="group" x="150" y="600" width="340" height="140" rx="10"/>
+<text class="group-label" x="170" y="622">Opportunity</text>
+
+<!-- long-route edge: PD -> LP, "defines the field that backs", via left corridor -->
+<path class="edge" marker-end="url(#pr-arrow)" d="M290,105 L120,105 L120,685 L290,685"/>
+<rect class="edge-label-bg" x="10" y="370" width="106" height="52"/>
+<text class="edge-label" x="15" y="388">defines the</text>
+<text class="edge-label" x="15" y="404">field that</text>
+<text class="edge-label" x="15" y="420">backs</text>
+
+<!-- R -> PD: "looks up key in" -->
+<path class="edge" marker-end="url(#pr-arrow)" d="M340,345 L340,140"/>
+<rect class="edge-label-bg" x="270" y="225" width="130" height="34"/>
+<text class="edge-label" x="335" y="238" text-anchor="middle">looks up</text>
+<text class="edge-label" x="335" y="254" text-anchor="middle">key in</text>
+
+<!-- R -> PD: "key missing? Sync to Team" -->
+<path class="edge" marker-end="url(#pr-arrow)" d="M440,345 L440,140"/>
+<rect class="edge-label-bg" x="445" y="215" width="150" height="52"/>
+<text class="edge-label" x="450" y="232">key missing?</text>
+<text class="edge-label" x="450" y="248">Sync to</text>
+<text class="edge-label" x="450" y="264">Team</text>
+
+<!-- R -> LP: "reads / checks value from" (dashed) -->
+<path class="edge edge-dashed" marker-end="url(#pr-arrow)" d="M390,440 L390,640"/>
+<rect class="edge-label-bg" x="395" y="525" width="150" height="52"/>
+<text class="edge-label" x="400" y="542">reads /</text>
+<text class="edge-label" x="400" y="558">checks value</text>
+<text class="edge-label" x="400" y="574">from</text>
+
+<!-- PD -->
+<rect class="node-team" x="290" y="70" width="200" height="70" rx="8"/>
+<text class="node" x="390" y="98" text-anchor="middle">Properties</text>
+<text class="node" x="390" y="116" text-anchor="middle">Definition</text>
+<text class="node" x="390" y="134" text-anchor="middle" style="font-size:12px;">(owned by the team)</text>
+
+<!-- R -->
+<rect class="node-method" x="260" y="345" width="260" height="95" rx="8"/>
+<text class="node" x="390" y="373" text-anchor="middle">Requirement</text>
+<text class="node" x="390" y="393" text-anchor="middle" style="font-size:13px;">key = 'economic_buyer'</text>
+<text class="node" x="390" y="409" text-anchor="middle" style="font-size:12px;">(a reference, never</text>
+<text class="node" x="390" y="424" text-anchor="middle" style="font-size:12px;">a definition)</text>
+
+<!-- LP -->
+<rect class="node-lead" x="290" y="650" width="200" height="70" rx="8"/>
+<text class="node" x="390" y="678" text-anchor="middle">Properties</text>
+<text class="node" x="390" y="696" text-anchor="middle" style="font-size:12px;">(the actual stored value)</text>
+
+</svg>

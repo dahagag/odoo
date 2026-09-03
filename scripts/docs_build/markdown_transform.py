@@ -22,6 +22,8 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from scripts.docs_build.sales_layout import SALES_LAYOUT_TEMPLATE
+
 
 class MarkdownSyntaxError(ValueError):
     """Raised when the input Markdown cannot be parsed unambiguously."""
@@ -68,8 +70,16 @@ def extract_local_links(markdown_text: str) -> list[str]:
     ``MarkdownSyntaxError`` under the same conditions as
     ``render_markdown_document``.
     """
-    blocks = _parse_blocks(markdown_text)
+    directives, markdown_text = _extract_document_directives(markdown_text)
     hrefs: list[str] = []
+    for href in directives.get("dependencies", "").split():
+        if not is_local_markdown_link(href):
+            raise MarkdownSyntaxError(
+                f"dependency {href!r} must be a local Markdown path",
+            )
+        hrefs.append(href)
+
+    blocks = _parse_blocks(markdown_text)
     for block in blocks:
         for text in _inline_texts(block):
             for match in _LINK_RE.finditer(text):
@@ -170,6 +180,9 @@ def render_markdown_document(
         )
     escaped_title = html.escape(title, quote=False)
 
+    if directives.get("layout") == "methodologies":
+        return _render_methodologies_layout(blocks, escaped_title, video_html, link_resolver, image_resolver)
+
     if directives.get("layout") == "main":
         return _render_main_layout(blocks, escaped_title, video_html, link_resolver, image_resolver)
 
@@ -193,7 +206,7 @@ def _extract_document_directives(markdown_text: str) -> tuple[dict[str, str], st
             seen_heading = True
         if not seen_heading:
             match = _DIRECTIVE_RE.match(line.strip())
-            if match and not _is_section_tags_directive(match, lines, index):
+            if match and not _is_section_scoped_directive(match, lines, index):
                 directives[match.group(1)] = match.group(2)
                 continue
         remaining_lines.append(line)
@@ -207,7 +220,12 @@ def _is_section_tags_directive(match: re.Match, lines: list[str], index: int) ->
     even when it appears before the document's first heading (e.g. a doc whose
     first heading is the H2 it tags, with no preceding H1).
     """
-    if match.group(1) != "tags" or index + 1 >= len(lines):
+    return match.group(1) == "tags" and _is_section_scoped_directive(match, lines, index)
+
+
+def _is_section_scoped_directive(match: re.Match, lines: list[str], index: int) -> bool:
+    """True for a supported section directive immediately above an H2."""
+    if match.group(1) not in {"tags", "section"} or index + 1 >= len(lines):
         return False
     next_heading_match = _HEADING_RE.match(lines[index + 1])
     return bool(next_heading_match and len(next_heading_match.group(1)) == 2)
@@ -244,7 +262,7 @@ def _split_into_sections(
     seen_slugs: dict[str, int] = {}
     for block in blocks:
         if isinstance(block, _Heading) and block.level == 2:
-            slug = _slugify(block.text, seen_slugs)
+            slug = block.section_id or _slugify(block.text, seen_slugs)
             current_section = [block]
             sections.append((block.text, slug, block.tags, current_section))
             continue
@@ -271,6 +289,16 @@ def _render_main_layout(
     image_resolver: ImageResolver | None,
 ) -> str:
     intro_blocks, sections = _split_into_sections(blocks)
+    if sections and all(section_blocks[0].section_id for *_rest, section_blocks in sections):
+        return _render_approved_sales_layout(
+            intro_blocks,
+            sections,
+            escaped_title,
+            video_html,
+            link_resolver,
+            image_resolver,
+        )
+
     intro_html = _render_blocks(intro_blocks, link_resolver, image_resolver)
     toc_items = "".join(
         f'<li><a href="#{html.escape(slug, quote=True)}" data-target="{html.escape(slug, quote=True)}">'
@@ -300,11 +328,357 @@ def _render_main_layout(
     )
 
 
+def _render_approved_sales_layout(
+    intro_blocks: list[_Block],
+    sections: list[tuple[str, str, list[str] | None, list[_Block]]],
+    escaped_title: str,
+    video_html: str,
+    link_resolver: LinkResolver | None,
+    image_resolver: ImageResolver | None,
+) -> str:
+    """Render the approved numbered/tagged sales teach-document layout."""
+    if len(intro_blocks) != 2 or not isinstance(intro_blocks[1], _Paragraph):
+        message = "approved main layout requires a title and dek"
+        raise MarkdownSyntaxError(message)
+    dek = _render_sales_inline(intro_blocks[1].text, link_resolver, image_resolver)
+
+    video = ""
+    if video_html:
+        src_match = re.search(r'<video src="([^"]+)"', video_html)
+        if src_match is None:
+            message = "approved main layout received an invalid video declaration"
+            raise MarkdownSyntaxError(message)
+        src = html.escape(src_match.group(1), quote=True)
+        video = (
+            '  <div class="video-embed">\n'
+            f'    <video src="{src}" controls preload="metadata"></video>\n'
+            '    <div class="video-scrim" aria-hidden="true"></div>\n'
+            "  </div>\n"
+        )
+
+    rendered_sections = "\n\n".join(
+        _render_approved_sales_section(
+            index,
+            heading,
+            section_id,
+            tags or [],
+            section_blocks[1:],
+            link_resolver,
+            image_resolver,
+        )
+        for index, (heading, section_id, tags, section_blocks) in enumerate(sections, start=1)
+    )
+
+    return (
+        (SALES_LAYOUT_TEMPLATE.rstrip("\n") + "\n").replace("__TITLE__", escaped_title)
+        .replace("__DEK__", dek)
+        .replace("__VIDEO__", video)
+        .replace("__SECTIONS__", rendered_sections)
+    )
+
+
+def _render_approved_sales_section(
+    index: int,
+    heading: str,
+    section_id: str,
+    tags: list[str],
+    blocks: list[_Block],
+    link_resolver: LinkResolver | None,
+    image_resolver: ImageResolver | None,
+) -> str:
+    tag_spans = "".join(
+        f'<span class="tag {tag}"'
+        + (f' title="{html.escape(_TAG_LABELS[tag], quote=True)}"' if index == 1 else "")
+        + f">{tag.upper()}</span>"
+        for tag in tags
+    )
+    body = _render_approved_sales_section_body(
+        section_id, blocks, link_resolver, image_resolver,
+    )
+    return (
+        f'      <section id="{html.escape(section_id, quote=True)}" data-tags="{html.escape(" ".join(tags), quote=True)}">\n'
+        '        <div class="sec-head">\n'
+        f'          <span class="sec-num">{index:02d}</span>\n'
+        f"          <h2>{html.escape(heading, quote=False)}</h2>\n"
+        f'          <span class="tags">{tag_spans}</span>\n'
+        "        </div>\n"
+        f"{body}\n"
+        "      </section>"
+    )
+
+
+def _render_approved_sales_section_body(
+    section_id: str,
+    blocks: list[_Block],
+    link_resolver: LinkResolver | None,
+    image_resolver: ImageResolver | None,
+) -> str:
+    rendered: list[str] = []
+    for position, block in enumerate(blocks):
+        if isinstance(block, _Paragraph):
+            if section_id == "reading" and position == len(blocks) - 1:
+                text = block.text[1:-1] if block.text.startswith("*") and block.text.endswith("*") else block.text
+                rendered.append(
+                    f'        <footer class="verify">{_render_sales_inline(text, link_resolver, image_resolver)}</footer>',
+                )
+                continue
+            style = ""
+            if section_id == "demo" and position == 2:
+                style = ' style="margin-top:1.2rem;"'
+            elif section_id == "market" and position == 1:
+                style = ' style="margin-top:1.2rem; font-weight:600; color:var(--ink-900);"'
+            elif section_id == "market" and position == len(blocks) - 1:
+                style = ' style="margin-top:1rem;"'
+            text = block.text
+            if section_id == "market" and position == 1 and text.startswith("**") and text.endswith("**"):
+                text = text[2:-2]
+            content = _render_sales_inline(text, link_resolver, image_resolver)
+            rendered.append(f"        <p{style}>{content}</p>")
+        elif isinstance(block, _CodeBlock):
+            rendered.append(
+                f'        <pre class="mermaid">\n{html.escape(block.code, quote=False)}\n        </pre>',
+            )
+        elif isinstance(block, _BlockQuote):
+            match = re.match(r"^\*\*For consultants\.\*\*\s+(.*)$", block.text, re.IGNORECASE)
+            if match is None:
+                message = "approved main callouts require a For consultants label"
+                raise MarkdownSyntaxError(message)
+            content = _render_sales_inline(match.group(1), link_resolver, image_resolver)
+            rendered.append(
+                f'        <blockquote class="callout"><b>For consultants</b>{content}</blockquote>',
+            )
+        elif isinstance(block, _List):
+            rendered.append(
+                _render_approved_sales_list(section_id, block, link_resolver, image_resolver),
+            )
+        elif isinstance(block, _Table):
+            rendered.append(
+                _render_approved_sales_table(section_id, block, link_resolver, image_resolver),
+            )
+        else:
+            raise MarkdownSyntaxError(f"unsupported block in approved main section {section_id!r}")
+    return "\n".join(rendered)
+
+
+def _render_approved_sales_list(
+    section_id: str,
+    block: _List,
+    link_resolver: LinkResolver | None,
+    image_resolver: ImageResolver | None,
+) -> str:
+    if section_id == "vocabulary":
+        message = "vocabulary must be authored as a table"
+        raise MarkdownSyntaxError(message)
+    tag = "ol" if block.ordered else "ul"
+    class_name = "steps" if block.ordered else ("reading" if section_id == "reading" else "plain")
+    items = "\n".join(
+        f"          <li>{_render_sales_inline(item, link_resolver, image_resolver)}</li>"
+        for item in block.items
+    )
+    return f'        <{tag} class="{class_name}">\n{items}\n        </{tag}>'
+
+
+def _render_approved_sales_table(
+    section_id: str,
+    table: _Table,
+    link_resolver: LinkResolver | None,
+    image_resolver: ImageResolver | None,
+) -> str:
+    if section_id == "vocabulary":
+        term_lines = []
+        for row in table.rows:
+            term = _render_sales_inline(row[0], link_resolver, image_resolver)
+            definition = _render_sales_inline(row[1], link_resolver, image_resolver)
+            definition = definition.replace("<strong>", "<b>").replace("</strong>", "</b>")
+            term_lines.append(f"          <dt>{term}</dt><dd>{definition}</dd>")
+        terms = "\n".join(term_lines)
+        return f'        <dl class="terms">\n{terms}\n        </dl>'
+
+    if section_id == "appendix":
+        header_parts = []
+        for index, cell in enumerate(table.header):
+            attributes = ' class="model"' if index == 0 else ""
+            content = _render_sales_inline(cell, link_resolver, image_resolver)
+            header_parts.append(f"<th{attributes}>{content}</th>")
+        header = "".join(header_parts)
+
+        row_lines = []
+        for row in table.rows:
+            cells = []
+            for index, cell in enumerate(row):
+                attributes = ' class="model"' if index == 0 else ' class="status"' if index == 2 else ""
+                content = _render_sales_inline(cell, link_resolver, image_resolver)
+                cells.append(f"<td{attributes}>{content}</td>")
+            row_lines.append(f"              <tr>{''.join(cells)}</tr>")
+        rows = "\n".join(row_lines)
+        return (
+            '        <div class="table-wrap">\n'
+            "          <table>\n"
+            "            <thead>\n"
+            f"              <tr>{header}</tr>\n"
+            "            </thead>\n"
+            "            <tbody>\n"
+            f"{rows}\n"
+            "            </tbody>\n"
+            "          </table>\n"
+            "        </div>"
+        )
+
+    header = "".join(
+        f"<th>{_render_sales_inline(cell, link_resolver, image_resolver)}</th>"
+        for cell in table.header
+    )
+    rows = []
+    for row in table.rows:
+        cells = []
+        for index, cell in enumerate(row):
+            attributes = ' class="model"' if section_id == "demo" and index > 0 else ""
+            content = _render_sales_inline(cell, link_resolver, image_resolver)
+            cells.append(f"<td{attributes}>{content}</td>")
+        rows.append(f"              <tr>{''.join(cells)}</tr>")
+    return (
+        '        <div class="table-wrap">\n'
+        "          <table>\n"
+        f"            <thead><tr>{header}</tr></thead>\n"
+        "            <tbody>\n"
+        + "\n".join(rows)
+        + "\n            </tbody>\n"
+        "          </table>\n"
+        "        </div>"
+    )
+
+
+def _render_sales_inline(
+    text: str,
+    link_resolver: LinkResolver | None,
+    image_resolver: ImageResolver | None,
+) -> str:
+    return (
+        _render_inline(text, link_resolver, image_resolver)
+        .replace(' rel="noopener noreferrer"', "")
+        .replace("&quot;", '"')
+        .replace("&#x27;", "'")
+        .replace("&amp;nbsp;", "&nbsp;")
+    )
+
+
+_DEMO_BADGE_MARKUP = '<span class="demo-badge">Used in our demo</span>'
+_METHOD_LABEL_RE = re.compile(r"^\*\*(.+?)\.\*\*\s+(.*)$")
+
+
+def _render_methodologies_layout(
+    blocks: list[_Block],
+    escaped_title: str,
+    video_html: str,
+    link_resolver: LinkResolver | None,
+    image_resolver: ImageResolver | None,
+) -> str:
+    """Render the approved method-card layout from structured Markdown blocks."""
+    intro_blocks, sections = _split_into_sections(blocks)
+    if len(intro_blocks) != 2 or len(sections) < 3:
+        message = "methodologies layout requires a title, dek, ILO, methods, and footer"
+        raise MarkdownSyntaxError(message)
+
+    dek_block = intro_blocks[1]
+    if not isinstance(dek_block, _Paragraph):
+        message = "methodologies layout requires a dek paragraph after the title"
+        raise MarkdownSyntaxError(message)
+    dek = _render_methodologies_inline(dek_block.text, link_resolver, image_resolver)
+
+    ilo_heading, _ilo_slug, _ilo_tags, ilo_blocks = sections[0]
+    if len(ilo_blocks) != 2 or not isinstance(ilo_blocks[1], _List):
+        message = "methodologies layout requires an ILO list"
+        raise MarkdownSyntaxError(message)
+    ilo_items = "\n".join(
+        f"      <li>{_render_methodologies_inline(item, link_resolver, image_resolver)}</li>"
+        for item in ilo_blocks[1].items
+    )
+
+    method_sections = sections[1:-1]
+    methods = "\n\n".join(
+        _render_method_card(heading, section_blocks[1:], link_resolver, image_resolver)
+        for heading, _slug, _tags, section_blocks in method_sections
+    )
+
+    footer_heading, _footer_slug, _footer_tags, footer_blocks = sections[-1]
+    if footer_heading != "Further reading" or len(footer_blocks) != 2:
+        message = "methodologies layout requires a Further reading footer link"
+        raise MarkdownSyntaxError(message)
+    footer_list = footer_blocks[1]
+    if not isinstance(footer_list, _List) or len(footer_list.items) != 1:
+        message = "methodologies Further reading must contain one backlink"
+        raise MarkdownSyntaxError(message)
+    backlink_match = _LINK_RE.fullmatch(footer_list.items[0])
+    if backlink_match is None:
+        message = "methodologies footer item must be a link"
+        raise MarkdownSyntaxError(message)
+    raw_backlink_href = backlink_match.group(2)
+    if link_resolver is not None and is_local_markdown_link(raw_backlink_href):
+        raw_backlink_href = link_resolver(raw_backlink_href)
+    backlink_href = html.escape(raw_backlink_href, quote=True)
+
+    return (
+        _METHODOLOGIES_TEMPLATE.replace("__TITLE__", escaped_title)
+        .replace("__DEK__", dek)
+        .replace("__VIDEO__", video_html)
+        .replace("__ILO_HEADING__", html.escape(ilo_heading, quote=False))
+        .replace("__ILO_ITEMS__", ilo_items)
+        .replace("__METHODS__", methods)
+        .replace("__BACKLINK_HREF__", backlink_href)
+    )
+
+
+def _render_method_card(
+    raw_heading: str,
+    blocks: list[_Block],
+    link_resolver: LinkResolver | None,
+    image_resolver: ImageResolver | None,
+) -> str:
+    badge = ""
+    heading = raw_heading
+    marker = f" {_DEMO_BADGE_MARKUP}"
+    if heading.endswith(marker):
+        heading = heading[: -len(marker)]
+        badge = _DEMO_BADGE_MARKUP
+
+    paragraphs = []
+    for block in blocks:
+        if not isinstance(block, _Paragraph):
+            message = "methodology cards may only contain labeled paragraphs"
+            raise MarkdownSyntaxError(message)
+        match = _METHOD_LABEL_RE.match(block.text)
+        if match is None:
+            message = "methodology card paragraphs require a bold label"
+            raise MarkdownSyntaxError(message)
+        label, content = match.groups()
+        rendered = _render_methodologies_inline(content, link_resolver, image_resolver)
+        paragraphs.append(f'      <p><span class="label">{html.escape(label)}</span>{rendered}</p>')
+
+    return (
+        '    <section class="method">\n'
+        '      <div class="method-head"><h2 class="method-title">'
+        f"{html.escape(heading, quote=False)}</h2>{badge}</div>\n"
+        + "\n".join(paragraphs)
+        + "\n    </section>"
+    )
+
+
+def _render_methodologies_inline(
+    text: str,
+    link_resolver: LinkResolver | None,
+    image_resolver: ImageResolver | None,
+) -> str:
+    return _render_inline(text, link_resolver, image_resolver).replace(
+        ' rel="noopener noreferrer"', "",
+    ).replace("&quot;", '"').replace("&#x27;", "'")
+
+
 @dataclass
 class _Heading:
     level: int
     text: str
     tags: list[str] | None = None
+    section_id: str | None = None
 
 
 @dataclass
@@ -372,11 +746,29 @@ def _parse_blocks(markdown_text: str) -> list[_Block]:
             blocks.append(_CodeBlock(code="\n".join(code_lines)))
             continue
 
-        tags_directive_match = _DIRECTIVE_RE.match(line.strip())
-        if tags_directive_match and _is_section_tags_directive(tags_directive_match, lines, index):
+        section_directive_match = _DIRECTIVE_RE.match(line.strip())
+        if section_directive_match and _is_section_scoped_directive(
+            section_directive_match, lines, index,
+        ):
             next_heading_match = _HEADING_RE.match(lines[index + 1])
-            tags = _parse_tags_directive(tags_directive_match.group(2))
-            blocks.append(_Heading(level=2, text=next_heading_match.group(2).strip(), tags=tags))
+            section_id = None
+            if section_directive_match.group(1) == "tags":
+                tags = _parse_tags_directive(section_directive_match.group(2))
+            else:
+                values = section_directive_match.group(2).split()
+                if not values or _SLUG_INVALID_RE.sub("-", values[0]).strip("-") != values[0]:
+                    message = "section directive requires a lowercase slug id"
+                    raise MarkdownSyntaxError(message)
+                section_id = values[0]
+                tags = _parse_tags_directive(" ".join(values[1:]))
+            blocks.append(
+                _Heading(
+                    level=2,
+                    text=next_heading_match.group(2).strip(),
+                    tags=tags,
+                    section_id=section_id,
+                ),
+            )
             index += 2
             continue
 
@@ -676,6 +1068,12 @@ hr{{
   border-top: 1px solid var(--line);
   margin: 2rem 0;
 }}
+img{{
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}}
 .table-wrap{{
   overflow-x: auto;
   border: 1px solid var(--line);
@@ -710,18 +1108,6 @@ th{{
 td{{
   background: var(--paper-1);
 }}
-.pill, .demo-badge{{
-  display: inline-block;
-  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  padding: 0.15rem 0.6rem;
-  border-radius: 999px;
-}}
-.pill.new{{ background: var(--teal-soft); color: var(--teal); }}
-.pill.ext{{ background: var(--violet-soft); color: var(--violet); }}
-.pill.same{{ background: var(--block-soft); color: var(--block); }}
-.demo-badge{{ background: var(--teal-soft); color: var(--teal); }}
 @media (prefers-reduced-motion: reduce){{
   *{{ transition: none !important; }}
 }}
@@ -732,6 +1118,124 @@ td{{
 {video}
 {body}
 </main>
+</body>
+</html>
+"""
+
+
+_METHODOLOGIES_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=Karla:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --ink-900:#1B2430; --ink-700:#3E4A59; --ink-500:#6B7688;
+    --paper-0:#F3F4EF; --paper-1:#FFFFFF; --line:#D3D6CC;
+    --amber:#B96A22; --amber-soft:#F0DFC7;
+    --teal:#2E6B60; --teal-soft:#D9E8E3;
+    --violet:#5B5285; --violet-soft:#E5E2F0;
+    --shadow: 0 1px 2px rgba(27,36,48,.06), 0 8px 24px rgba(27,36,48,.05);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink-900:#ECEAE2; --ink-700:#C7CCC0; --ink-500:#93998C;
+      --paper-0:#181B17; --paper-1:#20241F; --line:#3A3F35;
+      --amber:#E0954C; --amber-soft:#3B2C18;
+      --teal:#6FBBAC; --teal-soft:#1D332E;
+      --violet:#B0A6E0; --violet-soft:#2A2540;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink-900:#ECEAE2; --ink-700:#C7CCC0; --ink-500:#93998C;
+    --paper-0:#181B17; --paper-1:#20241F; --line:#3A3F35;
+    --amber:#E0954C; --amber-soft:#3B2C18;
+    --teal:#6FBBAC; --teal-soft:#1D332E;
+    --violet:#B0A6E0; --violet-soft:#2A2540;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+  *{box-sizing:border-box;}
+  body{ margin:0; background:var(--paper-0); color:var(--ink-900); font-family:'Karla',system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  a{ color:var(--teal); }
+  a:focus-visible{ outline:2px solid var(--amber); outline-offset:2px; }
+  .shell{ max-width:840px; margin:0 auto; padding:0 clamp(1.25rem,4vw,2rem) 6rem; }
+
+  .backlink{
+    display:inline-flex; align-items:center; gap:.4rem;
+    font-family:'IBM Plex Mono',monospace; font-size:.78rem;
+    color:var(--ink-500); text-decoration:none;
+    margin-top:2rem;
+  }
+  .backlink:hover{ color:var(--amber); }
+
+  header.hero{ padding:1rem 0 2rem; border-bottom:1px solid var(--line); margin-bottom:2rem; }
+  .eyebrow{ font-family:'IBM Plex Mono',monospace; font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--amber); margin:0 0 .9rem; }
+  h1.title{ font-family:'Source Serif 4',Georgia,serif; font-weight:600; font-size:clamp(1.9rem,4.4vw,2.8rem); line-height:1.1; margin:0 0 .9rem; text-wrap:balance; }
+  .dek{ font-size:1.05rem; color:var(--ink-700); max-width:60ch; line-height:1.55; }
+
+  .video-embed{ margin: 0 0 2.5rem; }
+  .video-embed video{ display:block; width:100%; border-radius:.7rem; box-shadow:var(--shadow); }
+
+  .ilo{
+    background:var(--paper-1); border:1px solid var(--line); border-radius:.7rem;
+    padding:1.4rem 1.6rem; margin-bottom:2.5rem; box-shadow:var(--shadow);
+  }
+  .ilo h2{ font-family:'IBM Plex Mono',monospace; font-size:.75rem; text-transform:uppercase; letter-spacing:.08em; color:var(--amber); margin:0 0 .8rem; }
+  .ilo ul{ margin:0; padding-left:1.2rem; }
+  .ilo li{ color:var(--ink-700); line-height:1.6; margin-bottom:.5rem; font-size:.95rem; }
+  .ilo li:last-child{ margin-bottom:0; }
+
+  .method{
+    padding:2rem 0; border-bottom:1px solid var(--line);
+  }
+  .method:last-of-type{ border-bottom:none; }
+  .method-head{ display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; margin-bottom:.9rem; }
+  h2.method-title{ font-family:'Source Serif 4',Georgia,serif; font-weight:600; font-size:1.5rem; margin:0; }
+  .demo-badge{
+    font-family:'IBM Plex Mono',monospace; font-size:.68rem; text-transform:uppercase; letter-spacing:.05em;
+    background:var(--teal-soft); color:var(--teal); padding:.22rem .6rem; border-radius:999px;
+  }
+  .method p{ max-width:66ch; line-height:1.7; color:var(--ink-700); margin:0 0 .9rem; font-size:.98rem; }
+  .method p:last-child{ margin-bottom:0; }
+  .method strong{ color:var(--ink-900); }
+  .method .label{ font-family:'IBM Plex Mono',monospace; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-500); display:block; margin-bottom:.2rem; }
+  img{ max-width:100%; height:auto; display:block; margin:0 auto; }
+
+  footer.reading{ margin-top:2.5rem; padding-top:1.5rem; border-top:1px solid var(--line); }
+  footer.reading a{ font-size:.92rem; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <header class="hero">
+    <p class="eyebrow">Deep-dive teaching branch</p>
+    <h1 class="title">__TITLE__</h1>
+    <p class="dek">__DEK__</p>
+  </header>
+
+__VIDEO__
+  <div class="ilo">
+    <h2>__ILO_HEADING__</h2>
+    <ul>
+__ILO_ITEMS__
+    </ul>
+  </div>
+
+  <main>
+__METHODS__
+  </main>
+
+  <footer class="reading">
+    <a class="backlink" href="__BACKLINK_HREF__">&larr; Back to Sales Methodology, Explained</a>
+  </footer>
+</div>
 </body>
 </html>
 """
@@ -821,6 +1325,12 @@ hr{{
   border: none;
   border-top: 1px solid var(--line);
   margin: 2rem 0;
+}}
+img{{
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
 }}
 .table-wrap{{
   overflow-x: auto;
