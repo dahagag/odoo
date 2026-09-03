@@ -69,6 +69,9 @@ SALES_LAYOUT_TEMPLATE = """<!doctype html>
     color-scheme: dark;
   }
 
+  @view-transition{
+    navigation:auto;
+  }
   *{box-sizing:border-box;}
   body{
     margin:0;
@@ -77,16 +80,16 @@ SALES_LAYOUT_TEMPLATE = """<!doctype html>
     font-family:'Karla',system-ui,sans-serif;
     -webkit-font-smoothing:antialiased;
   }
-  a{color:var(--teal);}
+  a{color:var(--teal); transition:color .15s ease;}
   a:focus-visible, button:focus-visible, .chip:focus-visible{
     outline:2px solid var(--amber);
     outline-offset:2px;
   }
 
   .shell{
-    max-width:1180px;
+    max-width:840px;
     margin:0 auto;
-    padding:0 clamp(1.25rem,4vw,3rem) 6rem;
+    padding:0 clamp(1.25rem,4vw,2rem) 6rem;
   }
 
   /* ---------- Header ---------- */
@@ -119,6 +122,18 @@ SALES_LAYOUT_TEMPLATE = """<!doctype html>
     width:100%;
     border-radius:.5rem;
     box-shadow:var(--shadow);
+  }
+  /* Theater mode: while the video plays, everything below it recedes so the
+     video is the only thing asking for attention. Reverses the instant the
+     video stops so reading resumes exactly where it left off. */
+  .legend, .layout{
+    transition:opacity .45s ease, filter .45s ease;
+  }
+  .shell.theater-mode .legend,
+  .shell.theater-mode .layout{
+    opacity:.22;
+    filter:saturate(.5) blur(1px);
+    pointer-events:none;
   }
   header.hero{
     padding:clamp(2.5rem,6vw,4rem) 0 2rem;
@@ -501,11 +516,16 @@ __SECTIONS__
 
 <script>
   (function(){
-    // Scrim: lift the dim while the video is actually playing.
+    // Scrim + theater mode: lift the video's own dim, and dim everything
+    // else on the page, while the video is actually playing.
     var embed = document.querySelector('.video-embed');
     var video = embed && embed.querySelector('video');
+    var shell = document.querySelector('.shell');
     if (video) {
-      var setPlaying = function(playing){ embed.classList.toggle('is-playing', playing); };
+      var setPlaying = function(playing){
+        embed.classList.toggle('is-playing', playing);
+        if (shell) shell.classList.toggle('theater-mode', playing);
+      };
       video.addEventListener('play', function(){ setPlaying(true); });
       video.addEventListener('playing', function(){ setPlaying(true); });
       video.addEventListener('pause', function(){ setPlaying(false); });

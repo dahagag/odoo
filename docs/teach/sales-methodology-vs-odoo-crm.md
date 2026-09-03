@@ -1,4 +1,5 @@
 <!-- layout: main -->
+<!-- video: off -->
 <!-- dependencies: methodologies.md ../contexts/crm/CONTEXT.md ../adr/0005-methodology-requirements-reference-properties-by-key.md ../research/b2b-sales-methodologies-odoo.md -->
 # Sales Methodology, Explained
 

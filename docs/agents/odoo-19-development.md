@@ -36,7 +36,7 @@ Runtime behavior and established addon style outrank a style-only rewrite.
 - Prefer one coherent owned addon over unrelated changes spread across modules.
 - Declare the smallest complete dependency set. Load groups and rules before ACLs, data before consumers, views before actions where required, and actions before menus.
 - Use singular dotted model names and CamelCase classes. Keep recordsets as recordsets; reserve `_id` and `_ids` variable suffixes for integer identifiers.
-- Make overrides cooperative: call `super()`, handle batches, and use `ensure_one()` only for genuinely singleton behavior.
+- Make overrides cooperative: call `super()`, handle batches, and use `ensure_one()` only for genuinely singleton behavior. The one deliberate exception is a controller route meant to fully replace what it overrides (e.g. `LandingHome.index` replacing `Home.index` for `/`, per [ADR 0011](../adr/0011-public-landing-page-overrides-root-route.md)) — there, calling `super()` would run the exact behavior being replaced, so the override is intentionally non-cooperative and should say so in a comment.
 - Context is immutable. Derive it with `with_context()` and prefix custom behavior keys with the module name.
 - Use `models.Constraint` and `models.Index` for Odoo 19 declarative constraints and indexes.
 - Use `fields.Domain` to compose domains. Prefer batch `create`, `write`, `mapped`, `_read_group`, and prefetch-friendly access over per-record queries.
