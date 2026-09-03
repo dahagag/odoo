@@ -3,6 +3,7 @@ _build/
 
 # dotfiles
 .*
+!.agents
 !.env.example
 !.gitattributes
 !.gitignore
