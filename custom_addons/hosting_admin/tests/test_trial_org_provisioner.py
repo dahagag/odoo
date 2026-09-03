@@ -112,3 +112,40 @@ class TestTrialOrgProvisioner(TransactionCase):
         with self.assertRaises(RuntimeError):
             self.trial_org.action_issue()
         self.assertEqual(self.trial_org.state, 'issued')
+
+    def test_provisioner_failure_on_one_record_rolls_back_the_whole_batch(self):
+        # A batch call is applied inside one savepoint: if the Provisioner fails partway
+        # through, even a record it already succeeded on must not keep its new state.
+        other = self.env['hosting.trial.org'].create({
+            'name': "Other Trial",
+            'prospect_domain': "other.example.com",
+            'seat_cap': 5,
+        })
+        failure_message = "simulated provisioner failure on the second record"
+
+        class FailsOnSecondCallProvisioner(Provisioner):
+            def __init__(self):
+                self.issue_calls = 0
+
+            def issue(self, trial_org, job_id):
+                self.issue_calls += 1
+                if self.issue_calls == 2:
+                    raise RuntimeError(failure_message)
+
+            def suspend(self, trial_org, job_id):
+                pass
+
+            def wake(self, trial_org, job_id):
+                pass
+
+            def destroy(self, trial_org, job_id):
+                pass
+
+        self._inject_provisioner(FailsOnSecondCallProvisioner())
+        batch = self.trial_org | other
+
+        with self.assertRaises(RuntimeError):
+            batch.action_issue()
+
+        self.assertEqual(self.trial_org.state, 'issued', "the first record's write must be rolled back too")
+        self.assertEqual(other.state, 'issued')
