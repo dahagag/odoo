@@ -529,6 +529,13 @@ class RenderMarkdownDocumentVideoEmbedTests(unittest.TestCase):
 
         self.assertIn('<video src="a&quot;b.mp4"', html)
 
+    def test_video_off_directive_suppresses_video_tag_even_when_video_src_given(self):
+        html = render_markdown_document(
+            "<!-- video: off -->\n# Doc\n\nBody.", fallback_title="Doc", video_src="doc.mp4",
+        )
+
+        self.assertNotIn("<video", html)
+
     _METHODOLOGIES_MARKDOWN = (
         "<!-- layout: methodologies -->\n"
         "# The Eight B2B Sales Methodologies\n\n"
@@ -556,6 +563,14 @@ class RenderMarkdownDocumentVideoEmbedTests(unittest.TestCase):
         self.assertIn('<video src="methodologies.mp4" controls', html)
         self.assertLess(html.index("</header>"), html.index("<video"))
         self.assertLess(html.index("<video"), html.index('class="ilo"'))
+
+    def test_methodologies_layout_video_off_directive_suppresses_video_tag(self):
+        markdown_text = "<!-- video: off -->\n" + self._METHODOLOGIES_MARKDOWN
+        html = render_markdown_document(
+            markdown_text, fallback_title="Doc", video_src="methodologies.mp4",
+        )
+
+        self.assertNotIn("<video", html)
 
     def test_methodologies_layout_footer_backlink_is_rewritten_via_resolver(self):
         html = render_markdown_document(

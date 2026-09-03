@@ -1,4 +1,4 @@
-from . import models, wizards
+from . import controllers, models, wizards
 
 
 def _post_init_backfill_methodology(env):
