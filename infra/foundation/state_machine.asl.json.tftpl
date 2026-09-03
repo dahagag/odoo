@@ -1,0 +1,234 @@
+{
+  "Comment": "Trial Org lifecycle (Issue/Extend/Suspend/Wake/Auto-Destroy) - ADR-0016/0019/0020/0021. Execution name and the ECS RunTask ClientToken are both derived by the caller (hosting_admin) from its own job id, never auto-generated.",
+  "StartAt": "AcquireLock",
+  "States": {
+    "AcquireLock": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${lock_acquire_lambda_arn}",
+        "Payload": {
+          "trial_org_id.$": "$.trial_org_id",
+          "execution_arn.$": "$$.Execution.Id"
+        }
+      },
+      "ResultPath": "$.lock_result",
+      "TimeoutSeconds": ${lambda_invoke_timeout_seconds},
+      "Retry": [
+        {
+          "ErrorEquals": ["RuntimeError"],
+          "MaxAttempts": ${lock_retry_max_attempts},
+          "BackoffRate": ${retry_backoff_rate},
+          "IntervalSeconds": ${lock_retry_interval_seconds}
+        },
+        {
+          "ErrorEquals": ["States.ALL"],
+          "MaxAttempts": ${retry_max_attempts},
+          "BackoffRate": ${retry_backoff_rate},
+          "IntervalSeconds": ${retry_interval_seconds}
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "LockNotAcquired"
+        }
+      ],
+      "Next": "RouteAction"
+    },
+
+    "LockNotAcquired": {
+      "Type": "Fail",
+      "Error": "TrialOrgLockNotAcquired",
+      "Cause": "Could not acquire the per-Trial-Org lifecycle lock; another action is in progress or the lock is stale."
+    },
+
+    "RouteAction": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.action",
+          "StringEquals": "suspend",
+          "Next": "SuspendInstance"
+        },
+        {
+          "Variable": "$.action",
+          "StringEquals": "wake",
+          "Next": "WakeInstance"
+        }
+      ],
+      "Default": "RunTofu"
+    },
+
+    "SuspendInstance": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${ec2_power_control_lambda_arn}",
+        "Payload": {
+          "instance_id.$": "$.instance_id",
+          "action": "stop"
+        }
+      },
+      "ResultPath": "$.power_result",
+      "TimeoutSeconds": ${ec2_power_timeout_seconds},
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "MaxAttempts": ${retry_max_attempts},
+          "BackoffRate": ${retry_backoff_rate},
+          "IntervalSeconds": ${retry_interval_seconds}
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "ReleaseLockOnFailure"
+        }
+      ],
+      "Next": "ReleaseLock"
+    },
+
+    "WakeInstance": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${ec2_power_control_lambda_arn}",
+        "Payload": {
+          "instance_id.$": "$.instance_id",
+          "action": "start"
+        }
+      },
+      "ResultPath": "$.power_result",
+      "TimeoutSeconds": ${ec2_power_timeout_seconds},
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "MaxAttempts": ${retry_max_attempts},
+          "BackoffRate": ${retry_backoff_rate},
+          "IntervalSeconds": ${retry_interval_seconds}
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "ReleaseLockOnFailure"
+        }
+      ],
+      "Next": "ReleaseLock"
+    },
+
+    "RunTofu": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Parameters": {
+        "Cluster": "${ecs_cluster_arn}",
+        "TaskDefinition": "${tofu_runner_task_definition_arn}",
+        "LaunchType": "FARGATE",
+        "ClientToken.$": "$.job_id",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "Subnets": ${private_subnet_ids_json},
+            "SecurityGroups": ["${tofu_runner_security_group_id}"],
+            "AssignPublicIp": "DISABLED"
+          }
+        },
+        "Overrides": {
+          "ContainerOverrides": [
+            {
+              "Name": "${tofu_runner_container_name}",
+              "Environment": [
+                { "Name": "TRIAL_ORG_ID", "Value.$": "$.trial_org_id" },
+                { "Name": "JOB_ID", "Value.$": "$.job_id" },
+                { "Name": "ACTION", "Value.$": "$.action" }
+              ]
+            }
+          ]
+        }
+      },
+      "ResultPath": "$.tofu_result",
+      "TimeoutSeconds": ${task_timeout_seconds},
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "MaxAttempts": ${retry_max_attempts},
+          "BackoffRate": ${retry_backoff_rate},
+          "IntervalSeconds": ${retry_interval_seconds}
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "ReleaseLockOnFailure"
+        }
+      ],
+      "Next": "ReleaseLock"
+    },
+
+    "ReleaseLock": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:deleteItem",
+      "Parameters": {
+        "TableName": "${lock_table_name}",
+        "Key": {
+          "trial_org_id": { "S.$": "$.trial_org_id" }
+        },
+        "ConditionExpression": "#owner = :execution_id",
+        "ExpressionAttributeNames": {
+          "#owner": "owner"
+        },
+        "ExpressionAttributeValues": {
+          ":execution_id": { "S.$": "$$.Execution.Id" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "MaxAttempts": ${retry_max_attempts},
+          "BackoffRate": ${retry_backoff_rate},
+          "IntervalSeconds": ${retry_interval_seconds}
+        }
+      ],
+      "End": true
+    },
+
+    "ReleaseLockOnFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:deleteItem",
+      "Parameters": {
+        "TableName": "${lock_table_name}",
+        "Key": {
+          "trial_org_id": { "S.$": "$.trial_org_id" }
+        },
+        "ConditionExpression": "#owner = :execution_id",
+        "ExpressionAttributeNames": {
+          "#owner": "owner"
+        },
+        "ExpressionAttributeValues": {
+          ":execution_id": { "S.$": "$$.Execution.Id" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "MaxAttempts": ${retry_max_attempts},
+          "BackoffRate": ${retry_backoff_rate},
+          "IntervalSeconds": ${retry_interval_seconds}
+        }
+      ],
+      "Next": "LifecycleActionFailed"
+    },
+
+    "LifecycleActionFailed": {
+      "Type": "Fail",
+      "Error": "TrialOrgLifecycleActionFailed",
+      "Cause": "The Trial Org lifecycle action failed; the lock has been released."
+    }
+  }
+}
