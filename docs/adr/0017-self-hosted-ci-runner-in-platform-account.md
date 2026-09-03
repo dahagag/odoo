@@ -33,3 +33,26 @@ distinction already drawn in `docs/agents/issue-tracker.md`'s "PRs as a request 
 Any `pull_request`-triggered job from a non-collaborator continues to run on GitHub-hosted
 runners, not the self-hosted one, until this repo has a documented, enforced way to gate which
 jobs the persistent runner accepts.
+
+**CD pipeline AWS configuration.** OIDC federation is only "the runner authenticates via
+OIDC" in the abstract until the workflow itself is wired for it. Once the OIDC identity provider
+and the trust-scoped IAM role exist (both provisioned as part of the production migration,
+[ADR-0015](0015-production-migrates-to-aws-platform-account.md), since the runner and its role
+live in the Platform Account), the CI/CD workflow(s) that need AWS access require, at minimum:
+
+- `permissions: id-token: write` set on the workflow (or the specific job) — without it, GitHub
+  never mints the OIDC token `AssumeRoleWithWebIdentity` needs.
+- An `aws-actions/configure-aws-credentials` step (or equivalent) consuming two values that must
+  be available to the workflow: the IAM role's ARN to assume, and the target AWS region. Neither
+  is a secret in the credentials sense (the role ARN is not sensitive on its own — the trust
+  policy is what restricts who can assume it), so both are GitHub Actions **repository or
+  environment variables**, not `secrets.*`, keeping them visible in workflow runs for debugging
+  rather than redacted.
+- No long-lived AWS access key ever stored as a GitHub secret for this path — that would defeat
+  the entire reason OIDC was chosen over a stored credential (see the main decision above).
+
+These values don't exist yet — there is no OIDC provider or role to reference until ADR-0015's
+migration provisions them. This subsection is the requirement that migration work must satisfy for
+CI/CD specifically, so it isn't rediscovered or improvised later: whoever wires the workflow sets
+the role-ARN and region variables at that point, adds the `id-token: write` permission, and adds
+the credentials step: no other CI/CD-specific AWS design decision remains open.
