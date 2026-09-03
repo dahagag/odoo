@@ -146,7 +146,10 @@ def render_markdown_document(
     `video_src`, when given, embeds a `<video>` tag at the top of the page
     pointing at that (relative) src — the sibling MP4 `docs-build:video`
     renders next to this document's generated HTML (see issue #40). Omitted
-    cleanly when `video_src` is `None`.
+    cleanly when `video_src` is `None`, or when the document declares
+    `<!-- video: off -->` — the already-rendered MP4 still exists as a
+    static asset for another page to embed, this only suppresses the doc's
+    own embed.
 
     A `<!-- layout: main -->` comment directive, placed anywhere before the
     document's first heading (see ADR 0009), selects the multi-section
@@ -171,7 +174,7 @@ def render_markdown_document(
     blocks = _parse_blocks(markdown_text)
     title = _find_first_heading_text(blocks) or fallback_title
     video_html = ""
-    if video_src is not None:
+    if video_src is not None and directives.get("video") != "off":
         escaped_src = html.escape(video_src, quote=True)
         video_html = (
             '<div class="video-embed">'
@@ -617,10 +620,24 @@ def _render_methodologies_layout(
         raw_backlink_href = link_resolver(raw_backlink_href)
     backlink_href = html.escape(raw_backlink_href, quote=True)
 
+    video = video_html
+    if video_html:
+        src_match = re.search(r'<video src="([^"]+)"', video_html)
+        if src_match is None:
+            message = "methodologies layout received an invalid video declaration"
+            raise MarkdownSyntaxError(message)
+        src = src_match.group(1)
+        video = (
+            '<div class="video-embed">'
+            f'<video src="{src}" controls preload="metadata"></video>'
+            '<div class="video-scrim" aria-hidden="true"></div>'
+            "</div>"
+        )
+
     return (
         _METHODOLOGIES_TEMPLATE.replace("__TITLE__", escaped_title)
         .replace("__DEK__", dek)
-        .replace("__VIDEO__", video_html)
+        .replace("__VIDEO__", video)
         .replace("__ILO_HEADING__", html.escape(ilo_heading, quote=False))
         .replace("__ILO_ITEMS__", ilo_items)
         .replace("__METHODS__", methods)
@@ -1160,9 +1177,10 @@ _METHODOLOGIES_TEMPLATE = """<!doctype html>
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
     color-scheme: dark;
   }
+  @view-transition{ navigation:auto; }
   *{box-sizing:border-box;}
   body{ margin:0; background:var(--paper-0); color:var(--ink-900); font-family:'Karla',system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
-  a{ color:var(--teal); }
+  a{ color:var(--teal); transition:color .15s ease; }
   a:focus-visible{ outline:2px solid var(--amber); outline-offset:2px; }
   .shell{ max-width:840px; margin:0 auto; padding:0 clamp(1.25rem,4vw,2rem) 6rem; }
 
@@ -1179,8 +1197,20 @@ _METHODOLOGIES_TEMPLATE = """<!doctype html>
   h1.title{ font-family:'Source Serif 4',Georgia,serif; font-weight:600; font-size:clamp(1.9rem,4.4vw,2.8rem); line-height:1.1; margin:0 0 .9rem; text-wrap:balance; }
   .dek{ font-size:1.05rem; color:var(--ink-700); max-width:60ch; line-height:1.55; }
 
-  .video-embed{ margin: 0 0 2.5rem; }
+  .video-embed{ position:relative; margin: 0 0 2.5rem; }
   .video-embed video{ display:block; width:100%; border-radius:.7rem; box-shadow:var(--shadow); }
+  .video-scrim{
+    position:absolute; inset:0; border-radius:.7rem;
+    background:var(--ink-900); opacity:.45; pointer-events:none;
+    transition:opacity .3s ease;
+  }
+  .video-embed.is-playing .video-scrim{ opacity:0; }
+  .ilo, main, .demo{ transition:opacity .45s ease, filter .45s ease; }
+  .shell.theater-mode .ilo,
+  .shell.theater-mode main,
+  .shell.theater-mode .demo{
+    opacity:.22; filter:saturate(.5) blur(1px); pointer-events:none;
+  }
 
   .ilo{
     background:var(--paper-1); border:1px solid var(--line); border-radius:.7rem;
@@ -1207,6 +1237,26 @@ _METHODOLOGIES_TEMPLATE = """<!doctype html>
   .method .label{ font-family:'IBM Plex Mono',monospace; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-500); display:block; margin-bottom:.2rem; }
   img{ max-width:100%; height:auto; display:block; margin:0 auto; }
 
+  .demo{
+    display:flex; align-items:center; justify-content:space-between; gap:1.5rem; flex-wrap:wrap;
+    background:var(--teal-soft); border:1px solid var(--line); border-radius:.9rem;
+    padding:2rem 2.2rem; margin-top:2.5rem;
+  }
+  .demo-copy h2{ font-family:'Source Serif 4',Georgia,serif; font-weight:600; font-size:1.4rem; margin:0 0 .5rem; color:var(--ink-900); }
+  .demo-copy p{ font-size:.95rem; color:var(--ink-700); line-height:1.6; margin:0; max-width:46ch; }
+  .demo-cta{
+    display:inline-flex; align-items:center; gap:.5rem;
+    font-family:'IBM Plex Mono',monospace; font-size:.82rem; text-transform:uppercase; letter-spacing:.05em; font-weight:600;
+    background:var(--teal); color:var(--paper-1); padding:.85rem 1.5rem; border-radius:.5rem;
+    white-space:nowrap; box-shadow:var(--shadow);
+    transition:background-color .18s ease, transform .18s ease;
+  }
+  .demo-cta:hover{ background:var(--amber); color:var(--paper-1); transform:translateY(-2px); }
+  .demo-cta svg{ width:15px; height:15px; }
+  @media (max-width: 620px){
+    .demo{ flex-direction:column; align-items:flex-start; }
+  }
+
   footer.reading{ margin-top:2.5rem; padding-top:1.5rem; border-top:1px solid var(--line); }
   footer.reading a{ font-size:.92rem; }
 </style>
@@ -1232,10 +1282,40 @@ __ILO_ITEMS__
 __METHODS__
   </main>
 
+  <section class="demo">
+    <div class="demo-copy">
+      <h2>See it on a live pipeline</h2>
+      <p>Pre-seeded demo data across three methodologies and three clients — sign in and walk a deal through its gates.</p>
+    </div>
+    <a class="demo-cta" href="/odoo">Try the demo <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+  </section>
+
   <footer class="reading">
     <a class="backlink" href="__BACKLINK_HREF__">&larr; Back to Sales Methodology, Explained</a>
   </footer>
 </div>
+<script>
+  (function(){
+    var embed = document.querySelector('.video-embed');
+    var video = embed && embed.querySelector('video');
+    var shell = document.querySelector('.shell');
+    if (!video) { return; }
+    var setPlaying = function(playing){ embed.classList.toggle('is-playing', playing); };
+    var exitTheaterMode = function(){ if (shell) shell.classList.remove('theater-mode'); };
+    video.addEventListener('play', function(){ setPlaying(true); if (shell) shell.classList.add('theater-mode'); });
+    video.addEventListener('playing', function(){ setPlaying(true); if (shell) shell.classList.add('theater-mode'); });
+    video.addEventListener('pause', function(){ setPlaying(false); exitTheaterMode(); });
+    video.addEventListener('ended', function(){ setPlaying(false); exitTheaterMode(); });
+    // Theater mode backs off on scroll or once the pointer leaves the video —
+    // signals that attention has moved elsewhere — without pausing playback.
+    window.addEventListener('scroll', exitTheaterMode, { passive: true });
+    embed.addEventListener('mouseleave', exitTheaterMode);
+    // ...and comes back the moment the pointer returns to a still-playing video.
+    embed.addEventListener('mouseenter', function(){
+      if (!video.paused && shell) shell.classList.add('theater-mode');
+    });
+  })();
+</script>
 </body>
 </html>
 """

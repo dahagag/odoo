@@ -1,0 +1,11 @@
+---
+status: accepted
+---
+
+# Local dev self-heals `crm_methodology` the same way the Render demo does
+
+`scripts/dev.sh init` deliberately seeds only `base,web` into a fresh database (a minimal DB shell, not the product). Discovered directly while testing the new landing page controller: on a real local checkout, `crm_methodology` (and its dependency `crm`) were simply `uninstalled`, so `GET /` kept falling through to Odoo's default backend redirect no matter how many times the module was "updated" — `-u`/`--update` is a no-op on a module that was never installed, and nothing in the local dev flow ever ran `-i crm_methodology` automatically. The deployed Render demo never has this problem, because `docker/odoo-render-entrypoint.sh` already checks on every boot whether `crm_methodology` is installed and heals it with demo data if not (ADR 0006) — local dev had no equivalent, so the one repo this checkout exists to develop could silently be *absent* from a "working" local environment. We ported that same check into `docker/odoo-dev-entrypoint.sh`: a plain persistent-server boot now runs the identical install-state check against the dev database and, if `crm_methodology` isn't installed, runs `-i crm_methodology --with-demo` before the server starts serving requests.
+
+**Considered Options:** changing `scripts/dev.sh init` to seed `crm_methodology` directly — rejected, `init` is a generic one-time DB-bootstrap step (already documented as producing a minimal `base,web` shell) and conflating it with one specific product addon would make it impossible to `init` a database for developing a different addon later. Requiring `scripts/dev.sh install crm_methodology` to remain a manual, undocumented-as-required step — rejected, that's exactly the gap that caused this addon to be silently missing from a real local checkout.
+
+**Consequences:** the healing check must be skipped for `scripts/dev.sh install/update/test`, which already do their own module lifecycle work against a database that isn't necessarily the persistent `$ODOO_DB` one — the entrypoint distinguishes these by the `--init=`/`--update=`/`--test-enable`/`--stop-after-init` flags those paths pass, not by any explicit "this is the persistent server" marker (compose.yaml's own server command carries no such marker either).
