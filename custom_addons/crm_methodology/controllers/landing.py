@@ -192,6 +192,10 @@ _LANDING_HTML = """<!doctype html>
     // signals that attention has moved elsewhere — without pausing playback.
     window.addEventListener('scroll', exitTheaterMode, { passive: true });
     frame.addEventListener('mouseleave', exitTheaterMode);
+    // ...and comes back the moment the pointer returns to a still-playing video.
+    frame.addEventListener('mouseenter', function(){
+      if (!video.paused && shell) shell.classList.add('theater-mode');
+    });
   })();
 </script>
 </body>

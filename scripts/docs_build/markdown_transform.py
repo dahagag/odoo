@@ -1310,6 +1310,10 @@ __METHODS__
     // signals that attention has moved elsewhere — without pausing playback.
     window.addEventListener('scroll', exitTheaterMode, { passive: true });
     embed.addEventListener('mouseleave', exitTheaterMode);
+    // ...and comes back the moment the pointer returns to a still-playing video.
+    embed.addEventListener('mouseenter', function(){
+      if (!video.paused && shell) shell.classList.add('theater-mode');
+    });
   })();
 </script>
 </body>
