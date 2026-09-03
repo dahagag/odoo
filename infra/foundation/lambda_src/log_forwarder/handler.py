@@ -27,6 +27,7 @@ _parameter_cache = {}
 
 
 def _ssm_client():
+    """Returns a lazily-created, module-cached boto3 SSM client."""
     global _ssm
     if _ssm is None:
         import boto3
@@ -36,6 +37,7 @@ def _ssm_client():
 
 
 def _get_parameter(name, decrypt=False):
+    """Returns an SSM parameter's value, cached in-process for the container's lifetime."""
     if name not in _parameter_cache:
         resp = _ssm_client().get_parameter(Name=name, WithDecryption=decrypt)
         _parameter_cache[name] = resp["Parameter"]["Value"]
@@ -43,6 +45,7 @@ def _get_parameter(name, decrypt=False):
 
 
 def _sign(body_bytes, secret):
+    """Returns the hex-encoded HMAC-SHA256 signature of `body_bytes` under `secret`."""
     return hmac.new(secret.encode("utf-8"), body_bytes, hashlib.sha256).hexdigest()
 
 

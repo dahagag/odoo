@@ -18,6 +18,7 @@ _dynamodb = None
 
 
 def _table():
+    """Returns the lock table resource, via a lazily-created, module-cached DynamoDB resource."""
     global _dynamodb
     if _dynamodb is None:
         _dynamodb = boto3.resource("dynamodb")

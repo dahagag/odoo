@@ -13,6 +13,7 @@ _ec2 = None
 
 
 def _client():
+    """Returns a lazily-created, module-cached boto3 EC2 client."""
     global _ec2
     if _ec2 is None:
         _ec2 = boto3.client("ec2")

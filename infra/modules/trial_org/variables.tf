@@ -8,8 +8,12 @@ variable "trial_org_id" {
   EOT
 
   validation {
-    condition     = can(regex("^[0-9]+$", var.trial_org_id))
-    error_message = "trial_org_id must be the Trial Org's numeric Odoo record id."
+    # Length-capped at 49 digits so local.instance_role_name ("trial-<trial_org_id>-ec2-logs",
+    # 6 + N + 9 static chars) never exceeds IAM's 64-character role-name limit. A real Odoo
+    # record id will never come close to 49 digits; this is a defensive bound, not a realistic
+    # ceiling.
+    condition     = can(regex("^[0-9]{1,49}$", var.trial_org_id))
+    error_message = "trial_org_id must be the Trial Org's numeric Odoo record id, at most 49 digits (so the derived IAM role name stays within AWS's 64-character limit)."
   }
 }
 
