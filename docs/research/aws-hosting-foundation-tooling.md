@@ -255,11 +255,11 @@ covering all of these, not just the launch template shown above.
 condition of `ec2.amazonaws.com` — AWS's own IAM troubleshooting guide states a missing
 `iam:PassRole` grant is a documented cause of an otherwise-permitted `RunInstances` call failing.
 This dependency does **not** currently apply to the per-trial-org `RunInstances` call itself:
-[ADR-0016](../adr/0016-opentofu-for-static-and-per-trial-provisioning.md) launches each Trial
-Org's EC2 instance without an attached instance profile at all (a deliberate choice — the instance
-has no reason to call AWS APIs itself), so no `IamInstanceProfile` parameter is ever set and no
-`iam:PassRole` grant is needed for it. This subsection remains here as general reference in case a
-future feature does attach a role to a launched instance.
+[ADR-0021](../adr/0021-trial-org-ec2-power-state-and-instance-profile-boundary.md) launches each
+Trial Org's EC2 instance without an attached instance profile at all (a deliberate choice — the
+instance has no reason to call AWS APIs itself), so no `IamInstanceProfile` parameter is ever set
+and no `iam:PassRole` grant is needed for it. This subsection remains here as general reference in
+case a future feature does attach a role to a launched instance.
 Sources: [Amazon EC2 User Guide — Example policies to control access to the Amazon EC2 API](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ExamplePolicies_EC2.html), [Amazon EC2 User Guide — Example: Launch instances with permissions for launch templates](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/permissions-for-launch-templates.html), [IAM User Guide — Granting a user permissions to pass a role to an AWS service](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_passrole.html), [IAM User Guide — Troubleshooting IAM and Amazon EC2](https://docs.aws.amazon.com/IAM/latest/UserGuide/troubleshoot_iam-ec2.html).
 
 Whether Route53 and Cost Explorer support the same `aws:ResourceTag`-style

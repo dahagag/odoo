@@ -25,16 +25,7 @@ with the production application and its data.
 *workloads* run (the per-org EC2 instances, the Step Functions state machine, and their data),
 not where the Hosting Operations *control plane* runs. `hosting_admin` — the Odoo addon that
 decides to create, suspend, wake, or destroy a Trial Org — runs as part of agentic-erp itself, in
-the Platform Account (ADR-0015). Per ADR-0016's job-orchestration design, `hosting_admin`'s own
-cross-account role (assumed from the Platform Account's native role into the Hosting Account) is
-scoped narrowly to two separate IAM statements, since AWS's own Step Functions IAM reference
-defines these two actions against different resource types: `states:StartExecution`, scoped to
-the state-machine ARN (`arn:aws:states:<region>:<account>:stateMachine:<name>`), and
-`states:DescribeExecution`, scoped to an execution ARN
-(`arn:aws:states:<region>:<account>:execution:<name>:*`) — it never holds EC2, OpenTofu-state, or
-DynamoDB-lock permissions itself. Those broader
-permissions belong to the state machine's own execution role and its ECS task role, both entirely
-within the Hosting Account, scoped by `aws:ResourceTag` ABAC conditions to the specific Trial Org
-each execution targets. This keeps the Platform Account's own blast radius small: a compromised
-`hosting_admin` credential could start or read executions, not directly touch EC2/S3/DynamoDB
-resources in the Hosting Account.
+the Platform Account (ADR-0015), and reaches into the Hosting Account via a narrowly-scoped
+cross-account role. The exact IAM scope, and why it keeps the Platform Account's own blast radius
+small, is [ADR-0019](0019-step-functions-job-identity-and-retry-safety.md)'s subject, not this
+ADR's — this one only fixes *which account* each thing lives in.

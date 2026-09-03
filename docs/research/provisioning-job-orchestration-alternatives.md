@@ -161,7 +161,8 @@ This is enqueue-time deduplication (stopping a second, identical
 is neither the state *isolation* the deterministic per-org OpenTofu state key
 gives (which guarantees a retry can't cross-target another org's state, but
 says nothing about whether running `tofu` twice is itself safe) nor the
-execution-level idempotency ADR-0016's job-identity design gives (a persisted
+execution-level idempotency [ADR-0019](../adr/0019-step-functions-job-identity-and-retry-safety.md)'s
+job-identity design gives (a persisted
 per-job id reused as both the Step Functions execution name and the ECS
 `RunTask` `ClientToken`). Content-based deduplication
 (SQS computing a SHA-256 hash of the message body as the dedup ID when the

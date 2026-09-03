@@ -180,7 +180,7 @@ Detailed glossaries are created lazily under `docs/contexts/<context>/CONTEXT.md
 
 **Boundary:** Owns Trial Org lifecycle (issuance, seats, suspend/wake, extension, auto-destroy) and the AWS infrastructure it runs on. It does not own the commercial decision to issue a trial (that's CRM's Opportunity) or billing for paid hosting (future Accounting/Sales concern).
 
-**Addon anchors:** `hosting` (installed on every Trial Org/customer instance; namespace `hosting`; shows that org's own registration info — name, domain, seats, expiry); `hosting_admin` (installed only on the factory1 Platform instance; namespace `hosting.admin`; owns the Trial Org model across all orgs, AWS/OpenTofu integration, suspend/wake control, cost dashboard). `crm_methodology` gets a thin "Issue Trial" / "Extend" action on the Opportunity that calls into `hosting_admin`.
+**Addon anchors:** `hosting`, `hosting_admin`, `crm_methodology`.
 
 **Business concepts:** Trial Org, Seat, Active, Suspended, Wake, Auto-Destroy, Extension, Hosting Account, Org Registration.
 

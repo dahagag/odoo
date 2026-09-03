@@ -329,13 +329,16 @@ own findings weighed against Step Functions, and which
   idempotency distinction ADR-0016 draws, that alone doesn't make *running
   `tofu` twice* safe; this hand-rolled sketch would need its own explicit
   idempotency mechanism for that (e.g. a dedicated attempt/job id, the same
-  shape ADR-0016 ended up giving Step Functions instead).
+  shape [ADR-0019](../adr/0019-step-functions-job-identity-and-retry-safety.md)
+  ended up giving Step Functions instead).
 
-ADR-0016's actual choice — Step Functions with a DynamoDB conditional lock,
-an EventBridge stale-lock-cleanup rule, a TTL backstop, and a persisted
-per-job id reused as both the execution name and the ECS `RunTask`
-`ClientToken` — is documented in the ADR itself, not here; this section
-stays as a structural comparison point only.
+The actual choice made — Step Functions with a DynamoDB conditional lock, an
+EventBridge stale-lock-cleanup rule, and a TTL backstop
+([ADR-0020](../adr/0020-dynamodb-per-trial-org-lock-and-stale-lock-recovery.md)),
+plus a persisted per-job id reused as both the execution name and the ECS
+`RunTask` `ClientToken` ([ADR-0019](../adr/0019-step-functions-job-identity-and-retry-safety.md))
+— is documented in those ADRs, not here; this section stays as a structural
+comparison point only.
 
 This is presented only as a structural point of comparison — it is what the
 reviewer's flagged gap would need to be closed by in Python, not a
