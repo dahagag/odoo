@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="module_category_hosting_admin" model="ir.module.category">
+        <field name="name">Hosting Administration</field>
+    </record>
+
+    <record id="privilege_hosting_admin_administrator" model="res.groups.privilege">
+        <field name="name">Hosting Administrator</field>
+        <field name="category_id" ref="module_category_hosting_admin"/>
+    </record>
+
+    <!-- Platform-only, cross-org data (docs/adr/0018): deliberately no default
+         base.group_user access to hosting.trial.org. This group is the sole grant, and implies
+         base.group_user itself so a Platform operator added to it can also log in to the
+         backend. -->
+    <record id="group_hosting_admin_administrator" model="res.groups">
+        <field name="name">Administrator</field>
+        <field name="privilege_id" ref="privilege_hosting_admin_administrator"/>
+        <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+        <field name="comment">Full access to Trial Org records and their lifecycle actions (Issue, Suspend, Wake, Auto-Destroy) across every prospect/customer org. Grant only to Platform operators.</field>
+    </record>
+
+</odoo>
