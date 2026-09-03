@@ -20,3 +20,12 @@ production instance as it migrates off Render — see
 Hosting Account for the same reason the Hosting Account is separate from Management: disposable,
 frequently-created/destroyed trial-org infrastructure should never share an account boundary
 with the production application and its data.
+
+**Clarification:** "Hosting Operations runs in the Hosting Account" describes where Trial Org
+*workloads* run (the per-org EC2 instances and their data), not where the Hosting Operations
+*control plane* runs. `hosting_admin` — the Odoo addon that decides to create, suspend, wake, or
+destroy a Trial Org — runs as part of agentic-erp itself, in the Platform Account (ADR-0015), and
+reaches into the Hosting Account to act on Trial Org infrastructure via the cross-account Hosting
+Automation IAM role (assumed from the Platform Account's own native role, scoped by
+`aws:ResourceTag` ABAC conditions per ADR-0016). OpenTofu's remote state (S3 + DynamoDB, ADR-0016)
+lives in the Hosting Account alongside the workloads it describes, not in the Platform Account.

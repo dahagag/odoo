@@ -38,9 +38,13 @@ Run `gh issue view <number> --comments`.
 Precedent: [#90](https://github.com/dahagag/odoo/issues/90). When a ticket tree (spec + sub-issues,
 or a wayfinder map + children) has blocking edges between its tickets — native issue dependencies
 where available, a `Blocked by:` line otherwise — implementation PRs stack in that same order:
-each ticket's PR sets `--base` to the branch of the ticket that blocks it (its nearest blocker),
-not to the default branch. A ticket with no blocker bases its PR on the default branch as usual.
-Merge strictly bottom-up: a PR only merges once every PR it's based on has merged, and each
+a ticket with exactly one blocker sets `--base` to that blocker's branch, not to the default
+branch. A ticket with **multiple** blockers only gets its PR opened once every one of those
+blockers has merged to the default branch — its base is then the default branch like any
+unblocked ticket, just gated later. This avoids ever needing a shared integration branch: a PR
+still has exactly one base, and no dependent PR can be missing a blocker's changes, because none
+of its blockers are still unmerged by the time it's created. A ticket with no blocker bases its PR
+on the default branch as usual. Merge strictly bottom-up: a PR only merges once every PR it's based on has merged, and each
 still-open PR above it is rebased/retargeted onto the default branch as its base layer lands.
 This makes the dependency graph and the PR stack the same shape — no separate stacking scheme to
 keep in sync with the tracker's own blocking edges.

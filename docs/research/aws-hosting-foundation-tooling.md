@@ -4,13 +4,25 @@ Research date: 2026-09-03. Scope: reference material for choosing IaC/provisioni
 tooling for the Hosting Operations capability (see
 [`docs/contexts/hosting/CONTEXT.md`](../contexts/hosting/CONTEXT.md),
 [ADR-0013](../adr/0013-aws-organizations-for-hosting-foundation.md), and
-[ADR-0014](../adr/0014-per-org-ec2-with-suspend-wake-for-trials.md)): Odoo
-(running on Render, outside AWS) calls AWS APIs directly via boto3 from a
-server action on the CRM Opportunity record to provision one EC2 instance per
-14-day Trial Org, no separate provisioning microservice. This note compares
-tool licensing, programmatic/per-tenant provisioning patterns, IAM models for
-an external caller, and Cost Explorer/Budgets tag-based attribution. It does
-not recommend a choice — it exists to inform a follow-up interview.
+[ADR-0014](../adr/0014-per-org-ec2-with-suspend-wake-for-trials.md)). At the time
+this research ran, the working assumption was that Odoo (running on Render,
+outside AWS) would call AWS APIs directly via boto3 from a server action on the
+CRM Opportunity record to provision one EC2 instance per 14-day Trial Org, no
+separate provisioning microservice — that assumption is what section 1 below
+compares tools against. This note compares tool licensing, programmatic/
+per-tenant provisioning patterns, IAM models for an external caller, and Cost
+Explorer/Budgets tag-based attribution. It does not recommend a choice — it
+exists to inform a follow-up interview.
+
+**Superseded premise:** the interview this note fed into settled on a different
+path than the boto3-direct assumption above — see
+[ADR-0016](../adr/0016-opentofu-for-static-and-per-trial-provisioning.md).
+`hosting_admin` invokes the OpenTofu CLI (not boto3 directly) per Trial Org
+lifecycle action, against remote S3 state with DynamoDB locking, running inside
+AWS (the Platform Account, per ADR-0015) rather than on Render. Section 1's tool
+comparison and section 3's external-caller IAM research remain accurate
+background for *why* that choice was made; treat direct boto3 provisioning as
+the rejected alternative it became, not the current implementation.
 
 Every claim below is tied to the primary source it came from. Where a claim
 could not be pinned to primary-source text, it is listed under
@@ -81,18 +93,26 @@ Node.js CDK CLI, or bypasses CDK's deploy orchestration and calls the
 CloudFormation API directly via boto3 against CDK-synthesized templates.
 Sources: [AWS CDK Developer Guide — Perform programmatic actions using the CDK Toolkit Library](https://docs.aws.amazon.com/cdk/v2/guide/toolkit-library.html), [`@aws-cdk/toolkit-lib` on npm](https://www.npmjs.com/package/@aws-cdk/toolkit-lib), [AWS — "AWS CDK Toolkit Library is now generally available"](https://aws.amazon.com/about-aws/whats-new/2025/05/aws-cdk-toolkit-library-available/).
 
-**Terraform.** HashiCorp does not publish an official Python SDK for
-Terraform. `python-terraform` (`beelit94/python-terraform` on GitHub) is a
-community-maintained wrapper around the `terraform` CLI binary, MIT-licensed,
-unofficial. HCP Terraform (formerly Terraform Cloud) instead documents an
-official, API-driven run workflow: `POST /runs` "performs a plan and apply,
-using a configuration version and the workspace's current variables," and a
-paused run can be confirmed via `POST /runs/:run_id/actions/apply`; these
-endpoints require a user or team token (not an organization token). This is
-HashiCorp's own documented path for triggering a Terraform run
-programmatically without shelling out to the CLI directly — but it is scoped
-to HCP Terraform's hosted run architecture, not local/open-source Terraform
-invoked in-process.
+**Terraform.** HashiCorp does not publish an official Python SDK for driving
+the **local/open-source Terraform CLI** in-process. `python-terraform`
+(`beelit94/python-terraform` on GitHub) is a community-maintained wrapper
+around the `terraform` CLI binary, MIT-licensed, unofficial, and is the only
+Python option for that local-CLI path. For the separate **HCP Terraform API**
+path, HashiCorp does publish and maintain an official Python client,
+`python-tfe` (`hashicorp/python-tfe` on GitHub, published as `pytfe` on PyPI) —
+distinct from, and not a substitute for, `python-terraform`'s local-CLI
+wrapping. HCP Terraform (formerly Terraform Cloud) also documents an
+official, API-driven run workflow independent of any client library:
+`POST /runs` "performs a plan and apply, using a configuration version and the
+workspace's current variables," and a paused run can be confirmed via
+`POST /runs/:run_id/actions/apply`; these endpoints require a user or team
+token (not an organization token). Both the `python-tfe` client and the raw
+`POST /runs` workflow are HashiCorp's own documented paths for triggering a
+Terraform run programmatically without shelling out to the CLI directly — but
+both are scoped to HCP Terraform's hosted run architecture, not local/
+open-source Terraform invoked in-process, which is what this repo uses via
+OpenTofu (ADR-0016) — so neither is directly relevant to this decision.
+Sources: [`hashicorp/python-tfe` on GitHub](https://github.com/hashicorp/python-tfe), [`pytfe` on PyPI](https://pypi.org/project/pytfe/).
 Sources: [`beelit94/python-terraform` on GitHub](https://github.com/beelit94/python-terraform), [HCP Terraform API docs — Runs](https://developer.hashicorp.com/terraform/cloud-docs/api-docs/run).
 
 ## 2. AWS-native alternative: no IaC tool at all
@@ -205,7 +225,9 @@ tagged resources, e.g.:
 }
 ```
 
-and for `RunInstances` against a launch template:
+and for `RunInstances` against a launch template — **shown here as AWS documents it, a
+fragment covering only the launch-template resource**, not the complete permission set a real
+`RunInstances` call needs:
 
 ```json
 {
@@ -218,7 +240,15 @@ and for `RunInstances` against a launch template:
 }
 ```
 
-Source: [Amazon EC2 User Guide — Example policies to control access to the Amazon EC2 API](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ExamplePolicies_EC2.html).
+`RunInstances` requires permission on every resource it references, not just the launch
+template: AWS's own EC2 permissions documentation states the caller needs access to each AMI,
+subnet, network interface, security group, key pair, and volume involved, plus the resulting
+`instance` resource itself; if the instance is tagged on creation, `ec2:CreateTags` is required
+too (commonly granted alongside `ec2:CreateLaunchTemplate` when tagging happens at template
+creation instead). A production policy for the per-trial-org `RunInstances` call in ADR-0016
+needs `Resource` entries (or a wildcard scoped by `aws:ResourceTag`/`aws:RequestTag` conditions)
+covering all of these, not just the launch template shown above.
+Sources: [Amazon EC2 User Guide — Example policies to control access to the Amazon EC2 API](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ExamplePolicies_EC2.html), [Amazon EC2 User Guide — Example: Launch instances with permissions for launch templates](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/permissions-for-launch-templates.html).
 
 Whether Route53 and Cost Explorer support the same `aws:ResourceTag`-style
 condition keys for the specific actions Hosting Operations would need
@@ -227,6 +257,9 @@ trial-org tag) was not separately confirmed against each service's own
 Service Authorization Reference page in this session — see Unverified.
 
 ## 4. Cost Explorer / Budgets API for per-resource-tag cost attribution
+
+This section originally documented only the Cost Explorer `GetCostAndUsage` path; the Budgets
+subsection below fills the gap the heading implied.
 
 ### `GroupBy` on cost allocation tags
 
@@ -263,6 +296,22 @@ primary AWS text in this session and should be treated as unverified pending
 a direct read of AWS's own "Understanding dates for cost allocation tags"
 page (linked from, but not itself fetched from, the page above).
 Source: [AWS Billing and Cost Management User Guide — Organizing and tracking costs using AWS cost allocation tags](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-alloc-tags.html).
+
+### AWS Budgets tag-filter behavior
+
+Budgets shares the same cost-allocation-tag activation requirement and up-to-24-hour delay
+documented above — a tag unusable in Cost Explorer before activation is equally unusable as a
+Budgets filter. Beyond that shared constraint, AWS's `CreateBudget`/`UpdateBudget` API documents
+two mutually exclusive ways to express a tag filter: the legacy `CostFilters`/`CostTypes` fields,
+and the newer `FilterExpression`/`Metrics` fields (which AWS recommends for their more flexible
+exclusion support) — a single API call must use one pair or the other, not both. Two behaviors
+worth noting for a runway dashboard built on this API: updating an existing budget resets its
+calculated spend to zero until AWS refreshes usage data for forecasting (so an edit briefly blanks
+out the figure rather than updating it in place), and tags applied to the Budget resource itself
+(via `TagResource`, for governance/access control) are unrelated to and do not filter the cost and
+usage data a budget reports on — only cost-allocation tags on the underlying billed resources do
+that.
+Sources: [AWS Cost Management User Guide — Managing your costs with AWS Budgets filters](https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-create-filters.html), [AWS Billing and Cost Management API Reference — `CreateBudget`](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_CreateBudget.html), [AWS Cost Management User Guide — AWS Budgets best practices](https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-best-practices.html).
 
 ## Unverified / could not confirm
 

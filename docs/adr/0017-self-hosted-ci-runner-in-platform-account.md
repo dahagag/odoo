@@ -20,3 +20,16 @@ Placing the runner inside the Platform Account (rather than a separate CI/CD acc
 smaller blast-radius boundary than full account isolation would give, in exchange for not adding
 a fourth AWS Organizations account before anything has shipped. Revisit if/when CI/CD volume or a
 security requirement justifies isolating it.
+
+**Trust boundary:** this repository is public (`dahagag/odoo`, a fork of `odoo/odoo`), and
+`.github/workflows/ci.yml` currently triggers on `pull_request` targeting `dev/19.0`/`main/19.0`
+— including PRs opened from forks. A self-hosted, persistent runner picking up jobs from that
+trigger is the well-known fork-PR-to-RCE vector: arbitrary code from an untrusted PR would run on
+our own persistent compute, with access to whatever the runner's environment (including its
+OIDC-assumed AWS role) can reach. The self-hosted runner is therefore scoped to **trusted
+workflows only** — pushes/merges to `dev/19.0`, `workflow_dispatch`, and PRs opened by
+collaborators (`authorAssociation` of `OWNER`/`MEMBER`/`COLLABORATOR`, mirroring the PR-triage
+distinction already drawn in `docs/agents/issue-tracker.md`'s "PRs as a request surface" section).
+Any `pull_request`-triggered job from a non-collaborator continues to run on GitHub-hosted
+runners, not the self-hosted one, until this repo has a documented, enforced way to gate which
+jobs the persistent runner accepts.
