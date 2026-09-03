@@ -572,6 +572,12 @@ class RenderMarkdownDocumentVideoEmbedTests(unittest.TestCase):
 
         self.assertNotIn("<video", html)
 
+    def test_methodologies_layout_includes_demo_cta_before_footer(self):
+        html = render_markdown_document(self._METHODOLOGIES_MARKDOWN, fallback_title="Doc")
+
+        self.assertIn('<a class="demo-cta" href="/odoo">', html)
+        self.assertLess(html.index('class="demo-cta"'), html.index('class="reading"'))
+
     def test_methodologies_layout_footer_backlink_is_rewritten_via_resolver(self):
         html = render_markdown_document(
             self._METHODOLOGIES_MARKDOWN,

@@ -1205,9 +1205,10 @@ _METHODOLOGIES_TEMPLATE = """<!doctype html>
     transition:opacity .3s ease;
   }
   .video-embed.is-playing .video-scrim{ opacity:0; }
-  .ilo, main{ transition:opacity .45s ease, filter .45s ease; }
+  .ilo, main, .demo{ transition:opacity .45s ease, filter .45s ease; }
   .shell.theater-mode .ilo,
-  .shell.theater-mode main{
+  .shell.theater-mode main,
+  .shell.theater-mode .demo{
     opacity:.22; filter:saturate(.5) blur(1px); pointer-events:none;
   }
 
@@ -1236,6 +1237,26 @@ _METHODOLOGIES_TEMPLATE = """<!doctype html>
   .method .label{ font-family:'IBM Plex Mono',monospace; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-500); display:block; margin-bottom:.2rem; }
   img{ max-width:100%; height:auto; display:block; margin:0 auto; }
 
+  .demo{
+    display:flex; align-items:center; justify-content:space-between; gap:1.5rem; flex-wrap:wrap;
+    background:var(--teal-soft); border:1px solid var(--line); border-radius:.9rem;
+    padding:2rem 2.2rem; margin-top:2.5rem;
+  }
+  .demo-copy h2{ font-family:'Source Serif 4',Georgia,serif; font-weight:600; font-size:1.4rem; margin:0 0 .5rem; color:var(--ink-900); }
+  .demo-copy p{ font-size:.95rem; color:var(--ink-700); line-height:1.6; margin:0; max-width:46ch; }
+  .demo-cta{
+    display:inline-flex; align-items:center; gap:.5rem;
+    font-family:'IBM Plex Mono',monospace; font-size:.82rem; text-transform:uppercase; letter-spacing:.05em; font-weight:600;
+    background:var(--teal); color:var(--paper-1); padding:.85rem 1.5rem; border-radius:.5rem;
+    white-space:nowrap; box-shadow:var(--shadow);
+    transition:background-color .18s ease, transform .18s ease;
+  }
+  .demo-cta:hover{ background:var(--amber); color:var(--paper-1); transform:translateY(-2px); }
+  .demo-cta svg{ width:15px; height:15px; }
+  @media (max-width: 620px){
+    .demo{ flex-direction:column; align-items:flex-start; }
+  }
+
   footer.reading{ margin-top:2.5rem; padding-top:1.5rem; border-top:1px solid var(--line); }
   footer.reading a{ font-size:.92rem; }
 </style>
@@ -1260,6 +1281,14 @@ __ILO_ITEMS__
   <main>
 __METHODS__
   </main>
+
+  <section class="demo">
+    <div class="demo-copy">
+      <h2>See it on a live pipeline</h2>
+      <p>Pre-seeded demo data across three methodologies and three clients — sign in and walk a deal through its gates.</p>
+    </div>
+    <a class="demo-cta" href="/odoo">Try the demo <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+  </section>
 
   <footer class="reading">
     <a class="backlink" href="__BACKLINK_HREF__">&larr; Back to Sales Methodology, Explained</a>
