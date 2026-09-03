@@ -11,40 +11,58 @@ still depend on a Node.js-based deploy path under the hood.
 
 Neither OpenTofu nor CDK documents an on-demand "provision triggered by a business event, not a
 deploy" pattern as first-class (same research note, same section) — this is a deliberate
-deviation from each tool's grain, not something either recommends. The new `hosting_admin` addon
-(see [ADR-0018](0018-hosting-split-into-admin-and-org-facing-addons.md)) shells out to the `tofu`
-CLI as a subprocess per Trial Org (module + per-org tfvars), triggered by a thin "Issue Trial" /
-"Extend" action `crm_methodology` adds to the Opportunity record, against state stored remotely
-(S3 bucket + DynamoDB lock table) rather than local files,
-since Odoo's own compute may restart or redeploy independently of any given trial's lifecycle. We
-accepted that this makes each provisioning step a plan+apply cycle rather than a single API call
-(slower than the raw-boto3 alternative considered and rejected) in exchange for one tool
-governing both the static foundation and every trial's infrastructure, instead of splitting that
-responsibility between OpenTofu and hand-written boto3 call sites that would drift from it over
-time.
+deviation from each tool's grain, not something either recommends.
+
+**Job orchestration lives in infrastructure, not in Odoo.** `hosting_admin` (see
+[ADR-0018](0018-hosting-split-into-admin-and-org-facing-addons.md)) is an integration layer: for
+every Trial Org lifecycle action (Issue, Extend, Suspend, Wake, Auto-Destroy) it starts an AWS
+Step Functions execution and reads back status — it does not itself run `tofu` as a subprocess,
+hold a lock, or implement retry logic. This was a deliberate choice over hand-rolling that
+machinery in Python: two research passes
+([`docs/research/step-functions-for-provisioning-jobs.md`](../research/step-functions-for-provisioning-jobs.md),
+[`docs/research/provisioning-job-orchestration-alternatives.md`](../research/provisioning-job-orchestration-alternatives.md))
+compared five options against the requirement (a mutex so two actions never race on one Trial
+Org, a bounded timeout on the `tofu` process, and retry/idempotency); Step Functions was chosen
+for keeping execution semantics entirely in managed infrastructure with a visible execution
+history, at the cost of AWS not documenting a built-in mutex for standard workflows — closed here
+with an explicit DynamoDB conditional-write lock as the first and last step of every execution,
+rather than an Odoo-side lock, so Odoo never becomes a required participant in serialization:
+
+- **Trigger**: `hosting_admin` calls `StartExecution` on a per-lifecycle-action state machine,
+  passing the Trial Org's id and the requested action, then polls or receives a callback for
+  completion/failure — no subprocess, no local process to manage.
+- **Mutex**: the state machine's first state acquires a DynamoDB item keyed by the Trial Org id
+  via a conditional `PutItem` (`attribute_not_exists`), and a `Catch`-guarded final state releases
+  it — this serializes actions on the *same* Trial Org while leaving separate Trial Orgs
+  unconstrained, without relying on Odoo's own record locking.
+- **Execution**: `tofu plan`/`apply`/`destroy` runs as an ECS/Fargate task via the
+  `arn:aws:states:::ecs:runTask.sync` integration (open-ended task duration, unlike Lambda's
+  900-second hard cap — a real risk for a `tofu apply` of unknown duration); Suspend/Wake are a
+  separate, fast Task state calling the EC2 API (`stop_instances`/`start_instances`) directly —
+  see Power-state boundary below.
+- **Retry**: `Retry`/`Catch` fields on each Task state (`MaxAttempts`, `BackoffRate`,
+  `IntervalSeconds`), AWS-managed rather than an application-level retry loop.
+- **Deployment**: the state machine (Amazon States Language), its IAM role, the ECS task
+  definition, and the DynamoDB lock table are declared in the same OpenTofu foundation as
+  everything else in this ADR (`aws_sfn_state_machine` is a normal Terraform/OpenTofu-provider
+  resource) — no separate deployment pipeline for the orchestration layer itself.
 
 **Power-state boundary:** OpenTofu owns creating and destroying a Trial Org's infrastructure —
 `Issue Trial` runs `tofu apply`, `Auto-Destroy` runs `tofu destroy` — but does not own its EC2
-instance's running/stopped state. Suspend and Wake call the EC2 API (`stop_instances` /
-`start_instances`) directly from `hosting_admin`, not through OpenTofu: an idle-timeout suspend
-happening dozens of times over a trial's life doesn't warrant a plan+apply cycle each time it's
-the cheaper, faster path, and it also avoids a real correctness hazard — if the per-trial module's
-desired state included `running`, a later unrelated `tofu apply` (e.g. picking up a foundation
-change) could silently undo a Suspended instance. The per-trial module's instance resource is
-declared without an explicit running/stopped assumption for exactly this reason: OpenTofu must
-never contend with the runtime for power state.
+instance's running/stopped state. Suspend and Wake call the EC2 API directly (via their own Task
+state in the same state machine, per above), not through OpenTofu: an idle-timeout suspend
+happening dozens of times over a trial's life doesn't warrant a plan+apply cycle each time, and it
+also avoids a real correctness hazard — if the per-trial module's desired state included
+`running`, a later unrelated `tofu apply` (e.g. picking up a foundation change) could silently
+undo a Suspended instance. The per-trial module's instance resource is declared without an
+explicit running/stopped assumption for exactly this reason: OpenTofu must never contend with the
+runtime for power state.
 
-**Serialization:** every lifecycle action (Wake, idle-stop, Extend, Auto-Destroy, and any
-`tofu apply`) on a given Trial Org acquires that org's row-level lock in Odoo (a `SELECT ... FOR
-UPDATE`-style lock on the Trial Org record, which Odoo's ORM already provides for record writes)
-before acting, and releases it after. This is enough to prevent two lifecycle actions racing on
-the *same* Trial Org — it says nothing about cross-org concurrency, which is unconstrained by
-design (separate Trial Orgs must be able to provision in parallel).
-
-**State-key/workspace boundary:** the per-trial-org OpenTofu module is invoked against a
-deterministic remote-state key derived from the Trial Org's own database id — e.g. state key
-`trial-orgs/<trial_org_id>/terraform.tfstate` in the shared S3 backend, where `<trial_org_id>` is
-that Odoo record's immutable numeric id (never regenerated, never derived from mutable fields like
-the prospect domain). A retried `tofu apply` after a failed or interrupted attempt reuses the same
-key by construction — it cannot target another Trial Org's state, because the key is a pure
-function of an id that doesn't change across retries.
+**State-key/workspace boundary:** the per-trial-org OpenTofu module is invoked (by the ECS/Fargate
+task, not by Odoo) against a deterministic remote-state key derived from the Trial Org's own
+database id — e.g. state key `trial-orgs/<trial_org_id>/terraform.tfstate` in the shared S3
+backend, where `<trial_org_id>` is that Odoo record's immutable numeric id (never regenerated,
+never derived from mutable fields like the prospect domain). A retried `tofu apply` after a
+failed or interrupted attempt reuses the same key by construction — it cannot target another
+Trial Org's state, because the key is a pure function of an id that doesn't change across
+retries.
