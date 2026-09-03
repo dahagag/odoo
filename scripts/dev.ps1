@@ -1,6 +1,5 @@
 param(
-    [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateSet('doctor', 'build', 'init', 'up', 'down', 'logs', 'shell', 'db-shell', 'scaffold', 'install', 'update', 'test', 'lint', 'docs-build', 'docs-build:doc', 'docs-build:parity', 'docs-build:video', 'reset')]
+    [Parameter(Position = 0)]
     [string]$Command,
 
     [Parameter(Position = 1)]
@@ -19,6 +18,12 @@ $script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $script:ComposeKind = $null
 $script:LastComposeExitCode = 0
 Set-Location -LiteralPath $script:RepoRoot
+
+function Show-Usage {
+    param([int]$ExitCode = 2)
+    Write-Host 'Usage: ./scripts/dev.ps1 {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|docs-build|docs-build:doc|docs-build:parity|docs-build:video|reset} [argument] [extra] [-CleanupOnFailure]'
+    exit $ExitCode
+}
 
 function Resolve-Compose {
     if ($script:ComposeKind) { return }
@@ -302,6 +307,9 @@ function Invoke-Doctor {
     Write-Host "Doctor passed: Docker $serverVersion, Compose $script:ComposeKind, HTTP $httpPort, gevent $geventPort."
 }
 
+if ($Command -in @('--help', '-h')) { Show-Usage -ExitCode 0 }
+if (-not $Command) { Show-Usage }
+
 Require-EnvironmentFile
 
 switch ($Command) {
@@ -361,4 +369,5 @@ switch ($Command) {
         if ($confirmation -ne $project) { throw 'Reset cancelled.' }
         Invoke-Compose -Arguments @('down', '--volumes', '--remove-orphans')
     }
+    default { Show-Usage }
 }

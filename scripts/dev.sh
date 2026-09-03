@@ -16,7 +16,7 @@ COMPOSE=()
 
 usage() {
     echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|docs-build|docs-build:doc|docs-build:parity|docs-build:video|reset} [argument] [extra] [option]" >&2
-    exit 2
+    exit "${1:-2}"
 }
 
 resolve_compose() {
@@ -262,7 +262,10 @@ doctor() {
     echo "Doctor passed: Docker $server_version, HTTP $http_port, gevent $gevent_port."
 }
 
-[[ -n "$COMMAND" ]] || usage
+case "$COMMAND" in
+    --help|-h) usage 0 ;;
+    '') usage ;;
+esac
 require_env
 
 case "$COMMAND" in
