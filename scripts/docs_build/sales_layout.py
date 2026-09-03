@@ -126,11 +126,12 @@ SALES_LAYOUT_TEMPLATE = """<!doctype html>
   /* Theater mode: while the video plays, everything below it recedes so the
      video is the only thing asking for attention. Reverses the instant the
      video stops so reading resumes exactly where it left off. */
-  .legend, .layout{
+  .legend, .layout, .demo{
     transition:opacity .45s ease, filter .45s ease;
   }
   .shell.theater-mode .legend,
-  .shell.theater-mode .layout{
+  .shell.theater-mode .layout,
+  .shell.theater-mode .demo{
     opacity:.22;
     filter:saturate(.5) blur(1px);
     pointer-events:none;
@@ -478,6 +479,26 @@ SALES_LAYOUT_TEMPLATE = """<!doctype html>
     line-height:1.6;
   }
 
+  .demo{
+    display:flex; align-items:center; justify-content:space-between; gap:1.5rem; flex-wrap:wrap;
+    background:var(--teal-soft); border:1px solid var(--line); border-radius:.9rem;
+    padding:2rem 2.2rem; margin-top:2.5rem;
+  }
+  .demo-copy h2{ font-family:'Source Serif 4',Georgia,serif; font-weight:600; font-size:1.4rem; margin:0 0 .5rem; color:var(--ink-900); }
+  .demo-copy p{ font-size:.95rem; color:var(--ink-700); line-height:1.6; margin:0; max-width:46ch; }
+  .demo-cta{
+    display:inline-flex; align-items:center; gap:.5rem;
+    font-family:'IBM Plex Mono',monospace; font-size:.82rem; text-transform:uppercase; letter-spacing:.05em; font-weight:600;
+    background:var(--teal); color:var(--paper-1); padding:.85rem 1.5rem; border-radius:.5rem;
+    white-space:nowrap; box-shadow:var(--shadow);
+    transition:background-color .18s ease, transform .18s ease;
+  }
+  .demo-cta:hover{ background:var(--amber); color:var(--paper-1); transform:translateY(-2px); }
+  .demo-cta svg{ width:15px; height:15px; }
+  @media (max-width: 620px){
+    .demo{ flex-direction:column; align-items:flex-start; }
+  }
+
   @media (prefers-reduced-motion: reduce){
     *{ transition:none !important; }
   }
@@ -512,6 +533,14 @@ __SECTIONS__
 
     </main>
   </div>
+
+  <section class="demo">
+    <div class="demo-copy">
+      <h2>See it on a live pipeline</h2>
+      <p>Pre-seeded demo data across three methodologies and three clients — sign in and walk a deal through its gates.</p>
+    </div>
+    <a class="demo-cta" href="/odoo">Try the demo <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+  </section>
 </div>
 
 <script>
