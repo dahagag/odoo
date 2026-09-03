@@ -551,14 +551,16 @@ __SECTIONS__
     var video = embed && embed.querySelector('video');
     var shell = document.querySelector('.shell');
     if (video) {
-      var setPlaying = function(playing){
-        embed.classList.toggle('is-playing', playing);
-        if (shell) shell.classList.toggle('theater-mode', playing);
-      };
-      video.addEventListener('play', function(){ setPlaying(true); });
-      video.addEventListener('playing', function(){ setPlaying(true); });
-      video.addEventListener('pause', function(){ setPlaying(false); });
-      video.addEventListener('ended', function(){ setPlaying(false); });
+      var setPlaying = function(playing){ embed.classList.toggle('is-playing', playing); };
+      var exitTheaterMode = function(){ if (shell) shell.classList.remove('theater-mode'); };
+      video.addEventListener('play', function(){ setPlaying(true); if (shell) shell.classList.add('theater-mode'); });
+      video.addEventListener('playing', function(){ setPlaying(true); if (shell) shell.classList.add('theater-mode'); });
+      video.addEventListener('pause', function(){ setPlaying(false); exitTheaterMode(); });
+      video.addEventListener('ended', function(){ setPlaying(false); exitTheaterMode(); });
+      // Theater mode backs off on scroll or once the pointer leaves the video —
+      // signals that attention has moved elsewhere — without pausing playback.
+      window.addEventListener('scroll', exitTheaterMode, { passive: true });
+      embed.addEventListener('mouseleave', exitTheaterMode);
     }
   })();
 
