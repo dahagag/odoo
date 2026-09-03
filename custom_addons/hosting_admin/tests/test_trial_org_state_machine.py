@@ -1,4 +1,4 @@
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, ValidationError
 from odoo.tests import TransactionCase, tagged
 
 
@@ -83,6 +83,29 @@ class TestTrialOrgStateMachine(TransactionCase):
         with self.assertRaises(ValidationError):
             self.trial_org.action_suspend()
         self.assertEqual(self.trial_org.state, 'issued')
+
+    def test_direct_write_of_state_is_rejected(self):
+        # readonly=True on the state field only hides it in form views - it does not stop a
+        # direct ORM/RPC write() from a caller with model access. That must be rejected
+        # regardless, so _apply_transition() stays the only path that can ever change state.
+        with self.assertRaises(AccessError):
+            self.trial_org.write({'state': 'active'})
+        self.assertEqual(self.trial_org.state, 'issued')
+
+    def test_direct_create_with_state_is_rejected(self):
+        with self.assertRaises(AccessError):
+            self.env['hosting.trial.org'].create({
+                'name': "Sneaky Trial",
+                'prospect_domain': "sneaky.example.com",
+                'seat_cap': 5,
+                'state': 'active',
+            })
+
+    def test_apply_transition_can_still_write_state(self):
+        # The legitimate path - action_issue() calling _apply_transition() - must keep working
+        # even though direct writes of 'state' are now rejected.
+        self.trial_org.action_issue()
+        self.assertEqual(self.trial_org.state, 'active')
 
     def test_batch_transition_is_all_or_nothing(self):
         # One org already active, one still issued: neither should transition when the batch

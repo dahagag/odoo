@@ -2,7 +2,7 @@ import re
 import uuid
 
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, ValidationError
 
 from .provisioner import StubProvisioner
 
@@ -31,6 +31,15 @@ _TRANSITIONS = {
     'wake': ({'suspended'}, 'active'),
     'destroy': ({'active', 'suspended'}, 'destroyed'),
 }
+
+# Context key ``_apply_transition`` sets to authorize its own ``write({'state': ...})`` call.
+# ``state`` is declared ``readonly=True`` below, but that only hides the field in form views -
+# it does not stop a caller with model access from setting it directly via ORM or RPC
+# create()/write(), bypassing _apply_transition()'s source-state validation and Provisioner
+# call entirely. The create()/write() overrides on this model reject any caller-supplied
+# ``state`` unless this context key is set, so _apply_transition() is the only path that can
+# ever change it.
+ALLOW_STATE_WRITE_KEY = 'hosting_trial_org_allow_state_write'
 
 
 class HostingTrialOrg(models.Model):
@@ -102,11 +111,34 @@ class HostingTrialOrg(models.Model):
     @api.constrains('prospect_domain')
     def _check_prospect_domain(self):
         for trial_org in self:
-            if not _DOMAIN_RE.match(trial_org.prospect_domain or ''):
+            if not _DOMAIN_RE.fullmatch(trial_org.prospect_domain or ''):
                 raise ValidationError(_(
                     "%(domain)r is not a valid prospect domain.",
                     domain=trial_org.prospect_domain,
                 ))
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Reject a caller-supplied ``state`` on create - ``readonly=True`` only hides the
+        field in form views, so this is the only thing stopping a direct ORM/RPC create() from
+        setting it to something other than the model's own default."""
+        if not self.env.context.get(ALLOW_STATE_WRITE_KEY):
+            for vals in vals_list:
+                if 'state' in vals:
+                    raise AccessError(_(
+                        "Trial Org state cannot be set directly; it can only change through "
+                        "its lifecycle actions (Issue, Suspend, Wake, Auto-Destroy)."))
+        return super().create(vals_list)
+
+    def write(self, vals):
+        """Reject a caller-supplied ``state`` on write unless it comes from
+        ``_apply_transition()`` itself (signalled via ``ALLOW_STATE_WRITE_KEY``) - see that
+        key's docstring above for why ``readonly=True`` alone is not enough."""
+        if 'state' in vals and not self.env.context.get(ALLOW_STATE_WRITE_KEY):
+            raise AccessError(_(
+                "Trial Org state cannot be set directly; it can only change through its "
+                "lifecycle actions (Issue, Suspend, Wake, Auto-Destroy)."))
+        return super().write(vals)
 
     def _get_provisioner(self):
         """Return the ``Provisioner`` implementation to call at each lifecycle transition.
@@ -153,4 +185,5 @@ class HostingTrialOrg(models.Model):
             for trial_org in self:
                 job_id = str(uuid.uuid4())
                 getattr(provisioner, action_name)(trial_org, job_id)
-                trial_org.write({'state': target_state, 'last_job_id': job_id})
+                trial_org.with_context(**{ALLOW_STATE_WRITE_KEY: True}).write(
+                    {'state': target_state, 'last_job_id': job_id})

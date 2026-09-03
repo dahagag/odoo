@@ -1,5 +1,8 @@
+from psycopg2.errors import CheckViolation
+
 from odoo.exceptions import ValidationError
 from odoo.tests import TransactionCase, tagged
+from odoo.tools import mute_logger
 
 from odoo.addons.hosting_admin.models.trial_org import SYSTEM_WIDE_SEAT_CAP
 
@@ -30,7 +33,10 @@ class TestTrialOrgValidation(TransactionCase):
             trial_org.seat_cap = SYSTEM_WIDE_SEAT_CAP + 1
 
     def test_create_with_non_positive_seat_cap_is_rejected(self):
-        with self.assertRaises(Exception):
+        # seat_cap=0 fails the DB-level CHECK(seat_cap > 0) constraint directly (there's no
+        # Python-side @api.constrains for the lower bound), so the raised exception is
+        # psycopg2's CheckViolation, not an odoo.exceptions.ValidationError.
+        with self.assertRaises(CheckViolation), mute_logger('odoo.sql_db'):
             self._create(seat_cap=0)
 
     def test_create_with_valid_domain_succeeds(self):
