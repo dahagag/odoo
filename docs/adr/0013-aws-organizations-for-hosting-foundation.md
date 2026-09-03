@@ -27,8 +27,12 @@ not where the Hosting Operations *control plane* runs. `hosting_admin` — the O
 decides to create, suspend, wake, or destroy a Trial Org — runs as part of agentic-erp itself, in
 the Platform Account (ADR-0015). Per ADR-0016's job-orchestration design, `hosting_admin`'s own
 cross-account role (assumed from the Platform Account's native role into the Hosting Account) is
-scoped narrowly to `states:StartExecution`/`states:DescribeExecution` on the Trial Org state
-machine — it never holds EC2, OpenTofu-state, or DynamoDB-lock permissions itself. Those broader
+scoped narrowly to two separate IAM statements, since AWS's own Step Functions IAM reference
+defines these two actions against different resource types: `states:StartExecution`, scoped to
+the state-machine ARN (`arn:aws:states:<region>:<account>:stateMachine:<name>`), and
+`states:DescribeExecution`, scoped to an execution ARN
+(`arn:aws:states:<region>:<account>:execution:<name>:*`) — it never holds EC2, OpenTofu-state, or
+DynamoDB-lock permissions itself. Those broader
 permissions belong to the state machine's own execution role and its ECS task role, both entirely
 within the Hosting Account, scoped by `aws:ResourceTag` ABAC conditions to the specific Trial Org
 each execution targets. This keeps the Platform Account's own blast radius small: a compromised

@@ -88,6 +88,27 @@ field's own numeric default. AWS's Task-state page is the more authoritative,
 service-specific source for this discrepancy — see Unverified.
 Sources: [Amazon States Language spec](https://states-language.net/spec.html), [Step Functions Developer Guide — Task workflow state](https://docs.aws.amazon.com/step-functions/latest/dg/state-task.html).
 
+### A `Retry` on the `ecs:runTask.sync` Task needs its own dedup, separate from `StartExecution`'s
+
+`Retry`/`Catch` retry the *Task state*, not the whole execution — if `RunTask` succeeds but its
+response is lost before Step Functions records it, a `Retry` re-entering the same Task calls
+`RunTask` again. Whether that launches a second, duplicate ECS task depends entirely on ECS's own
+idempotency mechanism, not on anything Step Functions itself provides:
+
+> "If you retry a request with the same client token and identical parameters after a successful
+> initial request, the service returns the result of the original, successful operation... The
+> client token has a TTL of 24 hours."
+
+Source: [Amazon ECS Developer Guide — Amazon ECS idempotency](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ECS_Idempotency.html).
+
+This means a `Retry` on the `ecs:runTask.sync` Task is only safe from duplicate task launches if
+the `RunTask` call underneath it passes the *same* `ClientToken` on every attempt — an
+auto-generated (random) token per attempt would defeat this. It also means retry-safety here has
+a 24-hour boundary: a retry arriving after that window is a fresh, undeduplicated `RunTask` call
+as far as ECS is concerned. Separately, the DynamoDB mutex (Section 3) is acquired once, by an
+earlier state, before this Task runs — a Task-level `Retry` re-entering `ecs:runTask.sync` does
+not reacquire it, since the lock is scoped to the whole execution, not to any single Task.
+
 ## 2. How a state machine would actually invoke OpenTofu
 
 Step Functions Task states call AWS service APIs, Lambda, activities (workers
@@ -282,16 +303,17 @@ inside, each with their own deployment and IAM-permissioning surface.
 
 ## 5. The hand-rolled alternative, for comparison
 
-Structurally, hand-rolling this in `hosting_admin` (as ADR-0016's existing
-text already partially describes for row-level locking) would look like:
+Structurally, hand-rolling this in `hosting_admin` — the option this note's
+own findings weighed against Step Functions, and which
+[ADR-0016](../adr/0016-opentofu-for-static-and-per-trial-provisioning.md) did
+**not** ultimately adopt — would have looked like:
 
 - **Mutex**: a database row per Trial Org (or a dedicated "in-progress job"
   row referencing the Trial Org) that records the current in-progress
   lifecycle action and a start timestamp, written under a row-level lock
   (e.g. Odoo's ORM-provided `SELECT ... FOR UPDATE`-style lock on the Trial
-  Org record, as ADR-0016 already uses for Wake/Extend/Auto-Destroy/apply
-  serialization) before the subprocess starts, cleared when it finishes.
-  A second lifecycle action arriving while the row shows "in progress" is
+  Org record) before the subprocess starts, cleared when it finishes. A
+  second lifecycle action arriving while the row shows "in progress" is
   rejected or queued at the application layer.
 - **Timeout**: the Python subprocess call to `tofu` wrapped with a hard
   wall-clock timeout (e.g. `subprocess.run(..., timeout=N)`), killing the
@@ -300,12 +322,20 @@ text already partially describes for row-level locking) would look like:
   lifecycle action whose process died without clearing the row) on a
   subsequent attempt or a periodic sweep.
 - **Idempotency/retry**: application-level retry logic (a fixed number of
-  attempts, optionally with backoff) around the subprocess call, keyed by
-  the deterministic per-Trial-Org state key ADR-0016 already establishes
-  (`trial-orgs/<trial_org_id>/terraform.tfstate`) so a retried `tofu apply`
-  reuses the same state key and cannot target another Trial Org's
-  infrastructure by construction — the same property Section 3 found Step
-  Functions does not natively guarantee.
+  attempts, optionally with backoff) around the subprocess call. The
+  deterministic per-Trial-Org state key this note describes elsewhere
+  (`trial-orgs/<trial_org_id>/terraform.tfstate`) would still isolate a
+  retry to the correct Trial Org's state — but, per the state-isolation-vs-
+  idempotency distinction ADR-0016 draws, that alone doesn't make *running
+  `tofu` twice* safe; this hand-rolled sketch would need its own explicit
+  idempotency mechanism for that (e.g. a dedicated attempt/job id, the same
+  shape ADR-0016 ended up giving Step Functions instead).
+
+ADR-0016's actual choice — Step Functions with a DynamoDB conditional lock,
+an EventBridge stale-lock-cleanup rule, a TTL backstop, and a persisted
+per-job id reused as both the execution name and the ECS `RunTask`
+`ClientToken` — is documented in the ADR itself, not here; this section
+stays as a structural comparison point only.
 
 This is presented only as a structural point of comparison — it is what the
 reviewer's flagged gap would need to be closed by in Python, not a

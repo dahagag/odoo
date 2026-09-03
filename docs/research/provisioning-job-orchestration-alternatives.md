@@ -100,6 +100,18 @@ retries, are both documented as order-preserving and non-duplicating as long
 as an acknowledgment lands before the relevant window expires.
 Source: [Amazon SQS Developer Guide — FIFO queue delivery logic](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/FIFO-queues-understanding-logic.html).
 
+**`MessageGroupId` alone is not a complete mutex, though — the same page's own delivery-logic
+text has two caveats a real implementation must handle.** First, `ReceiveMessage` "may receive
+multiple messages from the same message group ID in one batch" — a worker must still process
+messages from one group serially itself, not assume SQS hands them out one at a time. Second, a
+message becomes eligible for redelivery once its visibility timeout expires, even if the worker
+is still actively processing it (e.g. still running a long `tofu apply`) — so a worker running
+`tofu` for longer than the queue's configured visibility timeout must extend it
+(`ChangeMessageVisibility`) periodically while work is in flight, and must delete the message only
+after `tofu` actually completes, not on receipt. Skipping either of these would let a second
+worker pick up the same group while the first is still working.
+Source: [Amazon SQS Developer Guide — FIFO queue delivery logic](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/FIFO-queues-understanding-logic.html).
+
 Note this is still bounded by the same 12-hour visibility-timeout ceiling
 documented above — it constrains how long one message (and thus one
 Trial Org's group) can stay "locked" before SQS makes it visible again for
@@ -139,10 +151,12 @@ Source: [Amazon SQS Developer Guide — Using dead-letter queues](https://docs.a
 
 This is enqueue-time deduplication (stopping a second, identical
 `SendMessage` call from creating a redundant message within 5 minutes) — it
-is not the same guarantee as the state-key-based idempotency ADR-0016
-already establishes for the hand-rolled option, which prevents a retried
-*execution* of `tofu apply` from targeting another org's state regardless of
-how much time has passed between attempts. Content-based deduplication
+is neither the state *isolation* the deterministic per-org OpenTofu state key
+gives (which guarantees a retry can't cross-target another org's state, but
+says nothing about whether running `tofu` twice is itself safe) nor the
+execution-level idempotency ADR-0016's job-identity design gives (a persisted
+per-job id reused as both the Step Functions execution name and the ECS
+`RunTask` `ClientToken`). Content-based deduplication
 (SQS computing a SHA-256 hash of the message body as the dedup ID when the
 caller doesn't supply one) is named on this same page's linked topics but
 its own mechanics were not fetched in this session — see Unverified.
@@ -225,9 +239,10 @@ mutual exclusion.
 Source: [AWS Batch API Reference — `JobQueueDetail`](https://docs.aws.amazon.com/batch/latest/APIReference/API_JobQueueDetail.html).
 
 This means AWS Batch, like Step Functions, would still need an external lock
-(the same DB-row lock ADR-0016 already uses, or an SQS-FIFO-style
-mechanism) layered on top to serialize actions on the same Trial Org — Batch
-gives retry and timeout natively, but not per-key mutual exclusion.
+(a DynamoDB-conditional-write lock like the one ADR-0016 actually adopted for
+Step Functions, an Odoo DB-row lock, or an SQS-FIFO-style mechanism) layered
+on top to serialize actions on the same Trial Org — Batch gives retry and
+timeout natively, but not per-key mutual exclusion.
 
 ### Fargate-backed compute environments
 
@@ -384,9 +399,9 @@ purely factual/comparative — no recommendation:
 
 | Option | Mutex / serialization | Timeout bound | Retry | New infrastructure/dependency beyond ADR-0016 |
 |---|---|---|---|---|
-| Hand-rolled in `hosting_admin` | Odoo ORM row-level lock (`SELECT ... FOR UPDATE`-style) on the Trial Org record, already used for Wake/Extend/Auto-Destroy per ADR-0016 | `subprocess.run(..., timeout=N)` around the `tofu` call, app-defined | App-level retry loop keyed to the deterministic per-org state key (`trial-orgs/<id>/terraform.tfstate`) | None — pure Python inside the existing addon |
-| Step Functions + ECS/Fargate `RunTask.sync` | Not documented by AWS for standard workflows; only a side effect of `StartExecution`'s execution-name idempotency, with documented gaps (no ordering guarantee, doesn't block a *different* action) | No documented ceiling on ECS/Fargate `RunTask.sync` task duration itself (open-ended, unlike Lambda's 900s hard cap) | `Retry`/`Catch` fields on Task states (`MaxAttempts`, `BackoffRate`, `IntervalSeconds`); `StartExecution` idempotent-by-name for Standard workflows only | A state machine (ASL authoring, new IAM role/policy) + an ECS/Fargate task definition and cluster; `aws_sfn_state_machine` can live in the same OpenTofu foundation |
-| SQS FIFO queue + worker | `MessageGroupId` = Trial Org id: AWS documents per-group ordering and single-in-flight-message-per-group delivery, which composes into a per-org lock while the message stays undeleted/within its visibility timeout | 12-hour hard ceiling on visibility timeout (a coarse outer bound, not a per-`tofu`-call timeout — the worker still needs its own `subprocess.run(..., timeout=N)`) | Redrive policy `maxReceiveCount` to a DLQ; `MessageDeduplicationId` gives 5-minute enqueue-time dedup (not the same as ADR-0016's execution-time state-key idempotency) | A FIFO queue + DLQ, plus a worker process/compute (not provided by SQS itself) to actually run `tofu` |
+| Hand-rolled in `hosting_admin` (rejected — see ADR-0016) | Odoo ORM row-level lock (`SELECT ... FOR UPDATE`-style) on the Trial Org record | `subprocess.run(..., timeout=N)` around the `tofu` call, app-defined | App-level retry loop keyed to the deterministic per-org state key (`trial-orgs/<id>/terraform.tfstate`) | None — pure Python inside the existing addon |
+| Step Functions + ECS/Fargate `RunTask.sync` (chosen — see ADR-0016) | Not documented by AWS as a built-in construct; ADR-0016 closes the gap with an explicit DynamoDB conditional-write lock (owner-token-guarded release, EventBridge stale-lock cleanup, TTL backstop) | No documented ceiling on ECS/Fargate `RunTask.sync` task duration itself (open-ended, unlike Lambda's 900s hard cap); the EC2-API Suspend/Wake Task additionally waits for the target instance state | `Retry`/`Catch` fields on Task states (`MaxAttempts`, `BackoffRate`, `IntervalSeconds`); execution-name and `RunTask` `ClientToken` both derived from a persisted per-job id (ADR-0016's Job identity design), not from `StartExecution`'s idempotency alone | A state machine (ASL authoring, new IAM role/policy), a DynamoDB lock table, an EventBridge rule, and an ECS/Fargate task definition and cluster; all declared in the same OpenTofu foundation |
+| SQS FIFO queue + worker | `MessageGroupId` = Trial Org id gets per-group ordering and single-in-flight-message-per-group delivery from AWS, but is not a complete mutex on its own — the worker must still process same-group messages serially, extend visibility while `tofu` runs, and delete only after completion (see caveats above) | 12-hour hard ceiling on visibility timeout (a coarse outer bound, not a per-`tofu`-call timeout — the worker still needs its own `subprocess.run(..., timeout=N)`) | Redrive policy `maxReceiveCount` to a DLQ; `MessageDeduplicationId` gives 5-minute enqueue-time dedup (a different guarantee than execution-level idempotency — see ADR-0016's job-identity design) | A FIFO queue + DLQ, plus a worker process/compute (not provided by SQS itself) to actually run `tofu` |
 | AWS Batch | Not documented — `JobQueueDetail`'s full parameter set (priority, state, scheduling policy, tags) has no per-key concurrency control; needs the same external lock as the hand-rolled or SQS options | `timeout.attemptDurationSeconds`, minimum 60s, no documented maximum; a timeout kill is not retried | `retryStrategy` (`attempts` 1–10) with `evaluateOnExit` glob-matching on exit code/reason to choose `RETRY` vs `EXIT` per attempt | A job queue, a Fargate-backed compute environment, and a job definition (container image bundling `tofu`) — new AWS resources and IAM surface, no new authoring language (plain JSON) |
 | OCA `queue_job` | `identity_key`: a second job with the same key is not *created* while an unfinished one with that key exists (per-Trial-Org key) — closest of the three new options to a per-org mutex; channels give a global concurrency budget, not a per-key lock | Not documented in the README fragments fetched — no job-level wall-clock kill mechanism found; only a killed-worker requeue behavior, unrelated to a hung-but-alive subprocess | `max_retries` (default 5) with a configurable `retry_pattern` ("after try N, wait Y seconds"); default flat 10-minute retry delay otherwise | Not currently a dependency anywhere in this repo (confirmed by search) — would be a new Odoo addon dependency, `--workers`>1, and jobrunner/channel configuration; no new AWS resource or IAM surface |
 
