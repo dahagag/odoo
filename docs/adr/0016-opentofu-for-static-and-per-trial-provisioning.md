@@ -61,9 +61,15 @@ rather than an Odoo-side lock, so Odoo never becomes a required participant in s
     blocking that Trial Org indefinitely. Both mechanisms are infrastructure-level; Odoo is not a
     required participant in lock recovery any more than it is in acquiring the lock.
 - **Execution**: `tofu plan`/`apply`/`destroy` runs as an ECS/Fargate task via the
-  `arn:aws:states:::ecs:runTask.sync` integration (open-ended task duration, unlike Lambda's
-  900-second hard cap — a real risk for a `tofu apply` of unknown duration), passing the job id as
-  `RunTask`'s `ClientToken` per Job identity above. Suspend/Wake are a separate, fast Task state
+  `arn:aws:states:::ecs:runTask.sync` integration — chosen over Lambda specifically because it has
+  no service-imposed ceiling like Lambda's 900-second hard cap, not because this ADR wants an
+  unbounded process. The Task state itself sets an explicit `TimeoutSeconds` (30 minutes) as the
+  actual bound: generous for provisioning one EC2 instance and its supporting resources (a normal
+  `tofu apply` for this module completes in low single-digit minutes), while still satisfying the
+  bounded-timeout requirement this section opened with — an unset/default `TimeoutSeconds` on a
+  Task state is not an acceptable substitute, since AWS's own Task-state page documents its
+  default as 99,999,999 seconds (~3.17 years), effectively unbounded. `RunTask`'s `ClientToken` is
+  passed per Job identity above. Suspend/Wake are a separate, fast Task state
   calling the EC2 API (`stop_instances`/`start_instances`) directly — see Power-state boundary
   below — and, since both calls return while the instance is still `stopping`/`pending` rather
   than at its target state, that Task state waits (an EC2 waiter: `instance_stopped` /
