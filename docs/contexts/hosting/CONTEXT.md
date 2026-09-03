@@ -12,6 +12,10 @@ _Avoid_: Tenant, demo instance, sandbox
 A named user account within a Trial Org. The count is set per-trial at issuance (system-wide max 25) and each invite must match the Trial Org's prospect domain.
 _Avoid_: License, user slot
 
+**Open Invite Link**:
+A shareable, trial-join link not addressed to any specific email, used when the sales rep knows the expected prospect domain but not yet who specifically will join. The first person to complete login through it must confirm a company email matching that domain before the Seat is created; a mismatch is rejected rather than silently accepted. Contrast with a **Targeted Invite**, sent to a known email and confirmed by construction.
+_Avoid_: Magic link, public link (it's domain-guarded, not truly public)
+
 **Active / Suspended**:
 A Trial Org's two operating states. Active means its compute is running; Suspended means compute has been stopped after an idle timeout to save cost, with the database and any queued Seats intact. Moving from Suspended to Active is a Wake.
 _Avoid_: Sleeping, paused (use Suspended); running, live (use Active)
@@ -40,3 +44,7 @@ _Avoid_: Subscription info (not yet a subscription — no billing exists for Tri
 **Deployment Version**:
 The base AMI and OpenTofu module version a Trial Org was provisioned from, recorded on its record as an audit fact ("what code was this demo actually running"). Not an upgrade mechanism — a Trial Org needing newer code is destroyed and reissued, never patched in place.
 _Avoid_: Release, build (this identifies what a specific Trial Org runs, not a shippable artifact)
+
+**Onboarding Guide**:
+The doc/video/screenshot content covering trial mechanics (seats, expiry/extension, invites, suspend/Wake) shown once on first login to any Trial Org and permanently linked from Org Registration afterward. Scoped to trial mechanics only — product/CRM education is the separate, pre-existing crm_methodology teach-doc content, not owned by Hosting Operations.
+_Avoid_: Teach doc (that's the mechanism/pipeline this content is built with, not this content itself); tutorial
