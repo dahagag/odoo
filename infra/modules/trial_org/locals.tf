@@ -8,7 +8,7 @@ locals {
 
   # Matches infra/foundation/locals.tf's trial_org_role_name_prefix/suffix convention, which the
   # foundation's ECS task role's iam:PassRole grant is scoped to.
-  instance_role_name = "hosting-trial-${var.trial_org_id}-ec2-logs"
+  instance_role_name = "trial-${var.trial_org_id}-ec2-logs"
 
   domain = var.dns_environment == "prod" ? "${var.trial_org_subdomain_label}.${var.root_domain}" : "${var.trial_org_subdomain_label}.${var.dev_subdomain}"
 
