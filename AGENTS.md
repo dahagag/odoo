@@ -20,6 +20,12 @@ Before creating or changing an addon, read `docs/agents/odoo-19-development.md`.
 
 Before designing or executing Odoo administration automation, read `docs/agents/odoo-19-automation.md`. Apply its split control/execution architecture and tiered authority model.
 
+### Design review
+
+Before writing view-layer code for a ticket that adds or reshapes a screen, read
+`docs/agents/design-review.md` for when to run a `/design` design-board pass and how to keep its
+record.
+
 ### Local development
 
 For environment setup, module lifecycle commands, tests, database access, or destructive local reset, read `docs/agents/local-development.md` and use the repository wrappers.
