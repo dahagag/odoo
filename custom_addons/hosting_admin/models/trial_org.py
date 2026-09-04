@@ -108,6 +108,15 @@ class HostingTrialOrg(models.Model):
         string="OpenTofu Module Git SHA", copy=False,
         help="The git SHA of the per-trial OpenTofu module this Trial Org was provisioned "
              "from. Audit-only; populated by the real Provisioner implementation.")
+    pending_ami_id = fields.Char(
+        copy=False, readonly=True,
+        help="ami_id staged by AwsProvisioner.issue() before its execution has finished. "
+             "Promoted to ami_id once check_status() sees that job SUCCEEDED, so a failed or "
+             "still-running deploy never claims a version it didn't complete.")
+    pending_tofu_module_git_sha = fields.Char(
+        copy=False, readonly=True,
+        help="tofu_module_git_sha staged by AwsProvisioner.issue() before its execution has "
+             "finished - see pending_ami_id.")
 
     # The most recent lifecycle action's job id (docs/adr/0019): generated once per action and
     # reused verbatim on a retry of that same action within JOB_ID_RETRY_WINDOW - see

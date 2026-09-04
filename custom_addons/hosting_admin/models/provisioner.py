@@ -102,14 +102,15 @@ class AwsProvisioner(Provisioner):
             'ami_id': self._base_ami_id,
             'module_git_sha': self._tofu_module_git_sha,
         })
-        # Both the AMI id and the module's git SHA are already known here - hosting_admin is
-        # telling the per-trial OpenTofu module which of each to use (they're inputs to the
-        # module, not something to discover from the apply's result), so they can be recorded
-        # onto the Deployment Version fields (docs/adr/0024) right away rather than waiting for
-        # the execution to finish.
+        # The AMI id and the module's git SHA are already known here - hosting_admin is telling
+        # the per-trial OpenTofu module which of each to use - but the execution can still fail
+        # (FAILED/TIMED_OUT/ABORTED) after StartExecution returns. Stash them as pending rather
+        # than writing the Deployment Version fields (docs/adr/0024) directly: check_status()
+        # only promotes them once the execution actually reports SUCCEEDED, so a failed deploy
+        # never claims a version it didn't complete.
         trial_org.write({
-            'ami_id': self._base_ami_id,
-            'tofu_module_git_sha': self._tofu_module_git_sha,
+            'pending_ami_id': self._base_ami_id,
+            'pending_tofu_module_git_sha': self._tofu_module_git_sha,
         })
 
     def suspend(self, trial_org, job_id):
@@ -146,7 +147,14 @@ class AwsProvisioner(Provisioner):
         if status == 'RUNNING':
             return
         if status == 'SUCCEEDED':
-            trial_org.write({'last_job_status': 'succeeded', 'last_job_error': False})
+            values = {'last_job_status': 'succeeded', 'last_job_error': False}
+            if trial_org.last_job_action == 'issue':
+                # Only issue() ever sets these pending fields - promote them onto the audit
+                # fields (docs/adr/0024) now that the execution actually completed. Suspend/
+                # wake/destroy successes leave ami_id/tofu_module_git_sha untouched.
+                values['ami_id'] = trial_org.pending_ami_id
+                values['tofu_module_git_sha'] = trial_org.pending_tofu_module_git_sha
+            trial_org.write(values)
         else:
             # FAILED, TIMED_OUT or ABORTED - including a failure Step Functions itself
             # terminates the execution for (e.g. after exhausting a Task's Retry). Surfaced as

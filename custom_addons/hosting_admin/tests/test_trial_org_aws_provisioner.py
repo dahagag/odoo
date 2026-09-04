@@ -62,13 +62,15 @@ class TestAwsProvisioner(TransactionCase):
             'module_git_sha': 'deadbeef',
         })
 
-    def test_issue_records_ami_and_git_sha_on_the_record(self):
+    def test_issue_stages_ami_and_git_sha_as_pending_without_touching_the_audit_fields(self):
         provisioner = self._make_provisioner(base_ami_id='ami-0abc123', tofu_module_git_sha='deadbeef')
 
         provisioner.issue(self.trial_org, 'job-1')
 
-        self.assertEqual(self.trial_org.ami_id, 'ami-0abc123')
-        self.assertEqual(self.trial_org.tofu_module_git_sha, 'deadbeef')
+        self.assertEqual(self.trial_org.pending_ami_id, 'ami-0abc123')
+        self.assertEqual(self.trial_org.pending_tofu_module_git_sha, 'deadbeef')
+        self.assertFalse(self.trial_org.ami_id)
+        self.assertFalse(self.trial_org.tofu_module_git_sha)
 
     def test_issue_records_execution_arn(self):
         provisioner = self._make_provisioner()
@@ -138,7 +140,8 @@ class TestAwsProvisioner(TransactionCase):
 
     def test_check_status_surfaces_succeeded(self):
         client = _make_fake_client()
-        provisioner = self._make_provisioner(client=client)
+        provisioner = self._make_provisioner(client=client, base_ami_id='ami-0abc123',
+                                              tofu_module_git_sha='deadbeef')
         provisioner.issue(self.trial_org, 'job-1')
         self.trial_org.write({'last_job_status': 'running'})
         client.describe_execution.return_value = {'status': 'SUCCEEDED'}
@@ -149,6 +152,8 @@ class TestAwsProvisioner(TransactionCase):
             executionArn=self.trial_org.last_execution_arn)
         self.assertEqual(self.trial_org.last_job_status, 'succeeded')
         self.assertFalse(self.trial_org.last_job_error)
+        self.assertEqual(self.trial_org.ami_id, 'ami-0abc123')
+        self.assertEqual(self.trial_org.tofu_module_git_sha, 'deadbeef')
 
     def test_check_status_surfaces_failed_with_a_clear_error(self):
         client = _make_fake_client()
@@ -166,6 +171,8 @@ class TestAwsProvisioner(TransactionCase):
         self.assertEqual(self.trial_org.last_job_status, 'failed')
         self.assertIn('TrialOrgLifecycleActionFailed', self.trial_org.last_job_error)
         self.assertIn('the lock has been released', self.trial_org.last_job_error)
+        self.assertFalse(self.trial_org.ami_id, "a failed execution must not claim a deployment")
+        self.assertFalse(self.trial_org.tofu_module_git_sha)
 
     def test_check_status_leaves_running_executions_alone(self):
         client = _make_fake_client()
