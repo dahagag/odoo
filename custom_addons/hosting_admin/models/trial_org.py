@@ -1,5 +1,6 @@
 import re
 import uuid
+from datetime import timedelta
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, ValidationError
@@ -10,6 +11,15 @@ from .provisioner import StubProvisioner
 # set per-trial at issuance (system-wide max 25)". A single Trial Org's own seat_cap may be
 # anywhere from 1 up to this ceiling; it is not a cross-trial total.
 SYSTEM_WIDE_SEAT_CAP = 25
+
+# The idle timeout docs/adr/0014 sets for a Trial Org's compute: "stopped after an idle timeout
+# (~30 min)". Checked by a scheduled action (_cron_suspend_idle), never inline on request - this
+# ticket's stub Provisioner never actually stops anything, but the scheduling logic is real.
+IDLE_TIMEOUT_MINUTES = 30
+
+# The snapshot retention window docs/contexts/hosting/CONTEXT.md's Auto-Destroy entry sets: "A
+# short-lived (7-day) database snapshot is retained afterward in case of revival."
+SNAPSHOT_RETENTION_DAYS = 7
 
 # A pragmatic hostname/domain check (labels of letters/digits/hyphens, no leading/trailing
 # hyphen, at least one dot) - good enough to reject an obviously-malformed prospect domain
@@ -92,6 +102,21 @@ class HostingTrialOrg(models.Model):
     # This ticket's stub Provisioner does not retry, so a fresh id is simply recorded here on
     # every successful transition for the real implementation to build on later.
     last_job_id = fields.Char(copy=False, readonly=True)
+
+    # Last recorded activity on this Trial Org's compute, checked by the idle-timeout Suspend
+    # scheduled action (docs/adr/0014) against IDLE_TIMEOUT_MINUTES. Seeded to the moment it goes
+    # active (Issue or Wake) so a freshly-issued or just-woken Trial Org gets a full idle window
+    # before the next Suspend sweep, rather than being immediately eligible.
+    last_activity_at = fields.Datetime(readonly=True, copy=False)
+
+    # Auto-Destroy always records a short-lived snapshot marker (docs/contexts/hosting/
+    # CONTEXT.md's Auto-Destroy entry) regardless of what triggered it - expiry-driven or manual
+    # teardown alike. This ticket only records the retention date; the real snapshot itself is
+    # a later ticket's Provisioner concern.
+    snapshot_retention_until = fields.Date(
+        readonly=True, copy=False,
+        help="The date this Trial Org's post-destroy database snapshot may be discarded "
+             f"({SNAPSHOT_RETENTION_DAYS} days after Auto-Destroy).")
 
     _seat_cap_positive = models.Constraint(
         'CHECK(seat_cap > 0)',
@@ -182,8 +207,43 @@ class HostingTrialOrg(models.Model):
                     ))
 
             provisioner = self._get_provisioner()
+            now = fields.Datetime.now()
             for trial_org in self:
                 job_id = str(uuid.uuid4())
                 getattr(provisioner, action_name)(trial_org, job_id)
-                trial_org.with_context(**{ALLOW_STATE_WRITE_KEY: True}).write(
-                    {'state': target_state, 'last_job_id': job_id})
+                values = {'state': target_state, 'last_job_id': job_id}
+                if target_state == 'active':
+                    # Issue and Wake both start (or restart) the idle-timeout clock.
+                    values['last_activity_at'] = now
+                elif target_state == 'destroyed':
+                    # Always record a snapshot marker on Auto-Destroy, whatever triggered it
+                    # (expiry sweep or manual teardown) - see the field's own docstring above.
+                    values['snapshot_retention_until'] = (
+                        fields.Date.context_today(self) + timedelta(days=SNAPSHOT_RETENTION_DAYS))
+                trial_org.with_context(**{ALLOW_STATE_WRITE_KEY: True}).write(values)
+
+    def _cron_suspend_idle(self):
+        """Scheduled action: Suspend every active Trial Org whose last recorded activity is
+        older than IDLE_TIMEOUT_MINUTES (docs/adr/0014). Never triggered by anything else - a
+        Trial Org only leaves 'active' via this idle check or an explicit action_suspend()."""
+        cutoff = fields.Datetime.now() - timedelta(minutes=IDLE_TIMEOUT_MINUTES)
+        idle_trial_orgs = self.search([
+            ('state', '=', 'active'),
+            ('last_activity_at', '<=', cutoff),
+        ])
+        if idle_trial_orgs:
+            idle_trial_orgs.action_suspend()
+
+    def _cron_auto_destroy_expired(self):
+        """Scheduled action: Auto-Destroy every active or suspended Trial Org whose expiry_date
+        has passed (docs/contexts/hosting/CONTEXT.md's Auto-Destroy entry). Manual teardown via
+        action_destroy() covers the "or on manual teardown" half of Auto-Destroy; both paths
+        share _apply_transition() so both always record the snapshot marker."""
+        today = fields.Date.context_today(self)
+        expired_trial_orgs = self.search([
+            ('state', 'in', ('active', 'suspended')),
+            ('expiry_date', '!=', False),
+            ('expiry_date', '<=', today),
+        ])
+        if expired_trial_orgs:
+            expired_trial_orgs.action_destroy()
