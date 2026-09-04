@@ -23,5 +23,13 @@ for vocabulary (Trial Org, Seat, Org Registration).
         'views/hosting_org_registration_menus.xml',
     ],
 
+    # PROTOTYPE (issue #137, branch prototype/137-expiry-countdown-systray) - throwaway,
+    # never meant to reach this addon's real PR. See the JS file's own header comment.
+    'assets': {
+        'web.assets_backend': [
+            'hosting/static/src/js/prototype_expiry_countdown_systray.js',
+        ],
+    },
+
     'license': 'LGPL-3',
 }
