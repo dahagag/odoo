@@ -1,5 +1,6 @@
 from . import (
     test_crm_lead_trial,
+    test_crm_lead_trial_concurrency,
     test_crm_methodology,
     test_crm_methodology_demo,
     test_crm_methodology_landing,

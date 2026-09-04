@@ -26,6 +26,11 @@ TRIAL_DEFAULT_EXTENSION_DAYS = 14
 # informational display text here, not any enforced system behavior.
 TRIAL_DATA_RETENTION_DAYS = 7
 
+# Context key create()/write() require to accept a caller-supplied trial_org_id - see the
+# docstring on those overrides below. Mirrors hosting.trial.org's own ALLOW_STATE_WRITE_KEY
+# pattern for its 'state' field.
+ALLOW_TRIAL_ORG_WRITE_KEY = 'crm_lead_allow_trial_org_write'
+
 
 class CrmLead(models.Model):
     _inherit = 'crm.lead'
@@ -110,6 +115,7 @@ class CrmLead(models.Model):
         # own default of 0.85 would otherwise render e.g. 23h50m as "1 day").
         duration = babel.dates.format_timedelta(remaining, granularity=granularity, threshold=1, locale=locale)
         return _("%(duration)s left", duration=duration)
+
     methodology_id = fields.Many2one(
         'crm.methodology', string="Sales Methodology",
         help="Defaults from the client's Sales Methodology when this opportunity is created. "
@@ -134,6 +140,15 @@ class CrmLead(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
+        """Reject a caller-supplied ``trial_org_id`` unless it comes from
+        action_issue_trial() itself (signalled via ALLOW_TRIAL_ORG_WRITE_KEY) - see write()
+        below for why ``readonly=True`` alone isn't enough."""
+        if not self.env.context.get(ALLOW_TRIAL_ORG_WRITE_KEY):
+            for vals in vals_list:
+                if 'trial_org_id' in vals:
+                    raise AccessError(_(
+                        "trial_org_id cannot be set directly; it is only assigned by "
+                        "issuing a Trial Org through action_issue_trial()."))
         default_methodology = self.env['crm.methodology']._get_default()
         for vals in vals_list:
             if vals.get('methodology_id'):
@@ -144,6 +159,21 @@ class CrmLead(models.Model):
                 methodology = self.env['res.partner'].browse(partner_id).methodology_id
             vals['methodology_id'] = (methodology or default_methodology).id
         return super().create(vals_list)
+
+    def write(self, vals):
+        """Reject a caller-supplied ``trial_org_id`` unless it comes from
+        action_issue_trial() itself. ``trial_org_id``'s own ``readonly=True`` only hides the
+        field in form views - it does nothing to stop a direct ORM/RPC write() by any user with
+        ordinary write access to crm.lead, who could otherwise point a lead at an arbitrary
+        hosting.trial.org record (an IDOR: action_extend_trial's sudo()-elevated write would
+        then update a Trial Org that caller was never authorized to touch) or clear it to bypass
+        action_issue_trial()'s "already issued" check. Mirrors hosting.trial.org's own guard on
+        its 'state' field."""
+        if 'trial_org_id' in vals and not self.env.context.get(ALLOW_TRIAL_ORG_WRITE_KEY):
+            raise AccessError(_(
+                "trial_org_id cannot be set directly; it is only assigned by "
+                "issuing a Trial Org through action_issue_trial()."))
+        return super().write(vals)
 
     @api.onchange('partner_id')
     def _onchange_partner_id_methodology(self):
@@ -243,8 +273,6 @@ class CrmLead(models.Model):
         if not self.env.user.has_group('sales_team.group_sale_salesman'):
             raise AccessError(_("Only Salespeople can issue a Trial Org."))
         self.check_access('write')
-        if self.trial_org_id:
-            raise UserError(_("A Trial Org has already been issued for this opportunity."))
         if invite_type not in ('targeted', 'open'):
             raise ValidationError(_(
                 "Invite type must be either a Targeted Invite or an Open Invite Link."))
@@ -256,6 +284,16 @@ class CrmLead(models.Model):
             raise UserError(_("A prospect domain is required to issue a Trial Org."))
         if not isinstance(seat_cap, int) or seat_cap <= 0:
             raise UserError(_("Seat count must be a positive whole number."))
+        # Lock this lead's own row for the rest of the transaction, so a second, concurrent
+        # action_issue_trial() call on the same lead blocks here instead of also passing the
+        # "already issued" check below before either has committed - which would create two
+        # active Trial Orgs for one opportunity, one of them orphaned (CodeRabbit #131). The
+        # blocked caller resumes only once we commit, then re-reads trial_org_id fresh and is
+        # correctly rejected by the check immediately below.
+        self.env.cr.execute("SELECT id FROM crm_lead WHERE id = %s FOR UPDATE", (self.id,))
+        self.invalidate_recordset(['trial_org_id'])
+        if self.trial_org_id:
+            raise UserError(_("A Trial Org has already been issued for this opportunity."))
         # hosting.trial.org is Platform-only, cross-org data (docs/adr/0018) that an ordinary
         # salesperson has no direct access to. Elevate only after validating the caller and the
         # collected inputs above, and only for the exact create()/action_issue() this confirmed
@@ -269,7 +307,7 @@ class CrmLead(models.Model):
             'expiry_date': fields.Date.context_today(self) + timedelta(days=TRIAL_INITIAL_EXPIRY_DAYS),
         })
         trial_org.action_issue()
-        self.trial_org_id = trial_org.id
+        self.with_context(**{ALLOW_TRIAL_ORG_WRITE_KEY: True}).write({'trial_org_id': trial_org.id})
         if invite_type == 'targeted':
             message = _("Trial Org issued via a Targeted Invite to %(email)s.", email=invite_email)
         else:
@@ -291,6 +329,13 @@ class CrmLead(models.Model):
             raise UserError(_("Additional days must be a positive whole number."))
         # See action_issue_trial() above: same narrow, post-validation sudo() boundary.
         trial_org = self.trial_org_id.sudo()
+        # Lock the Trial Org's own row before reading expiry_date, so two concurrent
+        # extensions (e.g. the rep and their manager both clicking Extend within the same
+        # second) serialize instead of both reading the same base date and one increment
+        # silently disappearing (CodeRabbit #131). The blocked caller resumes only once we
+        # commit, then re-reads the now-updated expiry_date as its own base.
+        self.env.cr.execute("SELECT id FROM hosting_trial_org WHERE id = %s FOR UPDATE", (trial_org.id,))
+        trial_org.invalidate_recordset(['expiry_date'])
         base_date = trial_org.expiry_date or fields.Date.context_today(self)
         trial_org.write({'expiry_date': base_date + timedelta(days=additional_days)})
         self.message_post(body=_(

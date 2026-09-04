@@ -217,3 +217,29 @@ class TestCrmLeadTrial(TransactionCase):
             self.salesperson.tz = 'Etc/GMT+12'
             lead.invalidate_recordset()
             self.assertIn("hours left", lead.with_user(self.salesperson).trial_expiry_countdown)
+
+    def test_trial_org_id_cannot_be_written_directly(self):
+        # Regression test for the IDOR CodeRabbit flagged on PR #131: readonly=True only hides
+        # trial_org_id in form views, so without this guard any user with ordinary write access
+        # to crm.lead could point a lead at an arbitrary hosting.trial.org record directly,
+        # bypassing action_issue_trial()'s validation and redirecting action_extend_trial()'s
+        # sudo()-elevated write at a Trial Org they were never authorized to touch.
+        lead = self._create_lead(user_id=self.salesperson.id)
+        other_trial_org = self.env['hosting.trial.org'].sudo().create({
+            'name': "Someone Else's Trial Org", 'prospect_domain': "other.example.com",
+        })
+        with self.assertRaises(AccessError):
+            lead.with_user(self.salesperson).write({'trial_org_id': other_trial_org.id})
+
+    def test_trial_org_id_cannot_be_set_on_create(self):
+        preexisting_trial_org = self.env['hosting.trial.org'].sudo().create({
+            'name': "Preexisting Trial Org", 'prospect_domain': "preexisting.example.com",
+        })
+        with self.assertRaises(AccessError):
+            self.env['crm.lead'].with_user(self.salesperson).create({
+                'name': "Attempted IDOR Opportunity",
+                'type': 'opportunity',
+                'partner_id': self.client.id,
+                'team_id': self.team.id,
+                'trial_org_id': preexisting_trial_org.id,
+            })
