@@ -1,0 +1,7 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1320, "h": 960 },
+    { "file": "AuditLog.dc.html", "x": 1400, "y": 0, "w": 1320, "h": 960 }
+  ],
+  "launch": { "view": "canvas" }
+}

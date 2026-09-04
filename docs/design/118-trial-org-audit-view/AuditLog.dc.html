@@ -1,0 +1,227 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+        Ubuntu, "Noto Sans", Arial, sans-serif;
+      font-size: 14px;
+      color: #212529;
+      background: #f8f9fa;
+    }
+    a { color: {{accent}}; text-decoration: none; }
+    a:hover { color: {{accentHover}}; text-decoration: underline; }
+    button { font-family: inherit; cursor: pointer; }
+    .log-row:nth-child(even) { background: #fafbfc; }
+    .log-row:hover { background: #f1f0f6; }
+  </style>
+</helmet>
+
+<div style="width: 1280px; min-height: 900px; background: #f8f9fa; display: flex; flex-direction: column;">
+
+  <!-- Breadcrumb / control panel -->
+  <div style="display:flex; align-items:center; justify-content:space-between; height:48px; padding:0 20px; background:#ffffff; border-bottom:1px solid #dee2e6; flex-shrink:0;">
+    <div style="display:flex; align-items:center; gap:6px; font-size:13px; color:#6c757d;">
+      <span>Hosting Administration</span>
+      <span>/</span>
+      <span style="color:#212529; font-weight:500;">Lifecycle Audit Log</span>
+    </div>
+    <div style="font-size:12px; color:#adb5bd;">Admin-only &middot; every Trial Org</div>
+  </div>
+
+  <div style="flex:1; padding:24px 32px;">
+
+    <!-- Search / filter bar -->
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; position:relative;">
+      <div style="flex:1; display:flex; align-items:center; border:1px solid #ced4da; border-radius:4px; padding:7px 12px; background:#ffffff;">
+        <span style="color:#adb5bd; font-size:14px;">Search org, actor, or action&hellip;</span>
+      </div>
+      <button
+        onClick="{{onToggleMenu}}"
+        style="font-size:13px; font-weight:500; border:1px solid #ced4da; background:#ffffff; color:#212529; border-radius:4px; padding:7px 14px; white-space:nowrap;"
+      >Filters {{menuCaret}}</button>
+
+      <sc-if value="{{menuOpen}}" hint-placeholder-val="{{false}}">
+        <div style="position:absolute; top:42px; right:0; width:220px; background:#ffffff; border:1px solid #dee2e6; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,0.12); z-index:10; padding:8px 0;">
+          <sc-for list="{{filterGroups}}" as="group" hint-placeholder-count="3">
+            <div style="padding:6px 14px 2px; font-size:11px; font-weight:600; color:#adb5bd; text-transform:uppercase; letter-spacing:0.04em;">{{group.label}}</div>
+            <sc-for list="{{group.options}}" as="opt" hint-placeholder-count="3">
+              <div onClick="{{opt.onClick}}" style="{{opt.style}}">
+                <span style="width:16px; display:inline-block;">{{opt.check}}</span>{{opt.label}}
+              </div>
+            </sc-for>
+          </sc-for>
+        </div>
+      </sc-if>
+    </div>
+
+    <!-- Active filter chips -->
+    <sc-if value="{{hasChips}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 4px;">
+        <sc-for list="{{chips}}" as="chip" hint-placeholder-count="2">
+          <div style="display:flex; align-items:center; gap:6px; background:rgba(113,99,158,0.1); color:{{accent}}; border:1px solid rgba(113,99,158,0.3); border-radius:12px; padding:3px 6px 3px 10px; font-size:12px;">
+            <span>{{chip.label}}</span>
+            <button onClick="{{chip.onRemove}}" style="border:none; background:transparent; color:inherit; font-size:13px; line-height:1; padding:0 2px;">&times;</button>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <div style="font-size:12px; color:#adb5bd; margin:10px 0 14px;">{{resultCountLabel}}</div>
+
+    <!-- Table -->
+    <div style="background:#ffffff; border:1px solid #dee2e6; border-radius:4px; overflow:hidden;">
+      <div style="display:grid; grid-template-columns: 1.3fr 0.9fr 1.5fr 0.9fr 1.3fr 1.4fr; padding:10px 20px; font-size:12px; font-weight:600; color:#6c757d; border-bottom:1px solid #dee2e6; text-transform:uppercase; letter-spacing:0.03em;">
+        <div>Trial Org</div>
+        <div>Action</div>
+        <div>Actor</div>
+        <div>Status</div>
+        <div>Started At</div>
+        <div>Execution</div>
+      </div>
+
+      <sc-for list="{{rows}}" as="row" hint-placeholder-count="5">
+        <div class="log-row" style="display:grid; grid-template-columns: 1.3fr 0.9fr 1.5fr 0.9fr 1.3fr 1.4fr; padding:11px 20px; font-size:13px; border-bottom:1px solid #f1f3f5; align-items:center;">
+          <div style="font-weight:500;">{{row.org}}</div>
+          <div>{{row.action}}</div>
+          <div style="color:#495057;">{{row.actor}}</div>
+          <div style="{{row.statusStyle}}">{{row.status}}</div>
+          <div style="color:#6c757d;">{{row.startedAt}}</div>
+          <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; color:#adb5bd;">{{row.execution}}</div>
+        </div>
+      </sc-for>
+
+      <sc-if value="{{noRows}}" hint-placeholder-val="{{false}}">
+        <div style="padding:32px 20px; text-align:center; color:#adb5bd; font-size:13px;">
+          No lifecycle actions match the active filters.
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{
+  "accent": {"editor": "color", "default": "#71639e", "section": "Theme", "options": ["#71639e", "#017e84", "#875a7b", "#2c3e50"]}
+}'>
+const ALL_ROWS = [
+  { org: 'Acme Trial', action: 'Issue', actor: 'Mohamad Hagag', actorType: 'Human', status: 'Succeeded', startedAt: '2026-09-01 09:12', execution: 'trial-12-a1b2' },
+  { org: 'Acme Trial', action: 'Suspend', actor: 'System (idle-timeout)', actorType: 'System', status: 'Succeeded', startedAt: '2026-09-02 03:30', execution: 'trial-12-c3d4' },
+  { org: 'Acme Trial', action: 'Wake', actor: 'Jane Doe (acme.example.com)', actorType: 'Human', status: 'Succeeded', startedAt: '2026-09-02 08:05', execution: 'trial-12-e5f6' },
+  { org: 'Beta Corp', action: 'Issue', actor: 'Mohamad Hagag', actorType: 'Human', status: 'Failed', startedAt: '2026-08-28 14:20', execution: 'trial-9-g7h8' },
+  { org: 'Beta Corp', action: 'Issue', actor: 'Mohamad Hagag', actorType: 'Human', status: 'Succeeded', startedAt: '2026-08-28 15:00', execution: 'trial-9-i9j0' },
+  { org: 'Beta Corp', action: 'Suspend', actor: 'System (idle-timeout)', actorType: 'System', status: 'Succeeded', startedAt: '2026-08-29 02:00', execution: 'trial-9-k1l2' },
+  { org: 'Beta Corp', action: 'Destroy', actor: 'Mohamad Hagag', actorType: 'Human', status: 'Succeeded', startedAt: '2026-09-04 11:45', execution: 'trial-9-m3n4' },
+  { org: 'Globex LLC', action: 'Issue', actor: 'Priya Shah', actorType: 'Human', status: 'Succeeded', startedAt: '2026-09-03 10:00', execution: 'trial-15-o5p6' },
+  { org: 'Globex LLC', action: 'Wake', actor: 'Globex Org User', actorType: 'Human', status: 'Running', startedAt: '2026-09-05 09:58', execution: 'trial-15-q7r8' },
+  { org: 'Acme Trial', action: 'Destroy', actor: 'Mohamad Hagag', actorType: 'Human', status: 'Succeeded', startedAt: '2026-09-05 10:01', execution: 'trial-12-s9t0' },
+];
+
+const FILTER_GROUPS = [
+  { key: 'action', label: 'Action', values: ['Issue', 'Suspend', 'Wake', 'Destroy'] },
+  { key: 'status', label: 'Status', values: ['Succeeded', 'Failed', 'Running'] },
+  { key: 'actorType', label: 'Actor', values: ['Human', 'System'] },
+];
+
+const STATUS_COLORS = {
+  Succeeded: '#1e7e34',
+  Failed: '#dc3545',
+  Running: '#875a00',
+};
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { menuOpen: false, active: {} };
+  }
+
+  _toggleMenu() {
+    return () => this.setState({ menuOpen: !this.state.menuOpen });
+  }
+
+  _toggleFilter(fieldKey, value) {
+    const id = `${fieldKey}:${value}`;
+    return () => {
+      const active = { ...this.state.active };
+      if (active[id]) delete active[id];
+      else active[id] = true;
+      this.setState({ active });
+    };
+  }
+
+  renderVals() {
+    const accent = this.props.accent ?? '#71639e';
+    const active = this.state.active;
+    const activeIds = Object.keys(active);
+
+    const optionStyleBase =
+      'display:flex;align-items:center;padding:6px 14px;font-size:13px;cursor:pointer;';
+
+    const filterGroups = FILTER_GROUPS.map((group) => ({
+      label: group.label,
+      options: group.values.map((value) => {
+        const id = `${group.key}:${value}`;
+        const isActive = !!active[id];
+        return {
+          label: value,
+          check: isActive ? '✓' : '',
+          style: optionStyleBase + (isActive ? `color:${accent};font-weight:500;` : 'color:#212529;'),
+          onClick: this._toggleFilter(group.key, value),
+        };
+      }),
+    }));
+
+    const chips = activeIds.map((id) => {
+      const [fieldKey, value] = id.split(':');
+      return {
+        label: value,
+        onRemove: () => {
+          const nextActive = { ...this.state.active };
+          delete nextActive[id];
+          this.setState({ active: nextActive });
+        },
+      };
+    });
+
+    const byField = { action: [], status: [], actorType: [] };
+    activeIds.forEach((id) => {
+      const [fieldKey, value] = id.split(':');
+      byField[fieldKey].push(value);
+    });
+
+    const rowsFiltered = ALL_ROWS.filter((row) =>
+      (byField.action.length === 0 || byField.action.includes(row.action)) &&
+      (byField.status.length === 0 || byField.status.includes(row.status)) &&
+      (byField.actorType.length === 0 || byField.actorType.includes(row.actorType))
+    );
+
+    const rows = rowsFiltered.map((row) => ({
+      ...row,
+      statusStyle: `font-weight:500;color:${STATUS_COLORS[row.status] || '#212529'};`,
+    }));
+
+    return {
+      accent,
+      accentHover: accent,
+      menuOpen: this.state.menuOpen,
+      menuCaret: this.state.menuOpen ? '▲' : '▼',
+      onToggleMenu: this._toggleMenu(),
+      filterGroups,
+      chips,
+      hasChips: chips.length > 0,
+      rows,
+      noRows: rows.length === 0,
+      resultCountLabel: `${rows.length} of ${ALL_ROWS.length} lifecycle actions`,
+    };
+  }
+}
+</script>
+</body>
+</html>
