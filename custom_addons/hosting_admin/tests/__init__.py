@@ -1,4 +1,5 @@
 from . import (
+    test_trial_org_audit_trail,
     test_trial_org_aws_provisioner,
     test_trial_org_provisioner,
     test_trial_org_scheduled_actions,

@@ -49,6 +49,18 @@ class Provisioner(ABC):
         that only implement the four lifecycle methods above stay valid Provisioner
         implementations; ``AwsProvisioner`` overrides it."""
 
+    def get_audit_trail(self, trial_org):
+        """Return ``trial_org``'s lifecycle audit trail (docs/adr/0022): the overall status/
+        timing of its most recently started execution plus step-by-step detail, read live -
+        never cached or persisted in Odoo. A plain dict (see ``AwsProvisioner``'s override for
+        its shape) rather than a bespoke object, since the view reads it directly and it never
+        round-trips back through a Provisioner call.
+
+        Concrete no-op default, like ``check_status`` above: ``{'available': False}``,
+        matching ``StubProvisioner``'s never-called-AWS reality and giving the view its
+        "unavailable" state for free rather than a bespoke per-implementation check."""
+        return {'available': False}
+
 
 class StubProvisioner(Provisioner):
     """No-op stand-in injected when no AWS wiring is configured (dev/test environments).
@@ -188,6 +200,111 @@ class AwsProvisioner(Provisioner):
         error = response.get('error') or status
         cause = response.get('cause')
         return f"{error}: {cause}" if cause else error
+
+    def get_audit_trail(self, trial_org):
+        """Return ``trial_org``'s lifecycle audit trail (docs/adr/0022): ``DescribeExecution``
+        for the overall status/timing of its most recently started execution, plus
+        ``GetExecutionHistory`` for step-by-step detail (mutex acquired, tofu/EC2-API task
+        started, that task's result - infra/foundation/state_machine.asl.json.tftpl's own
+        state names). Read fresh on every call; never cached or persisted in Odoo.
+
+        Degrades to ``{'available': False}`` rather than raising when there's no recorded
+        execution to ask about, or ``DescribeExecution`` itself fails (e.g. transient AWS/
+        network trouble) - the ticket's own requirement that a failed AWS call show a clear
+        "unavailable" state on the view instead of an error page. A ``GetExecutionHistory``
+        failure alone (e.g. an IAM/KMS permission problem, throttling, or transient AWS/network
+        trouble - AWS documents no distinct "history expired past retention" exception at all,
+        and a genuinely retention-purged execution already fails the ``DescribeExecution`` call
+        above, since the whole execution record is gone, not just its history) instead keeps
+        ``available: True`` with ``steps_available: False`` - the overall status/timing is
+        still real and worth showing even without the step detail. ``steps_unavailable_reason``
+        carries whatever AWS actually reported for that failure, never a guessed cause.
+        """
+        if not trial_org.last_execution_arn:
+            return {'available': False}
+
+        try:
+            execution = self.client.describe_execution(executionArn=trial_org.last_execution_arn)
+        except Exception:
+            _logger.exception(
+                "Could not describe Step Functions execution %s for Trial Org %s's audit trail",
+                trial_org.last_execution_arn, trial_org.id)
+            return {'available': False}
+
+        steps_available = True
+        steps_unavailable_reason = None
+        events = []
+        try:
+            next_token = None
+            while True:
+                # GetExecutionHistory defaults to (and caps a single page at) 100 events;
+                # a retried Task (docs/adr/0019's Retry/BackoffRate) or a long execution can
+                # exceed that, so a single-page read can silently truncate the trail - keep
+                # following nextToken until AWS stops returning one.
+                kwargs = {'executionArn': trial_org.last_execution_arn, 'reverseOrder': False}
+                if next_token:
+                    kwargs['nextToken'] = next_token
+                history = self.client.get_execution_history(**kwargs)
+                events.extend(history.get('events', []))
+                next_token = history.get('nextToken')
+                if not next_token:
+                    break
+        except Exception as exc:
+            _logger.exception(
+                "Could not get Step Functions execution history for %s for Trial Org %s's "
+                "audit trail", trial_org.last_execution_arn, trial_org.id)
+            steps_available = False
+            steps_unavailable_reason = self._describe_history_failure(exc)
+
+        return {
+            'available': True,
+            'action': trial_org.last_job_action,
+            'job_id': trial_org.last_job_id,
+            'status': execution.get('status'),
+            'start_date': execution.get('startDate'),
+            'stop_date': execution.get('stopDate'),
+            'steps_available': steps_available,
+            'steps_unavailable_reason': steps_unavailable_reason,
+            'steps': [self._describe_event(event) for event in events],
+        }
+
+    @staticmethod
+    def _describe_history_failure(exc):
+        """Best-effort label for why GetExecutionHistory failed, read from the AWS error code
+        when the client raised a real ``botocore.ClientError`` (e.g. ``AccessDeniedException``,
+        ``KmsAccessDeniedException``, ``ThrottlingException``) - never a guessed cause. Falls
+        back to the exception's own class name when it carries no AWS error code (e.g. a
+        network-level failure that never reached AWS at all)."""
+        response = getattr(exc, 'response', None)
+        code = response.get('Error', {}).get('Code') if isinstance(response, dict) else None
+        return code or exc.__class__.__name__
+
+    @staticmethod
+    def _describe_event(event):
+        """Reduce one ``GetExecutionHistory`` event to what the audit view shows: when it
+        happened, its type (e.g. ``TaskStateEntered``), the state/task name it belongs to
+        (``AcquireLock``, ``RunTofu``, ``SuspendInstance``, ``WakeInstance`` -
+        infra/foundation/state_machine.asl.json.tftpl's own state names), and - for a failure
+        event - why. Every event type AWS defines carries its own single non-empty
+        ``*EventDetails`` key; this reads whichever one of the handful relevant to this state
+        machine (state entered/exited, task failed, execution failed) the event actually has."""
+        detail = (
+            event.get('stateEnteredEventDetails')
+            or event.get('stateExitedEventDetails')
+            or event.get('taskFailedEventDetails')
+            or event.get('taskTimedOutEventDetails')
+            or event.get('executionFailedEventDetails')
+            or event.get('executionTimedOutEventDetails')
+            or event.get('executionAbortedEventDetails')
+            or {}
+        )
+        return {
+            'timestamp': event.get('timestamp'),
+            'type': event.get('type'),
+            'name': detail.get('name'),
+            'error': detail.get('error'),
+            'cause': detail.get('cause'),
+        }
 
     @staticmethod
     def _execution_name(trial_org, job_id):
