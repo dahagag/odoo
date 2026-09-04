@@ -191,7 +191,7 @@ msgid ""
 "by the Date widget, same as any other date field."
 msgstr ""
 "Data, w której nastąpi Auto-Destroy dla Trial Org tej szansy sprzedaży, o "
-"ile nie nastąpi dodatkowe Extension. Wyświetlana we własnym formacie "
+"ile nie nastąpi dodatkowe przedłużenie. Wyświetlana we własnym formacie "
 "daty/strefie czasowej przeglądającego użytkownika za pomocą widżetu Data, "
 "tak jak każde inne pole daty."
 

@@ -27,7 +27,7 @@ msgstr ""
 #. odoo-python
 #: code:addons/crm_methodology/models/crm_lead.py:0
 msgid "%(duration)s left"
-msgstr "%(duration)s restante"
+msgstr "Tiempo restante: %(duration)s"
 
 #. module: crm_methodology
 #. odoo-python

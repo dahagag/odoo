@@ -180,7 +180,7 @@ msgid ""
 "by the Date widget, same as any other date field."
 msgstr ""
 "此商機的 Trial Org 觸發 Auto-Destroy 的日期（如無進一步的 "
-"Extension）。透過日期元件依檢視使用者自己的日期格式/時區顯示，與其他日期欄位相同。"
+"延長）。透過日期元件依檢視使用者自己的日期格式/時區顯示，與其他日期欄位相同。"
 
 #. module: crm_methodology
 #: model:ir.model.fields,help:crm_methodology.field_crm_methodology_trial_issue_wizard__prospect_domain

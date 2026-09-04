@@ -181,7 +181,7 @@ msgstr ""
 "gegevensbehoudvenster na Auto-Destroy. Het bewaarcijfer weerspiegelt het "
 "beleid dat is gedocumenteerd in het Auto-Destroy-item van "
 "docs/contexts/hosting/CONTEXT.md - hosting_admin automatiseert die "
-"snapshot/dat behoud nog niet zelf, dus dit is informatief en geen "
+"snapshot/gegevensbehoud nog niet zelf, dus dit is informatief en geen "
 "bijgehouden systeemgarantie."
 
 #. module: crm_methodology

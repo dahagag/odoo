@@ -27,7 +27,7 @@ msgstr ""
 #. odoo-python
 #: code:addons/crm_methodology/models/crm_lead.py:0
 msgid "%(duration)s left"
-msgstr "%(duration)s restante(s)"
+msgstr "Tempo restante: %(duration)s"
 
 #. module: crm_methodology
 #. odoo-python
@@ -191,7 +191,7 @@ msgid ""
 "by the Date widget, same as any other date field."
 msgstr ""
 "A data em que o Auto-Destroy é acionado para o Trial Org desta oportunidade,"
-" na ausência de uma Extension adicional. Exibida no formato de data/fuso "
+" na ausência de uma extensão adicional. Exibida no formato de data/fuso "
 "horário do próprio usuário que a visualiza, pelo widget de Data, assim como "
 "qualquer outro campo de data."
 

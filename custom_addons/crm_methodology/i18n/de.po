@@ -194,7 +194,7 @@ msgid ""
 "by the Date widget, same as any other date field."
 msgstr ""
 "Das Datum, an dem Auto-Destroy für die Trial Org dieser Opportunity "
-"ausgelöst wird, sofern keine weitere Extension erfolgt. Wird im eigenen "
+"ausgelöst wird, sofern keine weitere Verlängerung erfolgt. Wird im eigenen "
 "Datumsformat/der eigenen Zeitzone des anzeigenden Benutzers über das Datums-"
 "Widget angezeigt, wie jedes andere Datumsfeld."
 
