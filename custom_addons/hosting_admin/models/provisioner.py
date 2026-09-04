@@ -241,7 +241,7 @@ class AwsProvisioner(Provisioner):
             execution_input.update({k: v for k, v in extra_input.items() if v is not None})
 
         try:
-            self.client.start_execution(
+            response = self.client.start_execution(
                 stateMachineArn=self._state_machine_arn,
                 name=execution_name,
                 input=json.dumps(execution_input),
@@ -249,14 +249,24 @@ class AwsProvisioner(Provisioner):
         except self.client.exceptions.ExecutionAlreadyExists:
             # A genuine retry of the same request: the same job id derives the same execution
             # name/input, which Step Functions itself already recognizes as the same execution
-            # rather than starting a second one (docs/adr/0019) - nothing else to do.
+            # rather than starting a second one (docs/adr/0019) - nothing else to do. There's no
+            # response to read an executionArn from here, so fall back to reconstructing it -
+            # safe in this one case because it's built from the same unqualified
+            # _state_machine_arn StartExecution itself was just called with, not from whatever
+            # arbitrary ARN hosting_admin.aws_state_machine_arn holds in the general case below.
             _logger.info(
                 "StartExecution retry for Trial Org %s job %s already exists; reusing it.",
                 trial_org.id, job_id)
+            trial_org.write({'last_execution_arn': self._execution_arn(execution_name)})
+            return
         except Exception as exc:
             raise UserError(_(
                 "Could not start the %(action)s action for Trial Org %(name)s: %(error)s",
                 action=action, name=trial_org.name, error=exc,
             )) from exc
 
-        trial_org.write({'last_execution_arn': self._execution_arn(execution_name)})
+        # Read the executionArn StartExecution actually returned rather than reconstructing it
+        # from hosting_admin.aws_state_machine_arn: that config value can be version- or
+        # alias-qualified, which _execution_arn()'s naive string replacement would carry into an
+        # invalid execution ARN, breaking check_status()'s later describe_execution call.
+        trial_org.write({'last_execution_arn': response['executionArn']})

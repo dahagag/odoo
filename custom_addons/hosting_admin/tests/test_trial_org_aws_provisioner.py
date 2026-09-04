@@ -15,10 +15,14 @@ class FakeExecutionAlreadyExists(Exception):
     ``except`` machinery needs an actual class, not a Mock."""
 
 
+FAKE_RESPONSE_EXECUTION_ARN = (
+    'arn:aws:states:us-east-1:123456789012:execution:trial-org-lifecycle:from-response')
+
+
 def _make_fake_client():
     client = MagicMock()
     client.exceptions.ExecutionAlreadyExists = FakeExecutionAlreadyExists
-    client.start_execution.return_value = {'executionArn': 'unused - AwsProvisioner derives its own'}
+    client.start_execution.return_value = {'executionArn': FAKE_RESPONSE_EXECUTION_ARN}
     return client
 
 
@@ -109,14 +113,12 @@ class TestAwsProvisioner(TransactionCase):
         self.assertEqual(execution_input['ami_id'], 'ami-deployed')
         self.assertEqual(execution_input['module_git_sha'], 'deployedsha')
 
-    def test_issue_records_execution_arn(self):
+    def test_issue_records_the_execution_arn_returned_by_start_execution(self):
         provisioner = self._make_provisioner()
 
         provisioner.issue(self.trial_org, 'job-1')
 
-        self.assertEqual(
-            self.trial_org.last_execution_arn,
-            f"arn:aws:states:us-east-1:123456789012:execution:trial-org-lifecycle:trial-{self.trial_org.id}-job-1")
+        self.assertEqual(self.trial_org.last_execution_arn, FAKE_RESPONSE_EXECUTION_ARN)
 
     def test_suspend_and_wake_omit_module_version_fields(self):
         self.trial_org.write({'instance_id': 'i-0123456789abcdef0'})
@@ -157,7 +159,11 @@ class TestAwsProvisioner(TransactionCase):
         # dedup working as intended (docs/adr/0019), not a failure.
         provisioner.issue(self.trial_org, 'job-1')
 
-        self.assertTrue(self.trial_org.last_execution_arn)
+        # No response to read an executionArn from on this path - falls back to the
+        # reconstructed (always-unqualified) ARN instead.
+        self.assertEqual(
+            self.trial_org.last_execution_arn,
+            f"arn:aws:states:us-east-1:123456789012:execution:trial-org-lifecycle:trial-{self.trial_org.id}-job-1")
 
     def test_start_execution_other_failure_raises_a_clear_user_error(self):
         client = _make_fake_client()
