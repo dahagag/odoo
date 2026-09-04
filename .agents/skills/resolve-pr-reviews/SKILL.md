@@ -72,16 +72,16 @@ A fix-if-trivial item whose thread was opened by a **human** reviewer skips this
 
 Non-trivial code changes, dismissals, and any human-authored comment (trivial or not) all need a human to actually agree before they land. For each fix-now item, each dismiss item, and each human-authored fix-if-trivial item:
 
-1. **Build the bite-sized guide** — short enough to skim in seconds, no full diff dump:
-   - **Where**: a link to the exact line (`https://github.com/<owner>/<repo>/blob/<commit.oid>/<path>#L<line>`, from the comment's own `path`/`line`/`commit.oid`) plus its `diffHunk` as a fenced code block, so the user sees the real code the comment is about, not a paraphrase of it.
+1. **Build the bite-sized guide, and post it as a normal chat message** — never packed into an `AskUserQuestion` field. Write it as prose a person can actually read: short sentences, paragraph breaks between beats, no telegraphic fragments or over-compressed clauses chasing brevity. Skimmable means well-paced, not crushed. Cover:
+   - **Where**: a link to the exact line (`https://github.com/<owner>/<repo>/blob/<commit.oid>/<path>#L<line>`, from the comment's own `path`/`line`/`commit.oid`) plus its `diffHunk` as a fenced code block, so the user sees the real code the comment is about, not a paraphrase of it. If the fix touches real code or config elsewhere in the repo (not just the flagged line), quote that too — actual snippets and call chains you verified by reading the files, never reconstructed from memory.
    - **What**: the issue, in plain language.
    - **Why**: the concrete reason it matters.
-   - **Fix**: the proposed change (fix-now) or the reasoning for dismissing it (dismiss).
+   - **Fix**: the proposed change (fix-now) or the reasoning for dismissing it (dismiss) — as a diff when the change is textual, so the user sees exactly what will land.
    - **Effect if not addressed**: the consequence, stated in both technical and business terms using this project's own domain vocabulary (its glossary, ADRs, `AGENTS.md`) — not generic severity language.
 
 2. **Settle on one fix approach before presenting it.** If more than one approach is genuinely viable and the choice isn't obvious, call the Skill tool with "grilling" on this one item first, and use its outcome as the proposed fix/approach in the guide. Drive that grilling round through the AskUserQuestion tool (recommended choice first and labeled, options carrying the trade-off, no manual "other" option) rather than a plain-text question list — this skill's own gate is already interactive, and the round should read the same way.
 
-3. **Present the guide via AskUserQuestion**: approve / reject / modify.
+3. **Then call AskUserQuestion with just the decision** — a short question ("Approve this fix?") and short option descriptions (approve / reject / modify), pointing back at the guide already posted in chat. The dialog is for the decision, not the context; cramming the guide into its `question` field renders as a dense, hard-to-read block inside the narrow widget, which defeats the point of writing a bite-sized guide in the first place.
    - **Approve** (fix-now) → apply the fix, call the Skill tool with "code-review" on the resulting diff, then land it (the Step 3 landing sequence). A Standards or Spec finding blocks the land: revise the fix and re-review, or give up and re-bucket the item as escalate — never land over an unresolved finding.
    - **Approve** (human-authored fix-if-trivial) → apply the fix and land it (the Step 3 landing sequence) directly — it already cleared the trivial bar, so no code-review needed.
    - **Approve** (dismiss) → skip the code change entirely: just reply with the guide's reasoning and resolve. No code-review, nothing to land.
