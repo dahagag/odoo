@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="crm_methodology_trial_issue_wizard_view_form" model="ir.ui.view">
+        <field name="name">crm.methodology.trial.issue.wizard.form</field>
+        <field name="model">crm.methodology.trial.issue.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Issue Trial">
+                <field name="lead_id" invisible="1"/>
+                <group>
+                    <field name="prospect_domain"/>
+                    <field name="seat_cap"/>
+                    <field name="invite_type"/>
+                    <field name="invite_email" invisible="invite_type != 'targeted'"
+                           required="invite_type == 'targeted'"/>
+                </group>
+                <footer>
+                    <button name="action_confirm" type="object" string="Issue Trial" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="crm_methodology_trial_issue_wizard_action" model="ir.actions.act_window">
+        <field name="name">Issue Trial</field>
+        <field name="res_model">crm.methodology.trial.issue.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <record id="crm_methodology_trial_extend_wizard_view_form" model="ir.ui.view">
+        <field name="name">crm.methodology.trial.extend.wizard.form</field>
+        <field name="model">crm.methodology.trial.extend.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Extend Trial">
+                <field name="lead_id" invisible="1"/>
+                <group>
+                    <field name="additional_days"/>
+                </group>
+                <footer>
+                    <button name="action_confirm" type="object" string="Extend Trial" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="crm_methodology_trial_extend_wizard_action" model="ir.actions.act_window">
+        <field name="name">Extend Trial</field>
+        <field name="res_model">crm.methodology.trial.extend.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

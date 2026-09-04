@@ -1,1 +1,1 @@
-from . import crm_methodology_playbook_wizard
+from . import crm_methodology_playbook_wizard, crm_methodology_trial_wizard

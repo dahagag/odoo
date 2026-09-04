@@ -16,13 +16,14 @@ reference Properties by key instead of owning field definitions.
     'category': 'Sales/CRM',
     'version': '19.0.1.1.0',
 
-    'depends': ['crm', 'sales_team', 'mail', 'sale_crm'],
+    'depends': ['crm', 'sales_team', 'mail', 'sale_crm', 'hosting_admin'],
 
     'data': [
         'security/crm_methodology_groups.xml',
         'security/ir.model.access.csv',
         'data/crm_methodology_data.xml',
         'views/crm_methodology_views.xml',
+        'views/crm_methodology_trial_wizard_views.xml',
         'views/crm_lead_views.xml',
         'views/res_partner_views.xml',
         'views/crm_methodology_playbook_wizard_views.xml',

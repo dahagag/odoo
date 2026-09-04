@@ -33,6 +33,24 @@
                         <field name="methodology_completion" widget="progressbar"/>
                     </group>
                 </page>
+                <page string="Trial" name="trial_org">
+                    <group>
+                        <!-- hosting.trial.org is Platform-only, cross-org data (docs/adr/0018):
+                             no sales group has ACL access to open its own form, only to see
+                             this field's display name here. no_open avoids surfacing a
+                             clickable link that raises AccessError for every salesperson and
+                             sales manager (and any admin without the Hosting Administrator
+                             group). -->
+                        <field name="trial_org_id" options="{'no_open': True}"/>
+                        <field name="trial_expiry_display" string="Trial Expiry" invisible="not trial_org_id"/>
+                    </group>
+                    <button name="%(crm_methodology_trial_issue_wizard_action)d" type="action"
+                            string="Issue Trial" class="btn-primary"
+                            invisible="trial_org_id" context="{'default_lead_id': id}"/>
+                    <button name="%(crm_methodology_trial_extend_wizard_action)d" type="action"
+                            string="Extend Trial" class="btn-secondary"
+                            invisible="not trial_org_id" context="{'default_lead_id': id}"/>
+                </page>
             </page>
         </field>
     </record>
