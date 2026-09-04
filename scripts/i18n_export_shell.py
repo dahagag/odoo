@@ -44,7 +44,14 @@ lang_by_iso = {}
 for iso in ISO_CODES:
     record = Lang.search([('iso_code', '=', iso)], limit=1)
     if not record:
-        raise RuntimeError(f"No res.lang record with iso_code={iso!r}")
+        # A handful of languages (e.g. Korean) have no bare `res.lang.iso_code` in this
+        # Odoo version - only region variants like `ko_KR`/`ko_KP`. Odoo's own shipped
+        # translation file is still named after the bare code (base/i18n/ko.po), so fall
+        # back to the first region variant (ordered by `code` for determinism) and keep
+        # naming the output file by the requested bare `iso`.
+        record = Lang.search([('code', '=like', f'{iso}\\_%')], order='code', limit=1)
+    if not record:
+        raise RuntimeError(f"No res.lang record with iso_code={iso!r} or a region variant")
     lang_by_iso[iso] = record
     # _activate_lang() alone only flips the record's `active` flag - it does not load any
     # installed module's existing i18n/<iso>.po from disk. _activate_and_install_lang() goes

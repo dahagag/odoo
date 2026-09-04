@@ -24,17 +24,16 @@ are ordinary UI labels here, translated normally.
 
 ## Regenerating
 
-`./scripts/dev.ps1 i18n-export hosting ar,de,es,fr,it,ja,nl,pl,pt,pt_BR,ru,sv,tr,zh_CN,zh_TW`
-(or the `dev.sh` equivalent) regenerates these files' `msgid` set from the addon's current
+`./scripts/dev.ps1 i18n-export hosting` (or the `dev.sh` equivalent) with no explicit
+language argument regenerates all 16 of these files' `msgid` set from the addon's current
 models/views - installs the module into a disposable database, activates each language, and
 calls `odoo.tools.translate.trans_export` (see `scripts/i18n_export_shell.py`). It does not
 write `msgstr` values for a new or changed string; edit the `.po` file directly afterward (or
 via a normal PO editor) and re-run `./scripts/dev.ps1 update hosting`, no further
 regeneration step required.
 
-`ko` is deliberately excluded from that command: this Odoo version's `res.lang` only ships
-Korean under `iso_code` `ko_KR`/`ko_KP`, not a bare `ko`, so `i18n_export_shell.py`'s
-iso-code lookup fails for it (`No res.lang record with iso_code='ko'`). `ko.po` was authored
-by hand instead, copying another file's header/entry structure and translating each
-`msgstr`; keep doing that for `ko` until this repo's default language set adds a `ko_KR`
-special case.
+`ko` needs `i18n_export_shell.py`'s region-variant fallback: this Odoo version's `res.lang`
+only ships Korean under `iso_code` `ko_KR`/`ko_KP`, not a bare `ko`, so the script falls back
+to the first region variant (`ko_KP`, picked deterministically by `code` order) when the
+exact `iso_code` lookup misses, and still writes the output as `ko.po` - matching how Odoo's
+own `base` module names its shipped Korean translation.
