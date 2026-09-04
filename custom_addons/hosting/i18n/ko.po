@@ -1,0 +1,56 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* hosting
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 19.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-04 13:18+0000\n"
+"PO-Revision-Date: 2026-09-04 13:18+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: ko\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
+
+#. module: hosting
+#: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__prospect_domain
+msgid "Domain"
+msgstr "도메인"
+
+#. module: hosting
+#: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__expiry_date
+msgid "Expiry Date"
+msgstr "만료일"
+
+#. module: hosting
+#: model:ir.ui.menu,name:hosting.menu_hosting_root
+msgid "Hosting"
+msgstr "호스팅"
+
+#. module: hosting
+#: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__name
+msgid "Org Name"
+msgstr "조직명"
+
+#. module: hosting
+#: model:ir.actions.act_window,name:hosting.action_hosting_org_registration
+#: model:ir.model,name:hosting.model_hosting_org_registration
+#: model:ir.ui.menu,name:hosting.menu_hosting_org_registration
+#: model_terms:ir.ui.view,arch_db:hosting.view_hosting_org_registration_form
+#: model_terms:ir.ui.view,arch_db:hosting.view_hosting_org_registration_list
+msgid "Org Registration"
+msgstr "조직 등록"
+
+#. module: hosting
+#: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__seat_cap
+msgid "Seat Cap"
+msgstr "좌석 한도"
+
+#. module: hosting
+#: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__seats_used
+msgid "Seats Used"
+msgstr "사용된 좌석"

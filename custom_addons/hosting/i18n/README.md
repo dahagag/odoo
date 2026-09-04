@@ -1,14 +1,21 @@
 # Translations
 
 Scope: the 7 user-facing strings the Org Registration view introduces (menu/action/view
-titles and the five `hosting.org.registration` field labels). Two languages, chosen for this
-addon's small surface rather than the crm_methodology's full ship-wide "Translated" tier (see
-`custom_addons/crm_methodology/i18n/README.md`):
+titles and the five `hosting.org.registration` field labels). One `.po` file exists for
+every language code in `dev.ps1`/`dev.sh`'s `i18n-export` default set (`$DefaultI18nLanguages`
+/ `DEFAULT_I18N_LANGUAGES`) - the same "Translated" tier `crm_methodology` ships (see
+`custom_addons/crm_methodology/i18n/README.md`), just scoped to this addon's much smaller
+7-string surface instead of a full skeleton for every Odoo-shipped language:
 
-- **`ar`**, **`fr`**: real, hand-authored translations of all 7 strings.
+- **`ar`, `de`, `es`, `fr`, `it`, `ja`, `ko`, `nl`, `pl`, `pt`, `pt_BR`, `ru`, `sv`, `tr`,
+  `zh_CN`, `zh_TW`**: real, hand-authored translations of all 7 strings.
 
-No other language codes are shipped here yet - add one the same way `crm_methodology`'s were
-added (see its README's "Regenerating" section) if a broader rollout is needed later.
+This tier is LLM-drafted, not reviewed by a native speaker of each language - treat it the
+way you would any community-contributed `.po` file and get a native-speaker review before
+treating the wording as final.
+
+No other language codes are shipped here - add one by hand the same way (a new `<lang>.po`
+following the header/entry shape below) if a broader rollout is needed later.
 
 None of this addon's strings fall under `docs/contexts/hosting/CONTEXT.md`'s glossary
 treatment of specific product/technical terms kept in English (Trial Org, Auto-Destroy,
@@ -17,10 +24,17 @@ are ordinary UI labels here, translated normally.
 
 ## Regenerating
 
-`./scripts/dev.ps1 i18n-export hosting ar,fr` (or `bash scripts/dev.sh i18n-export hosting
-ar,fr`) regenerates these two files' `msgid` set from the addon's current models/views -
-installs the module into a disposable database, activates each language, and calls
-`odoo.tools.translate.trans_export` (see `scripts/i18n_export_shell.py`). It does not write
-`msgstr` values for a new or changed string; edit the `.po` file directly afterward (or via a
-normal PO editor) and re-run `./scripts/dev.ps1 update hosting`, no further regeneration step
-required.
+`./scripts/dev.ps1 i18n-export hosting ar,de,es,fr,it,ja,nl,pl,pt,pt_BR,ru,sv,tr,zh_CN,zh_TW`
+(or the `dev.sh` equivalent) regenerates these files' `msgid` set from the addon's current
+models/views - installs the module into a disposable database, activates each language, and
+calls `odoo.tools.translate.trans_export` (see `scripts/i18n_export_shell.py`). It does not
+write `msgstr` values for a new or changed string; edit the `.po` file directly afterward (or
+via a normal PO editor) and re-run `./scripts/dev.ps1 update hosting`, no further
+regeneration step required.
+
+`ko` is deliberately excluded from that command: this Odoo version's `res.lang` only ships
+Korean under `iso_code` `ko_KR`/`ko_KP`, not a bare `ko`, so `i18n_export_shell.py`'s
+iso-code lookup fails for it (`No res.lang record with iso_code='ko'`). `ko.po` was authored
+by hand instead, copying another file's header/entry structure and translating each
+`msgstr`; keep doing that for `ko` until this repo's default language set adds a `ko_KR`
+special case.
