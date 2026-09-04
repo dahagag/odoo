@@ -182,6 +182,23 @@ class TestAwsProvisioner(TransactionCase):
             self.trial_org.last_execution_arn,
             f"arn:aws:states:us-east-1:123456789012:execution:trial-org-lifecycle:trial-{self.trial_org.id}-job-1")
 
+    def test_execution_already_exists_strips_a_version_or_alias_qualifier(self):
+        # A qualified hosting_admin.aws_state_machine_arn (docs/adr/0022) is valid input to
+        # StartExecution, but a Step Functions execution ARN never carries that qualifier -
+        # reconstructing one that does would make describe_execution() fail on every later poll.
+        client = _make_fake_client()
+        client.start_execution.side_effect = FakeExecutionAlreadyExists()
+        provisioner = AwsProvisioner(
+            state_machine_arn=f"{STATE_MACHINE_ARN}:PROD",
+            base_ami_id='ami-0abc123', tofu_module_git_sha='deadbeef', client=client,
+        )
+
+        provisioner.issue(self.trial_org, 'job-1')
+
+        self.assertEqual(
+            self.trial_org.last_execution_arn,
+            f"arn:aws:states:us-east-1:123456789012:execution:trial-org-lifecycle:trial-{self.trial_org.id}-job-1")
+
     def test_start_execution_other_failure_raises_a_clear_user_error(self):
         client = _make_fake_client()
         client.start_execution.side_effect = RuntimeError("boom")

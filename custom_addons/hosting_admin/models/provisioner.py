@@ -198,9 +198,15 @@ class AwsProvisioner(Provisioner):
         return f"trial-{trial_org.id}-{job_id}"
 
     def _execution_arn(self, execution_name):
-        # arn:aws:states:<region>:<account>:stateMachine:<name>
+        # arn:aws:states:<region>:<account>:stateMachine:<name>[:qualifier]
         #   -> arn:aws:states:<region>:<account>:execution:<name>:<execution_name>
-        return self._state_machine_arn.replace(':stateMachine:', ':execution:') + f":{execution_name}"
+        # hosting_admin.aws_state_machine_arn (docs/adr/0022) may be a version- or
+        # alias-qualified ARN - StartExecution accepts that, but a Step Functions *execution*
+        # ARN never carries that trailing qualifier segment, so it's dropped before rebuilding
+        # one (docs/adr/0019's IAM scope documents the unqualified execution ARN format).
+        unqualified_state_machine_arn = ':'.join(self._state_machine_arn.split(':')[:7])
+        return (unqualified_state_machine_arn.replace(':stateMachine:', ':execution:')
+                + f":{execution_name}")
 
     @staticmethod
     def _require_module_config(name, value):
