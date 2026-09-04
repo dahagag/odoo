@@ -1,10 +1,10 @@
 ---
 name: resolve-pr-reviews
-description: Fetch a PR's bot review comments (CodeRabbit and similar), triage, fix, and resolve them.
+description: Fetch a PR's review comments (bots like CodeRabbit, and humans), triage, fix, and resolve them.
 disable-model-invocation: true
 ---
 
-Bot review comments (CodeRabbit and similar) pile up on a PR faster than a human wants to work them one by one. This skill fetches every unresolved bot thread, **triages** each into one of four buckets, lands the clear-cut ones, and gates anything non-trivial behind informed consent before touching the branch.
+Review comments — bot (CodeRabbit and similar) and human — pile up on a PR faster than a human wants to work them one by one. This skill fetches every unresolved thread, **triages** each into one of four buckets, lands the clear-cut ones, and gates anything non-trivial, or asked for by a human reviewer, behind informed consent before touching the branch.
 
 ## Step 0: Preflight — merge conflicts
 
@@ -14,7 +14,7 @@ Run `gh pr view <target> --json mergeable`. If `mergeable` is `CONFLICTING`, cal
 
 Done when `mergeable` is not `CONFLICTING`.
 
-## Step 1: Fetch unresolved bot threads
+## Step 1: Fetch unresolved threads
 
 Review threads, their resolution state, and each comment's author type are only available via GraphQL — the REST comment list has neither. Query:
 
@@ -36,9 +36,9 @@ query($owner: String!, $repo: String!, $pr: Int!) {
 }
 ```
 
-Run it with `gh api graphql -f query=... -F owner=... -F repo=... -F pr=...`, paginating if `pageInfo.hasNextPage`. Keep only threads where `isResolved` is false and the first comment's author `__typename` is `Bot` — a human's own review thread is never this skill's to resolve.
+Run it with `gh api graphql -f query=... -F owner=... -F repo=... -F pr=...`, paginating if `pageInfo.hasNextPage`. Keep every thread where `isResolved` is false, and record whether its first comment's author `__typename` is `Bot` or `User` — that origin decides how Step 3 treats an otherwise-trivial fix.
 
-Done when you hold the full set of unresolved bot threads for the target PR.
+Done when you hold the full set of unresolved threads for the target PR.
 
 ## Step 2: Triage
 
@@ -51,9 +51,9 @@ Sort each thread into exactly one bucket by your own judgment of the comment and
 
 Done when every fetched thread (or group) has exactly one bucket.
 
-## Step 3: Land fix-if-trivial automatically
+## Step 3: Land bot-authored fix-if-trivial automatically
 
-For each fix-if-trivial item, apply the fix, then **land** it — the same landing sequence Step 4 also uses:
+For each fix-if-trivial item whose thread was opened by a bot, apply the fix, then **land** it — the same landing sequence Step 4 also uses:
 
 <landing-sequence>
 
@@ -66,9 +66,11 @@ Run the repo's existing test/lint commands (read them from the project's own con
 
 No user gate here — this bucket exists precisely so it doesn't need one, and it's a one-liner or a bot-graded nitpick, so it also skips the code-review check Step 4 runs for real fixes.
 
-## Step 4: Gate fix-now and dismiss
+A fix-if-trivial item whose thread was opened by a **human** reviewer skips this step entirely and falls through to Step 4 instead — however small the fix, a human asked for it directly and gets the same gate as a real change.
 
-Non-trivial code changes and dismissals both need a human to actually agree before they land. For each fix-now or dismiss item:
+## Step 4: Gate everything else
+
+Non-trivial code changes, dismissals, and any human-authored comment (trivial or not) all need a human to actually agree before they land. For each fix-now item, each dismiss item, and each human-authored fix-if-trivial item:
 
 1. **Build the bite-sized guide** — short enough to skim in seconds, no full diff dump:
    - **Where**: a link to the exact line (`https://github.com/<owner>/<repo>/blob/<commit.oid>/<path>#L<line>`, from the comment's own `path`/`line`/`commit.oid`) plus its `diffHunk` as a fenced code block, so the user sees the real code the comment is about, not a paraphrase of it.
@@ -77,15 +79,16 @@ Non-trivial code changes and dismissals both need a human to actually agree befo
    - **Fix**: the proposed change (fix-now) or the reasoning for dismissing it (dismiss).
    - **Effect if not addressed**: the consequence, stated in both technical and business terms using this project's own domain vocabulary (its glossary, ADRs, `AGENTS.md`) — not generic severity language.
 
-2. **Settle on one fix approach before presenting it.** If more than one approach is genuinely viable and the choice isn't obvious, call the Skill tool with "grilling" on this one item first, and use its outcome as the proposed fix/approach in the guide.
+2. **Settle on one fix approach before presenting it.** If more than one approach is genuinely viable and the choice isn't obvious, call the Skill tool with "grilling" on this one item first, and use its outcome as the proposed fix/approach in the guide. Drive that grilling round through the AskUserQuestion tool (recommended choice first and labeled, options carrying the trade-off, no manual "other" option) rather than a plain-text question list — this skill's own gate is already interactive, and the round should read the same way.
 
 3. **Present the guide via AskUserQuestion**: approve / reject / modify.
    - **Approve** (fix-now) → apply the fix, call the Skill tool with "code-review" on the resulting diff, then land it (the Step 3 landing sequence). A Standards or Spec finding blocks the land: revise the fix and re-review, or give up and re-bucket the item as escalate — never land over an unresolved finding.
+   - **Approve** (human-authored fix-if-trivial) → apply the fix and land it (the Step 3 landing sequence) directly — it already cleared the trivial bar, so no code-review needed.
    - **Approve** (dismiss) → skip the code change entirely: just reply with the guide's reasoning and resolve. No code-review, nothing to land.
    - **Reject** → leave the thread unresolved and carry it into Step 5 as an escalation.
-   - **Modify** → fold the user's requested change into the fix, then follow the same approve path as fix-now above (code-review, then land).
+   - **Modify** → fold the user's requested change into the fix, then follow the same approve path as its bucket above.
 
-Done when every fix-now and dismiss item has been presented and landed, rejected, or escalated.
+Done when every item from this step has been presented and landed, rejected, or escalated.
 
 ## Step 5: Route escalations
 

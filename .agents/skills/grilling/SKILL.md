@@ -5,17 +5,21 @@ description: Grill the user relentlessly about a plan, decision, or idea. Use wh
 
 Interview the user relentlessly until you reach a shared understanding. Map this as a **design tree**: every decision branches into the decisions that hang off it.
 
-Work the tree in **rounds**. The **frontier** is every decision whose prerequisites are already settled: the questions you can ask _now_ without guessing at answers you haven't heard yet. Ask the whole frontier in one round, then wait for the user's answers before the next round.
+Work the tree in **rounds**. The **frontier** is every decision whose prerequisites are already settled: the questions you can ask _now_ without guessing at answers you haven't heard yet. Ask the whole frontier in one round: number each question and give your recommended answer. Then wait for the user's answers before the next round.
 
-Ask every round through the **AskUserQuestion tool** — this is a human-in-the-loop interview, not a text dump the user has to answer by typing back. Never fall back to posting a plain-text numbered list of questions; if AskUserQuestion is unavailable for some reason, say so explicitly rather than silently reverting to text.
+Format a round like so:
 
-Turn each frontier question into one AskUserQuestion entry:
-- `header`: a short label for the decision (≤12 chars), not the question itself.
-- `question`: the full question, including whatever context or trade-off explanation it needs.
-- `options`: 2-4 mutually exclusive choices. Put your recommended choice first and append "(Recommended)" to its label; give every option a `description` that states the trade-off, not just a restatement of the label. Don't add an "other/none of these" option yourself — the tool always offers a free-text "Other".
-- `multiSelect`: true only when the choices genuinely aren't mutually exclusive.
+```
+❓ **Q1** - **<question title>**: <question body, might be multiple paragraphs, including multiple choices>
 
-A single AskUserQuestion call takes up to 4 questions. If the frontier has more than 4, split it across multiple AskUserQuestion calls before waiting — they still count as one round, since the user answers them together in one turn.
+➡️ <your recommended answer>
+
+---
+
+❓ **Q2** - **<question title>**: <question body, might be multiple paragraphs, including multiple choices>
+
+➡️ <your recommended answer>
+```
 
 Each round the user answers reshapes the tree: settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a _later_ round, not this one.
 
