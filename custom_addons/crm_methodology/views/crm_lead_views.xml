@@ -42,7 +42,7 @@
                              sales manager (and any admin without the Hosting Administrator
                              group). -->
                         <field name="trial_org_id" options="{'no_open': True}"/>
-                        <field name="trial_expiry_date" invisible="not trial_org_id"/>
+                        <field name="trial_expiry_display" string="Trial Expiry" invisible="not trial_org_id"/>
                     </group>
                     <button name="%(crm_methodology_trial_issue_wizard_action)d" type="action"
                             string="Issue Trial" class="btn-primary"

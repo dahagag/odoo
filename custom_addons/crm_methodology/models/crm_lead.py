@@ -1,7 +1,12 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
+from datetime import time as dt_time
+
+import babel.dates
+import pytz
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
+from odoo.tools.misc import babel_locale_parse, format_date, get_lang
 
 # docs/contexts/hosting/CONTEXT.md: "An isolated Odoo instance ... running for a fixed window
 # (default 14 days) before Auto-Destroy." hosting_admin's own Trial Org model never sets
@@ -14,6 +19,12 @@ TRIAL_INITIAL_EXPIRY_DAYS = 14
 # starting point on the wizard, not a value the spec ties to TRIAL_INITIAL_EXPIRY_DAYS above -
 # kept as its own constant so the two can diverge later without looking like a bug.
 TRIAL_DEFAULT_EXTENSION_DAYS = 14
+
+# docs/contexts/hosting/CONTEXT.md's Auto-Destroy entry: "A short-lived (7-day) database
+# snapshot is retained afterward in case of revival." This is a documented policy figure only -
+# hosting_admin (#108) has no snapshot/retention model or job at all yet, so this constant drives
+# informational display text here, not any enforced system behavior.
+TRIAL_DATA_RETENTION_DAYS = 7
 
 
 class CrmLead(models.Model):
@@ -29,6 +40,76 @@ class CrmLead(models.Model):
              "Extension. Rendered in the viewing user's own date format/timezone by the Date "
              "widget, same as any other date field.",
     )
+    trial_expiry_countdown = fields.Char(
+        string="Trial Expiry Countdown", compute='_compute_trial_expiry_countdown',
+        # A plain compute='' field defaults compute_sudo to False (unlike related='', which
+        # defaults it to True) - without this, reading trial_org_id.expiry_date below raises
+        # AccessError for every user without hosting_admin's Administrator group, i.e. every
+        # real salesperson (docs/adr/0018). This mirrors what the related trial_expiry_date
+        # field above already gets for free.
+        compute_sudo=True,
+        help="Time remaining until Auto-Destroy, computed against the viewing user's own "
+             "timezone - not stored, so it reflects 'now' the moment this record is read.",
+    )
+    trial_expiry_display = fields.Html(
+        string="Trial Expiry", compute='_compute_trial_expiry_countdown', compute_sudo=True,
+        sanitize=False,
+        help="The Trial Org's expiry date, formatted per the viewing user's own language, with "
+             "the countdown to Auto-Destroy and the post-Auto-Destroy data retention window "
+             "alongside it. The retention figure reflects the policy documented in "
+             "docs/contexts/hosting/CONTEXT.md's Auto-Destroy entry - hosting_admin does not "
+             "yet automate that snapshot/retention itself, so this is informational, not a "
+             "tracked system guarantee.",
+    )
+
+    @api.depends('trial_org_id.expiry_date')
+    def _compute_trial_expiry_countdown(self):
+        for lead in self:
+            expiry_date = lead.trial_org_id.expiry_date
+            countdown = lead._trial_expiry_countdown_label(expiry_date)
+            lead.trial_expiry_countdown = countdown
+            if not expiry_date:
+                lead.trial_expiry_display = False
+                continue
+            lead.trial_expiry_display = _(
+                "%(date)s <strong>%(countdown)s</strong> + %(retention_days)s days of data retention",
+                date=format_date(lead.env, expiry_date), countdown=countdown,
+                retention_days=TRIAL_DATA_RETENTION_DAYS,
+            )
+
+    def _trial_expiry_countdown_label(self, expiry_date):
+        """A human countdown to Auto-Destroy in the viewing user's own timezone: days while more
+        than a day remains, then hours, then minutes as the deadline gets close - since
+        hosting.trial.org's ``expiry_date`` is a Date with no time-of-day, Auto-Destroy is taken
+        to run through the end of that calendar day in the viewer's timezone, not its start.
+
+        The magnitude+unit text (e.g. "5 days", "1 hour") is rendered by Babel's
+        ``format_timedelta`` against the viewer's own language/locale (odoo.tools.misc.get_lang,
+        babel_locale_parse) rather than a hand-rolled ``"%(n)s days"`` template: CLDR plural
+        rules vary far more than English's singular/plural split (e.g. Arabic and Russian have
+        several plural forms with different thresholds), so only Babel's own locale data can
+        pluralize correctly across every language this instance might run in. Only the
+        surrounding "... left"/"expired" wording goes through Odoo's own translation."""
+        self.ensure_one()
+        if not expiry_date:
+            return False
+        tz = pytz.timezone(self.env.user.tz or 'UTC')
+        now_local = pytz.utc.localize(fields.Datetime.now()).astimezone(tz)
+        expiry_local = tz.localize(datetime.combine(expiry_date, dt_time.max))
+        remaining = expiry_local - now_local
+        if remaining.total_seconds() <= 0:
+            return _("expired")
+        if remaining >= timedelta(days=1):
+            granularity = 'day'
+        elif remaining >= timedelta(hours=1):
+            granularity = 'hour'
+        else:
+            granularity = 'minute'
+        locale = babel_locale_parse(get_lang(self.env).code)
+        # threshold=1 keeps the chosen granularity from rounding up into the next unit (Babel's
+        # own default of 0.85 would otherwise render e.g. 23h50m as "1 day").
+        duration = babel.dates.format_timedelta(remaining, granularity=granularity, threshold=1, locale=locale)
+        return _("%(duration)s left", duration=duration)
     methodology_id = fields.Many2one(
         'crm.methodology', string="Sales Methodology",
         help="Defaults from the client's Sales Methodology when this opportunity is created. "

@@ -1,4 +1,6 @@
-from datetime import timedelta
+from datetime import date, datetime, timedelta
+
+from freezegun import freeze_time
 
 from odoo import fields
 from odoo.exceptions import AccessError, UserError
@@ -133,3 +135,85 @@ class TestCrmLeadTrial(TransactionCase):
         lead = self._create_lead(user_id=self.salesperson.id)
         with self.assertRaises(UserError):
             lead.with_user(self.salesperson).action_extend_trial(additional_days=7)
+
+    def test_salesperson_without_hosting_access_can_read_trial_expiry_display(self):
+        # Regression test: trial_expiry_countdown/trial_expiry_display are plain compute=
+        # fields, which default compute_sudo to False (unlike related= fields, which default it
+        # to True) - without compute_sudo=True on both, reading them raised AccessError for any
+        # user outside hosting_admin's own Administrator group, i.e. every real salesperson.
+        lead = self._create_lead(user_id=self.salesperson.id)
+        lead.with_user(self.salesperson).action_issue_trial(
+            prospect_domain="prospect.example.com", seat_cap=5, invite_type='open',
+        )
+        salesperson_lead = lead.with_user(self.salesperson)
+        # Not "days left": at the default 14-day issuance window, Babel's own locale data
+        # (deliberately not hardcoded here - see _trial_expiry_countdown_label) renders this as
+        # "2 weeks left" rather than "14 days left".
+        self.assertTrue(salesperson_lead.trial_expiry_countdown.endswith("left"))
+        self.assertIn("days of data retention", salesperson_lead.trial_expiry_display)
+
+    def test_expiry_countdown_transitions_from_days_to_hours_to_expired(self):
+        lead = self._create_lead(user_id=self.salesperson.id)
+        trial_org = lead.with_user(self.salesperson).action_issue_trial(
+            prospect_domain="prospect.example.com", seat_cap=5, invite_type='open',
+        )
+        trial_org.expiry_date = date(2026, 9, 4)
+
+        with freeze_time(datetime(2026, 9, 1, 12, 0, 0)):
+            lead.invalidate_recordset()
+            self.assertIn("days left", lead.trial_expiry_countdown)
+
+        with freeze_time(datetime(2026, 9, 4, 12, 0, 0)):
+            lead.invalidate_recordset()
+            self.assertIn("hours left", lead.trial_expiry_countdown)
+
+        with freeze_time(datetime(2026, 9, 4, 23, 55, 0)):
+            lead.invalidate_recordset()
+            self.assertIn("minutes left", lead.trial_expiry_countdown)
+
+        with freeze_time(datetime(2026, 9, 5, 0, 0, 1)):
+            lead.invalidate_recordset()
+            self.assertEqual(lead.trial_expiry_countdown, "expired")
+
+    def test_expiry_countdown_pluralizes_via_babel_not_a_hardcoded_template(self):
+        # 14 days is exactly 2 weeks: Babel's own locale data (not a hand-rolled "%(n)s days"
+        # template) chooses the coarser, more natural unit humans actually use for that
+        # duration - proof this delegates real pluralization/unit choice to the localization
+        # library rather than reimplementing it.
+        lead = self._create_lead(user_id=self.salesperson.id)
+        trial_org = lead.with_user(self.salesperson).action_issue_trial(
+            prospect_domain="prospect.example.com", seat_cap=5, invite_type='open',
+        )
+        # Auto-Destroy runs through the end of expiry_date, so the frozen instant is set 13 full
+        # days before it at midnight - a hair under 14 days remains, which Babel rounds to 14.
+        trial_org.expiry_date = date(2026, 9, 18)
+
+        with freeze_time(datetime(2026, 9, 5, 0, 0, 0)):
+            lead.invalidate_recordset()
+            self.assertEqual(lead.trial_expiry_countdown, "2 weeks left")
+
+        # A little over one day remaining is not a whole number of weeks, so Babel reports it
+        # in days instead, with correct singular agreement ("day", not "days").
+        trial_org.expiry_date = date(2026, 9, 5)
+        with freeze_time(datetime(2026, 9, 4, 23, 0, 0)):
+            lead.invalidate_recordset()
+            self.assertEqual(lead.trial_expiry_countdown, "1 day left")
+
+    def test_expiry_countdown_respects_the_viewing_users_own_timezone(self):
+        lead = self._create_lead(user_id=self.salesperson.id)
+        trial_org = lead.with_user(self.salesperson).action_issue_trial(
+            prospect_domain="prospect.example.com", seat_cap=5, invite_type='open',
+        )
+        trial_org.expiry_date = date(2026, 9, 4)
+
+        # The same frozen UTC instant reads as already past midnight for a user far enough
+        # ahead of UTC, but still hours from midnight for a user far enough behind it - proving
+        # the countdown is computed against each viewer's own tz, not a single server clock.
+        with freeze_time(datetime(2026, 9, 4, 12, 0, 0)):
+            self.salesperson.tz = 'Pacific/Kiritimati'
+            lead.invalidate_recordset()
+            self.assertEqual(lead.with_user(self.salesperson).trial_expiry_countdown, "expired")
+
+            self.salesperson.tz = 'Etc/GMT+12'
+            lead.invalidate_recordset()
+            self.assertIn("hours left", lead.with_user(self.salesperson).trial_expiry_countdown)
