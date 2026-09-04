@@ -80,6 +80,7 @@ class TestAwsProvisioner(TransactionCase):
             f"arn:aws:states:us-east-1:123456789012:execution:trial-org-lifecycle:trial-{self.trial_org.id}-job-1")
 
     def test_suspend_and_wake_omit_module_version_fields(self):
+        self.trial_org.write({'instance_id': 'i-0123456789abcdef0'})
         client = _make_fake_client()
         provisioner = self._make_provisioner(client=client, base_ami_id='ami-0abc123',
                                               tofu_module_git_sha='deadbeef')
@@ -88,8 +89,25 @@ class TestAwsProvisioner(TransactionCase):
 
         execution_input = json.loads(client.start_execution.call_args.kwargs['input'])
         self.assertEqual(execution_input['action'], 'suspend')
+        self.assertEqual(execution_input['instance_id'], 'i-0123456789abcdef0')
         self.assertNotIn('ami_id', execution_input)
         self.assertNotIn('module_git_sha', execution_input)
+
+    def test_suspend_without_an_instance_id_raises_a_clear_error_instead_of_calling_aws(self):
+        client = _make_fake_client()
+        provisioner = self._make_provisioner(client=client)
+
+        with self.assertRaises(UserError):
+            provisioner.suspend(self.trial_org, 'job-2')
+        client.start_execution.assert_not_called()
+
+    def test_wake_without_an_instance_id_raises_a_clear_error_instead_of_calling_aws(self):
+        client = _make_fake_client()
+        provisioner = self._make_provisioner(client=client)
+
+        with self.assertRaises(UserError):
+            provisioner.wake(self.trial_org, 'job-2')
+        client.start_execution.assert_not_called()
 
     def test_start_execution_already_exists_is_treated_as_a_successful_retry(self):
         client = _make_fake_client()

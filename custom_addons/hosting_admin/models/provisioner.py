@@ -113,10 +113,14 @@ class AwsProvisioner(Provisioner):
         })
 
     def suspend(self, trial_org, job_id):
-        self._start_execution(trial_org, job_id, 'suspend')
+        self._start_execution(trial_org, job_id, 'suspend', extra_input={
+            'instance_id': self._require_instance_id(trial_org, 'suspend'),
+        })
 
     def wake(self, trial_org, job_id):
-        self._start_execution(trial_org, job_id, 'wake')
+        self._start_execution(trial_org, job_id, 'wake', extra_input={
+            'instance_id': self._require_instance_id(trial_org, 'wake'),
+        })
 
     def destroy(self, trial_org, job_id):
         self._start_execution(trial_org, job_id, 'destroy')
@@ -171,6 +175,20 @@ class AwsProvisioner(Provisioner):
         # arn:aws:states:<region>:<account>:stateMachine:<name>
         #   -> arn:aws:states:<region>:<account>:execution:<name>:<execution_name>
         return self._state_machine_arn.replace(':stateMachine:', ':execution:') + f":{execution_name}"
+
+    @staticmethod
+    def _require_instance_id(trial_org, action):
+        # SuspendInstance/WakeInstance (infra/foundation/state_machine.asl.json.tftpl) resolve
+        # "$.instance_id" from the execution input; an execution started without it would fail
+        # inside AWS with an opaque JSONPath error. Fail clearly here instead - see
+        # instance_id's own field docstring on hosting.trial.org for why it may still be blank.
+        if not trial_org.instance_id:
+            raise UserError(_(
+                "Cannot %(action)s Trial Org %(name)s: no EC2 instance id has been recorded "
+                "for it yet.",
+                action=action, name=trial_org.name,
+            ))
+        return trial_org.instance_id
 
     @staticmethod
     def _state_key(trial_org):

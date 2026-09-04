@@ -129,6 +129,16 @@ class HostingTrialOrg(models.Model):
         help="Step Functions execution ARN for last_job_id, recorded by AwsProvisioner so "
              "check_status() knows what to poll (docs/adr/0019).")
 
+    # EC2 instance id Suspend/Wake need for their execution input
+    # (infra/foundation/state_machine.asl.json.tftpl's SuspendInstance/WakeInstance Task
+    # states, docs/adr/0021). Not populated by this ticket: it's only known once an Issue
+    # execution's `tofu apply` actually runs, and #113's state machine doesn't yet surface its
+    # outputs back onto the execution's own result for hosting_admin to read (a gap for a
+    # follow-up ticket, not something #114 can close from the hosting_admin side alone).
+    # AwsProvisioner.suspend()/wake() raise a clear error rather than start an execution AWS
+    # would reject anyway if this is still blank.
+    instance_id = fields.Char(copy=False, readonly=True)
+
     # Last recorded activity on this Trial Org's compute, checked by the idle-timeout Suspend
     # scheduled action (docs/adr/0014) against IDLE_TIMEOUT_MINUTES. Seeded to the moment it goes
     # active (Issue or Wake) so a freshly-issued or just-woken Trial Org gets a full idle window
@@ -229,7 +239,17 @@ class HostingTrialOrg(models.Model):
         record was for this same action, is still ``running``, and started within
         JOB_ID_RETRY_WINDOW - a retry of the same lifecycle request - otherwise mint a fresh
         UUID. ``started_at`` is returned alongside so a reused job keeps its *original* start
-        time rather than resetting the 24h window on every retry."""
+        time rather than resetting the 24h window on every retry.
+
+        Scope note: this bookkeeping lives inside _apply_transition()'s own savepoint, so it
+        only dedupes a retry that reaches Odoo again *after* a prior attempt's write actually
+        committed (e.g. a second call arriving while the record's last job is still 'running').
+        It cannot dedupe the narrower crash window between StartExecution succeeding in AWS and
+        that same savepoint later rolling back for an unrelated reason - Odoo has no record of
+        the job id to reuse in that case, so the next attempt mints a fresh one and a second,
+        differently-named execution reaches AWS. That's still safe, not silently inconsistent:
+        the second execution can't proceed until the first stray one's DynamoDB lock is
+        released (docs/adr/0020), which is the actual backstop for this specific race."""
         self.ensure_one()
         now = fields.Datetime.now()
         if (self.last_job_action == action_name
