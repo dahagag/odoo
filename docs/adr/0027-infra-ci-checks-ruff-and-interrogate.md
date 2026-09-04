@@ -9,7 +9,9 @@ anything reproducible locally or immune to that integration being paused or rate
 A new required job, **`infra-checks`** (display name **"Infra checks (required)"**, matching this
 workflow's existing `"Lint (required)"`/`"Docs-build tooling tests (required)"` naming), closes that
 gap: `tofu fmt -check`/`tofu validate` against all three OpenTofu modules (via the official
-`opentofu/setup-opentofu` action, pinned to `1.8.5`), `ruff==0.16.1` (matching the pin already used
+`opentofu/setup-opentofu` action, with `tofu_version: 1.8.5` pinning the OpenTofu CLI version
+installed by that action — distinct from the action's own version reference), `ruff==0.16.1`
+(matching the pin already used
 in `docker/odoo-dev.Dockerfile`) for general Python code quality, and `interrogate==1.7.0
 --fail-under 80` for docstring coverage — both scoped to `infra/**` broadly rather than narrowly to
 `infra/foundation/lambda_src` (the only place Python exists under `infra/` today), so a future
