@@ -1,0 +1,263 @@
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 19.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-04 03:02+0000\n"
+"PO-Revision-Date: 2026-09-04 03:02+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: tr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid ""
+"%(date)s <strong>%(countdown)s</strong> + %(retention_days)s days of data "
+"retention"
+msgstr ""
+"%(date)s <strong>%(countdown)s</strong> + %(retention_days)s gün veri "
+"saklama"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "%(duration)s left"
+msgstr "%(duration)s kaldı"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "A Targeted Invite needs a specific email address."
+msgstr "Hedefli Davet için belirli bir e-posta adresi gereklidir."
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "A Trial Org has already been issued for this opportunity."
+msgstr "Bu fırsat için zaten bir Trial Org verilmiş."
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "A prospect domain is required to issue a Trial Org."
+msgstr "Trial Org vermek için bir potansiyel müşteri alan adı gereklidir."
+
+#. module: crm_methodology
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_methodology_trial_extend_wizard__additional_days
+msgid "Additional Days"
+msgstr "Ek gün sayısı"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "Additional days must be a positive whole number."
+msgstr "Ek gün sayısı pozitif bir tam sayı olmalıdır."
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "An Open Invite Link doesn't take a specific email address."
+msgstr "Açık Davet Bağlantısı belirli bir e-posta adresi kabul etmez."
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/wizards/crm_methodology_trial_wizard.py:0
+msgid "Enter the specific email address for a Targeted Invite."
+msgstr "Hedefli Davet için belirli e-posta adresini girin."
+
+#. module: crm_methodology
+#: model:ir.actions.act_window,name:crm_methodology.crm_methodology_trial_extend_wizard_action
+#: model_terms:ir.ui.view,arch_db:crm_methodology.crm_lead_view_form_methodology
+#: model_terms:ir.ui.view,arch_db:crm_methodology.crm_methodology_trial_extend_wizard_view_form
+msgid "Extend Trial"
+msgstr "Deneme süresini uzat"
+
+#. module: crm_methodology
+#: model:ir.model,name:crm_methodology.model_crm_methodology_trial_extend_wizard
+msgid "Extend Trial Org"
+msgstr "Trial Org'u uzat"
+
+#. module: crm_methodology
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_methodology_trial_issue_wizard__invite_email
+msgid "Invite Email"
+msgstr "Davet e-postası"
+
+#. module: crm_methodology
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_methodology_trial_issue_wizard__invite_type
+msgid "Invite Type"
+msgstr "Davet türü"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "Invite type must be either a Targeted Invite or an Open Invite Link."
+msgstr "Davet türü ya Hedefli Davet ya da Açık Davet Bağlantısı olmalıdır."
+
+#. module: crm_methodology
+#: model:ir.actions.act_window,name:crm_methodology.crm_methodology_trial_issue_wizard_action
+#: model_terms:ir.ui.view,arch_db:crm_methodology.crm_lead_view_form_methodology
+#: model_terms:ir.ui.view,arch_db:crm_methodology.crm_methodology_trial_issue_wizard_view_form
+msgid "Issue Trial"
+msgstr "Deneme sürümü ver"
+
+#. module: crm_methodology
+#: model:ir.model,name:crm_methodology.model_crm_methodology_trial_issue_wizard
+msgid "Issue Trial Org"
+msgstr "Trial Org ver"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "No Trial Org has been issued for this opportunity yet."
+msgstr "Bu fırsat için henüz bir Trial Org verilmedi."
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "Only Salespeople can issue a Trial Org."
+msgstr "Trial Org yalnızca Satış Temsilcileri tarafından verilebilir."
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid ""
+"Only this Opportunity's owner or a Sales Manager can extend its Trial Org."
+msgstr ""
+"Trial Org yalnızca bu Fırsatın sahibi veya bir Satış Müdürü tarafından "
+"uzatılabilir."
+
+#. module: crm_methodology
+#: model:ir.model.fields.selection,name:crm_methodology.selection__crm_methodology_trial_issue_wizard__invite_type__open
+msgid "Open Invite Link"
+msgstr "Açık Davet Bağlantısı"
+
+#. module: crm_methodology
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_methodology_trial_issue_wizard__prospect_domain
+msgid "Prospect Domain"
+msgstr "Potansiyel müşteri alan adı"
+
+#. module: crm_methodology
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_methodology_trial_issue_wizard__seat_cap
+msgid "Seat Cap"
+msgstr "Koltuk sınırı"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "Seat count must be a positive whole number."
+msgstr "Koltuk sayısı pozitif bir tam sayı olmalıdır."
+
+#. module: crm_methodology
+#: model:ir.model.fields.selection,name:crm_methodology.selection__crm_methodology_trial_issue_wizard__invite_type__targeted
+msgid "Targeted Invite"
+msgstr "Hedefli Davet"
+
+#. module: crm_methodology
+#: model:ir.model.fields,help:crm_methodology.field_crm_lead__trial_org_id
+msgid "The Trial Org issued for this opportunity's prospect, if any."
+msgstr "Bu fırsatın potansiyel müşterisi için verilmiş Trial Org (varsa)."
+
+#. module: crm_methodology
+#: model:ir.model.fields,help:crm_methodology.field_crm_lead__trial_expiry_display
+msgid ""
+"The Trial Org's expiry date, formatted per the viewing user's own language, "
+"with the countdown to Auto-Destroy and the post-Auto-Destroy data retention "
+"window alongside it. The retention figure reflects the policy documented in "
+"docs/contexts/hosting/CONTEXT.md's Auto-Destroy entry - hosting_admin does "
+"not yet automate that snapshot/retention itself, so this is informational, "
+"not a tracked system guarantee."
+msgstr ""
+"Trial Org'un son kullanma tarihi, görüntüleyen kullanıcının kendi diline "
+"göre biçimlendirilmiş olarak, Auto-Destroy'a kalan süre ve Auto-Destroy "
+"sonrası veri saklama penceresiyle birlikte gösterilir. Saklama süresi, "
+"docs/contexts/hosting/CONTEXT.md içindeki Auto-Destroy maddesinde belgelenen"
+" politikayı yansıtır - hosting_admin bu anlık görüntüyü/saklamayı henüz "
+"otomatikleştirmemiştir, bu nedenle bu yalnızca bilgi amaçlıdır, izlenen bir "
+"sistem garantisi değildir."
+
+#. module: crm_methodology
+#: model:ir.model.fields,help:crm_methodology.field_crm_lead__trial_expiry_date
+msgid ""
+"The date Auto-Destroy fires for this opportunity's Trial Org, absent a "
+"further Extension. Rendered in the viewing user's own date format/timezone "
+"by the Date widget, same as any other date field."
+msgstr ""
+"Ek bir Extension olmadığı sürece, bu fırsatın Trial Org'u için Auto-"
+"Destroy'un tetikleneceği tarih. Diğer tüm tarih alanlarında olduğu gibi, "
+"Tarih bileşeni aracılığıyla görüntüleyen kullanıcının kendi tarih "
+"biçimi/saat diliminde gösterilir."
+
+#. module: crm_methodology
+#: model:ir.model.fields,help:crm_methodology.field_crm_methodology_trial_issue_wizard__prospect_domain
+msgid ""
+"The prospect's expected email domain. Locked on the Trial Org once issued."
+msgstr ""
+"Potansiyel müşterinin beklenen e-posta alan adı. Verildikten sonra Trial Org"
+" üzerinde sabitlenir."
+
+#. module: crm_methodology
+#: model:ir.model.fields,help:crm_methodology.field_crm_lead__trial_expiry_countdown
+msgid ""
+"Time remaining until Auto-Destroy, computed against the viewing user's own "
+"timezone - not stored, so it reflects 'now' the moment this record is read."
+msgstr ""
+"Auto-Destroy'a kalan süre, görüntüleyen kullanıcının kendi saat dilimine "
+"göre hesaplanır - saklanmaz, bu nedenle bu kaydın okunduğu andaki 'şimdi'yi "
+"yansıtır."
+
+#. module: crm_methodology
+#: model_terms:ir.ui.view,arch_db:crm_methodology.crm_lead_view_form_methodology
+msgid "Trial"
+msgstr "Deneme"
+
+#. module: crm_methodology
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_lead__trial_expiry_date
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_lead__trial_expiry_display
+#: model_terms:ir.ui.view,arch_db:crm_methodology.crm_lead_view_form_methodology
+msgid "Trial Expiry"
+msgstr "Deneme süresinin bitişi"
+
+#. module: crm_methodology
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_lead__trial_expiry_countdown
+msgid "Trial Expiry Countdown"
+msgstr "Deneme süresi bitişine geri sayım"
+
+#. module: crm_methodology
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_lead__trial_org_id
+msgid "Trial Org"
+msgstr "Trial Org"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "Trial Org extended by %(days)s days, new expiry %(expiry)s."
+msgstr "Trial Org %(days)s gün uzatıldı, yeni son kullanma tarihi %(expiry)s."
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "Trial Org issued via a Targeted Invite to %(email)s."
+msgstr "Trial Org, Hedefli Davet yoluyla %(email)s adresine verildi."
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "Trial Org issued via an Open Invite Link for %(domain)s."
+msgstr "Trial Org, %(domain)s için Açık Davet Bağlantısı yoluyla verildi."
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "expired"
+msgstr "süresi doldu"
+
+#. module: crm_methodology
+#: model_terms:ir.ui.view,arch_db:crm_methodology.crm_methodology_trial_extend_wizard_view_form
+#: model_terms:ir.ui.view,arch_db:crm_methodology.crm_methodology_trial_issue_wizard_view_form
+msgid "Cancel"
+msgstr "İptal"

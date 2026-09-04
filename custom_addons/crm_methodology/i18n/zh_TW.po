@@ -1,0 +1,248 @@
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 19.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-04 03:02+0000\n"
+"PO-Revision-Date: 2026-09-04 03:02+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: zh_TW\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid ""
+"%(date)s <strong>%(countdown)s</strong> + %(retention_days)s days of data "
+"retention"
+msgstr "%(date)s <strong>%(countdown)s</strong> + %(retention_days)s 天資料保留期"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "%(duration)s left"
+msgstr "剩餘 %(duration)s"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "A Targeted Invite needs a specific email address."
+msgstr "定向邀請需要提供具體的電子郵件地址。"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "A Trial Org has already been issued for this opportunity."
+msgstr "此商機已核發過 Trial Org。"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "A prospect domain is required to issue a Trial Org."
+msgstr "核發 Trial Org 需要潛在客戶網域。"
+
+#. module: crm_methodology
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_methodology_trial_extend_wizard__additional_days
+msgid "Additional Days"
+msgstr "額外天數"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "Additional days must be a positive whole number."
+msgstr "額外天數必須為正整數。"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "An Open Invite Link doesn't take a specific email address."
+msgstr "開放邀請連結不接受具體的電子郵件地址。"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/wizards/crm_methodology_trial_wizard.py:0
+msgid "Enter the specific email address for a Targeted Invite."
+msgstr "請輸入定向邀請所需的具體電子郵件地址。"
+
+#. module: crm_methodology
+#: model:ir.actions.act_window,name:crm_methodology.crm_methodology_trial_extend_wizard_action
+#: model_terms:ir.ui.view,arch_db:crm_methodology.crm_lead_view_form_methodology
+#: model_terms:ir.ui.view,arch_db:crm_methodology.crm_methodology_trial_extend_wizard_view_form
+msgid "Extend Trial"
+msgstr "延長試用"
+
+#. module: crm_methodology
+#: model:ir.model,name:crm_methodology.model_crm_methodology_trial_extend_wizard
+msgid "Extend Trial Org"
+msgstr "延長 Trial Org"
+
+#. module: crm_methodology
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_methodology_trial_issue_wizard__invite_email
+msgid "Invite Email"
+msgstr "邀請電子郵件"
+
+#. module: crm_methodology
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_methodology_trial_issue_wizard__invite_type
+msgid "Invite Type"
+msgstr "邀請類型"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "Invite type must be either a Targeted Invite or an Open Invite Link."
+msgstr "邀請類型必須是定向邀請或開放邀請連結。"
+
+#. module: crm_methodology
+#: model:ir.actions.act_window,name:crm_methodology.crm_methodology_trial_issue_wizard_action
+#: model_terms:ir.ui.view,arch_db:crm_methodology.crm_lead_view_form_methodology
+#: model_terms:ir.ui.view,arch_db:crm_methodology.crm_methodology_trial_issue_wizard_view_form
+msgid "Issue Trial"
+msgstr "核發試用"
+
+#. module: crm_methodology
+#: model:ir.model,name:crm_methodology.model_crm_methodology_trial_issue_wizard
+msgid "Issue Trial Org"
+msgstr "核發 Trial Org"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "No Trial Org has been issued for this opportunity yet."
+msgstr "此商機尚未核發 Trial Org。"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "Only Salespeople can issue a Trial Org."
+msgstr "只有業務人員可以核發 Trial Org。"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid ""
+"Only this Opportunity's owner or a Sales Manager can extend its Trial Org."
+msgstr "只有此商機的負責人或業務經理可以延長其 Trial Org。"
+
+#. module: crm_methodology
+#: model:ir.model.fields.selection,name:crm_methodology.selection__crm_methodology_trial_issue_wizard__invite_type__open
+msgid "Open Invite Link"
+msgstr "開放邀請連結"
+
+#. module: crm_methodology
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_methodology_trial_issue_wizard__prospect_domain
+msgid "Prospect Domain"
+msgstr "潛在客戶網域"
+
+#. module: crm_methodology
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_methodology_trial_issue_wizard__seat_cap
+msgid "Seat Cap"
+msgstr "席次上限"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "Seat count must be a positive whole number."
+msgstr "席次數必須為正整數。"
+
+#. module: crm_methodology
+#: model:ir.model.fields.selection,name:crm_methodology.selection__crm_methodology_trial_issue_wizard__invite_type__targeted
+msgid "Targeted Invite"
+msgstr "定向邀請"
+
+#. module: crm_methodology
+#: model:ir.model.fields,help:crm_methodology.field_crm_lead__trial_org_id
+msgid "The Trial Org issued for this opportunity's prospect, if any."
+msgstr "為此商機的潛在客戶核發的 Trial Org（如有）。"
+
+#. module: crm_methodology
+#: model:ir.model.fields,help:crm_methodology.field_crm_lead__trial_expiry_display
+msgid ""
+"The Trial Org's expiry date, formatted per the viewing user's own language, "
+"with the countdown to Auto-Destroy and the post-Auto-Destroy data retention "
+"window alongside it. The retention figure reflects the policy documented in "
+"docs/contexts/hosting/CONTEXT.md's Auto-Destroy entry - hosting_admin does "
+"not yet automate that snapshot/retention itself, so this is informational, "
+"not a tracked system guarantee."
+msgstr ""
+"Trial Org 的到期日期，依檢視使用者自己的語言格式化，並附帶距 Auto-Destroy 的倒數計時以及 Auto-Destroy "
+"之後的資料保留窗口。保留天數反映了 docs/contexts/hosting/CONTEXT.md 中 Auto-Destroy 項目所記載的政策 -"
+" hosting_admin 尚未自動執行該快照/保留機制，因此這僅供參考，並非系統追蹤的保證。"
+
+#. module: crm_methodology
+#: model:ir.model.fields,help:crm_methodology.field_crm_lead__trial_expiry_date
+msgid ""
+"The date Auto-Destroy fires for this opportunity's Trial Org, absent a "
+"further Extension. Rendered in the viewing user's own date format/timezone "
+"by the Date widget, same as any other date field."
+msgstr ""
+"此商機的 Trial Org 觸發 Auto-Destroy 的日期（如無進一步的 "
+"Extension）。透過日期元件依檢視使用者自己的日期格式/時區顯示，與其他日期欄位相同。"
+
+#. module: crm_methodology
+#: model:ir.model.fields,help:crm_methodology.field_crm_methodology_trial_issue_wizard__prospect_domain
+msgid ""
+"The prospect's expected email domain. Locked on the Trial Org once issued."
+msgstr "潛在客戶預期的電子郵件網域。核發後將鎖定於該 Trial Org。"
+
+#. module: crm_methodology
+#: model:ir.model.fields,help:crm_methodology.field_crm_lead__trial_expiry_countdown
+msgid ""
+"Time remaining until Auto-Destroy, computed against the viewing user's own "
+"timezone - not stored, so it reflects 'now' the moment this record is read."
+msgstr "距 Auto-Destroy 的剩餘時間，依檢視使用者自己的時區計算 - 不會儲存，因此反映的是讀取該記錄當下的「現在」。"
+
+#. module: crm_methodology
+#: model_terms:ir.ui.view,arch_db:crm_methodology.crm_lead_view_form_methodology
+msgid "Trial"
+msgstr "試用"
+
+#. module: crm_methodology
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_lead__trial_expiry_date
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_lead__trial_expiry_display
+#: model_terms:ir.ui.view,arch_db:crm_methodology.crm_lead_view_form_methodology
+msgid "Trial Expiry"
+msgstr "試用到期"
+
+#. module: crm_methodology
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_lead__trial_expiry_countdown
+msgid "Trial Expiry Countdown"
+msgstr "試用到期倒數計時"
+
+#. module: crm_methodology
+#: model:ir.model.fields,field_description:crm_methodology.field_crm_lead__trial_org_id
+msgid "Trial Org"
+msgstr "Trial Org"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "Trial Org extended by %(days)s days, new expiry %(expiry)s."
+msgstr "Trial Org 已延長 %(days)s 天，新到期日期為 %(expiry)s。"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "Trial Org issued via a Targeted Invite to %(email)s."
+msgstr "Trial Org 已透過定向邀請核發給 %(email)s。"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "Trial Org issued via an Open Invite Link for %(domain)s."
+msgstr "Trial Org 已透過開放邀請連結為 %(domain)s 核發。"
+
+#. module: crm_methodology
+#. odoo-python
+#: code:addons/crm_methodology/models/crm_lead.py:0
+msgid "expired"
+msgstr "已過期"
+
+#. module: crm_methodology
+#: model_terms:ir.ui.view,arch_db:crm_methodology.crm_methodology_trial_extend_wizard_view_form
+#: model_terms:ir.ui.view,arch_db:crm_methodology.crm_methodology_trial_issue_wizard_view_form
+msgid "Cancel"
+msgstr "取消"
