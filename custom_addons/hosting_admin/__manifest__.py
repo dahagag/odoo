@@ -21,6 +21,7 @@ Wake, Auto-Destroy, Deployment Version).
     'data': [
         'security/hosting_admin_groups.xml',
         'security/ir.model.access.csv',
+        'data/ir_cron.xml',
     ],
 
     'license': 'LGPL-3',
