@@ -5,6 +5,7 @@ from freezegun import freeze_time
 from odoo import fields
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import TransactionCase, tagged
+from odoo.tools.translate import code_translations
 
 
 @tagged('post_install', '-at_install')
@@ -243,3 +244,24 @@ class TestCrmLeadTrial(TransactionCase):
                 'team_id': self.team.id,
                 'trial_org_id': preexisting_trial_org.id,
             })
+
+    def test_python_translations_are_actually_wired_up(self):
+        # Regression test for a real bug found via manual browser testing, not by any of the
+        # other 60+ tests in this suite: Odoo 19 replaced ir.translation with a runtime .po
+        # reader (odoo.tools.translate.CodeTranslations) that only treats an entry as a Python
+        # _() string if its comments carry the literal 'odoo-python' marker line - view-arch/
+        # field-label strings need no such marker, which is exactly why every one of those kept
+        # passing while every _() string in crm_lead.py silently fell back to English. Every
+        # other test here runs in English, so none of them could have caught this - only a
+        # translated-language assertion like this one can.
+        translations = code_translations.get_python_translations('crm_methodology', 'fr')
+        self.assertTrue(
+            translations,
+            "no Python translations loaded for crm_methodology/fr - the 'odoo-python' comment "
+            "marker on the .po entries is likely missing again",
+        )
+        self.assertEqual(translations.get('%(duration)s left'), "Il reste %(duration)s")
+        self.assertEqual(
+            translations.get('Only Salespeople can issue a Trial Org.'),
+            "Seuls les Commerciaux peuvent émettre un Trial Org.",
+        )
