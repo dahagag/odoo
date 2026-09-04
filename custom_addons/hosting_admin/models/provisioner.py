@@ -266,6 +266,8 @@ class AwsProvisioner(Provisioner):
             or event.get('taskFailedEventDetails')
             or event.get('taskTimedOutEventDetails')
             or event.get('executionFailedEventDetails')
+            or event.get('executionTimedOutEventDetails')
+            or event.get('executionAbortedEventDetails')
             or {}
         )
         return {
