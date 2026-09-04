@@ -6,12 +6,20 @@ so far (a docstring-coverage gap on private Lambda-handler helpers, a real IAM A
 IAM role-name-length bug) was caught by hand or by CodeRabbit's third-party review, never by
 anything reproducible locally or immune to that integration being paused or rate-limited.
 
-A new required job, **`infra-checks`**, closes that gap: `tofu fmt -check`/`tofu validate` against
-all three OpenTofu modules (via the official `opentofu/setup-opentofu` action, pinned to `1.8.5`),
-`ruff` for general Python code quality, and `interrogate --fail-under 80` for docstring coverage —
-both scoped to `infra/**` broadly rather than narrowly to `infra/foundation/lambda_src` (the only
-place Python exists under `infra/` today), so a future Python file added anywhere else in that tree
-is covered without a CI config change.
+A new required job, **`infra-checks`** (display name **"Infra checks (required)"**, matching this
+workflow's existing `"Lint (required)"`/`"Docs-build tooling tests (required)"` naming), closes that
+gap: `tofu fmt -check`/`tofu validate` against all three OpenTofu modules (via the official
+`opentofu/setup-opentofu` action, pinned to `1.8.5`), `ruff==0.16.1` (matching the pin already used
+in `docker/odoo-dev.Dockerfile`) for general Python code quality, and `interrogate==1.7.0
+--fail-under 80` for docstring coverage — both scoped to `infra/**` broadly rather than narrowly to
+`infra/foundation/lambda_src` (the only place Python exists under `infra/` today), so a future
+Python file added anywhere else in that tree is covered without a CI config change. Both tools are
+version-pinned so the gate's result doesn't silently shift under a future tool release. Like the
+existing `lint`/`docs-build-tests` jobs, `infra-checks` itself always runs — its *steps* are skipped
+via a new `infra_relevant` path-filter output on the `changes` job when nothing relevant changed,
+not the job itself gated at the workflow-trigger level (`docs/agents/sdlc.md` already documents why
+this repo rejected trigger-level path filters: an irrelevant PR would get no required-check result
+at all rather than a fast, real pass).
 
 **Why two Python tools, not one.** `ruff` already implements pydocstyle's `D` rule family, which
 would have been the obvious single-tool choice. It was rejected for this purpose: pydocstyle's
@@ -20,10 +28,15 @@ CodeRabbit found — `_client`, `_table`, `_ssm_client`, `_get_parameter`, `_sig
 private helper functions that convention deliberately exempts. `interrogate` counts single-
 underscore names by default, which is why it (and CodeRabbit) caught them; `ruff`'s `D` rules would
 not. So `ruff` (already in this repo's toolchain) handles general code quality, and `interrogate`
-(a new, narrowly-scoped dependency) handles docstring coverage specifically. The coverage
-percentage is documented in the workflow itself as a regression-prevention tripwire, not a
-documentation-quality proxy — a bare percentage doesn't distinguish a substantive docstring from
-one written mechanically to clear the bar.
+(a new, narrowly-scoped dependency) handles docstring coverage specifically. Run with its default
+settings — `--ignore-semiprivate` is deliberately **not** passed, since that would exempt exactly
+the single-underscore functions this check exists to cover, undoing the behavior CodeRabbit already
+established as the bar for this codebase. The threshold matches CodeRabbit's own default
+(`--fail-under 80`) rather than a repo-specific number, so the local/CI gate and CodeRabbit's
+pre-merge check can't disagree with each other over the same code. The coverage percentage is
+documented in the workflow itself as a regression-prevention tripwire, not a documentation-quality
+proxy — a bare percentage doesn't distinguish a substantive docstring from one written mechanically
+to clear the bar.
 
 **The job is Docker-free by design**, modeled on the existing `docs-build-tests` job
 (`actions/setup-python`, no Odoo dev image) rather than the existing `lint` job's
