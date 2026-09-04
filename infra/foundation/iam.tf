@@ -1,0 +1,580 @@
+# ---------------------------------------------------------------------------
+# hosting_admin-facing role (ADR-0019, ADR-0022, ADR-0023)
+#
+# Assumed cross-account from the Platform Account by hosting_admin's own native role. Narrow by
+# design: hosting_admin only ever starts/reads Step Functions executions and reads Trial Org log
+# groups — it never touches EC2/S3/DynamoDB directly (those belong to the state machine's own
+# execution role and the ECS task role below).
+# ---------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "hosting_admin_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [var.hosting_admin_trusted_role_arn]
+    }
+  }
+
+  # sts:TagSession lets hosting_admin pass a TrialOrgId session tag when it assumes this role to
+  # view one specific Trial Org's execution history or logs. AWS Step Functions doesn't support
+  # tagging individual executions (only state machines/activities), so per-Trial-Org scoping of
+  # DescribeExecution/GetExecutionHistory/log reads (ADR-0022, ADR-0023) is expressed instead via
+  # an IAM policy variable (${aws:PrincipalTag/TrialOrgId}) matched against the execution-name /
+  # log-group-name convention below, populated from this session tag.
+  statement {
+    effect  = "Allow"
+    actions = ["sts:TagSession"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [var.hosting_admin_trusted_role_arn]
+    }
+  }
+}
+
+resource "aws_iam_role" "hosting_admin" {
+  name                 = "${var.environment}-hosting-admin"
+  assume_role_policy   = data.aws_iam_policy_document.hosting_admin_trust.json
+  max_session_duration = 3600
+}
+
+data "aws_iam_policy_document" "hosting_admin" {
+  # states:StartExecution and states:DescribeExecution/GetExecutionHistory are scoped to
+  # different resource types (state machine vs. execution ARN) per AWS's own Step Functions IAM
+  # reference — kept as separate statements rather than one over-broad one (ADR-0019).
+  statement {
+    sid       = "StartTrialOrgLifecycleExecution"
+    effect    = "Allow"
+    actions   = ["states:StartExecution"]
+    resources = [aws_sfn_state_machine.trial_org_lifecycle.arn]
+  }
+
+  # Scoped to the specific Trial Org each session is viewing (ADR-0022: "per-execution ARN,
+  # resource-tag-conditioned to the specific Trial Org"). Executions aren't a taggable resource
+  # type in Step Functions, so this uses the execution-name naming convention
+  # (trial-<trial_org_id>-<job_id>, ADR-0019) plus the ${aws:PrincipalTag/TrialOrgId} policy
+  # variable populated by the sts:TagSession call above — the practical equivalent of an
+  # aws:ResourceTag condition for a resource type that has none.
+  statement {
+    sid    = "ReadTrialOrgLifecycleExecutions"
+    effect = "Allow"
+    actions = [
+      "states:DescribeExecution",
+      "states:GetExecutionHistory",
+    ]
+    resources = [
+      "${replace(aws_sfn_state_machine.trial_org_lifecycle.arn, ":stateMachine:", ":execution:")}:trial-$${aws:PrincipalTag/TrialOrgId}-*",
+    ]
+  }
+
+  # Per-Trial-Org live log viewer (ADR-0023): "resource-scoped per Trial Org's own log group ...
+  # so a support employee viewing one org's live logs can't read another's." Same
+  # PrincipalTag/TrialOrgId session-tag pattern as above, this time against a real
+  # aws:ResourceTag-supporting resource type — the log group's own TrialOrgId tag (set in
+  # infra/modules/trial_org) — so this one *is* a genuine resource-tag condition.
+  statement {
+    sid    = "ReadTrialOrgLogs"
+    effect = "Allow"
+    actions = [
+      "logs:FilterLogEvents",
+      "logs:GetLogEvents",
+      "logs:DescribeLogStreams",
+    ]
+    resources = [
+      "${local.trial_org_log_group_arn_prefix}*",
+      "${local.trial_org_log_group_arn_prefix}*:*",
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/TrialOrgId"
+      values   = ["$${aws:PrincipalTag/TrialOrgId}"]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "hosting_admin" {
+  name   = "${var.environment}-hosting-admin"
+  role   = aws_iam_role.hosting_admin.id
+  policy = data.aws_iam_policy_document.hosting_admin.json
+}
+
+# ---------------------------------------------------------------------------
+# Step Functions execution role (assumed by states.amazonaws.com)
+#
+# Broader than hosting_admin's role by necessity (it acquires/releases the DynamoDB lock, runs
+# the ECS tofu task, and drives the EC2 power-state Lambda) but still resource-scoped: no "*"
+# resource except where the AWS service genuinely requires it (the runTask.sync EventBridge rule
+# it manages for itself).
+# ---------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "sfn_execution_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["states.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "sfn_execution" {
+  name               = "${var.environment}-trial-org-lifecycle-sfn"
+  assume_role_policy = data.aws_iam_policy_document.sfn_execution_trust.json
+}
+
+data "aws_iam_policy_document" "sfn_execution" {
+  statement {
+    sid    = "RunTofuRunnerTask"
+    effect = "Allow"
+    actions = [
+      "ecs:RunTask",
+      "ecs:StopTask",
+      "ecs:DescribeTasks",
+    ]
+    resources = [
+      aws_ecs_task_definition.tofu_runner.arn,
+      # ecs:RunTask permits any active revision of the family unless pinned; StopTask/DescribeTasks
+      # need the task ARN pattern within this cluster.
+      "arn:aws:ecs:${var.aws_region}:${local.account_id}:task/${aws_ecs_cluster.hosting.name}/*",
+    ]
+  }
+
+  # Required by AWS for the ecs:runTask.sync integration to manage its own completion-polling rule.
+  statement {
+    sid    = "ManageRunTaskSyncEventRule"
+    effect = "Allow"
+    actions = [
+      "events:PutTargets",
+      "events:PutRule",
+      "events:DescribeRule",
+    ]
+    resources = [
+      "arn:aws:events:${var.aws_region}:${local.account_id}:rule/StepFunctionsGetEventsForECSTaskRule",
+    ]
+  }
+
+  statement {
+    sid       = "PassEcsRolesToRunningTask"
+    effect    = "Allow"
+    actions   = ["iam:PassRole"]
+    resources = [aws_iam_role.ecs_task_execution.arn, aws_iam_role.ecs_task.arn]
+  }
+
+  statement {
+    sid    = "InvokeLifecycleLambdas"
+    effect = "Allow"
+    actions = [
+      "lambda:InvokeFunction",
+    ]
+    resources = [
+      aws_lambda_function.ec2_power_control.arn,
+      aws_lambda_function.lock_acquire.arn,
+    ]
+  }
+
+  # Required by AWS for a state machine's own execution-history logging_configuration.
+  statement {
+    sid    = "DeliverExecutionLogs"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogDelivery",
+      "logs:GetLogDelivery",
+      "logs:UpdateLogDelivery",
+      "logs:DeleteLogDelivery",
+      "logs:ListLogDeliveries",
+      "logs:PutResourcePolicy",
+      "logs:DescribeResourcePolicies",
+      "logs:DescribeLogGroups",
+    ]
+    resources = ["*"]
+  }
+
+  # DynamoDB lifecycle lock (ADR-0020): conditional PutItem to acquire, conditional Delete to
+  # release. GetItem is used by the cleanup path to check current ownership before deleting.
+  statement {
+    sid    = "TrialOrgLifecycleLock"
+    effect = "Allow"
+    actions = [
+      "dynamodb:PutItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:GetItem",
+    ]
+    resources = [aws_dynamodb_table.trial_org_lock.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "sfn_execution" {
+  name   = "${var.environment}-trial-org-lifecycle-sfn"
+  role   = aws_iam_role.sfn_execution.id
+  policy = data.aws_iam_policy_document.sfn_execution.json
+}
+
+# ---------------------------------------------------------------------------
+# ECS task execution role (standard: pull the tofu-runner image, write task logs).
+# ---------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "ecs_task_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["ecs-tasks.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ecs_task_execution" {
+  name               = "${var.environment}-tofu-runner-execution"
+  assume_role_policy = data.aws_iam_policy_document.ecs_task_trust.json
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_task_execution_managed" {
+  role       = aws_iam_role.ecs_task_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+# ---------------------------------------------------------------------------
+# ECS task role: the identity `tofu` itself runs as inside the container. This is the broadest
+# role in the foundation because it's what actually creates/destroys each Trial Org's
+# infrastructure (EC2, security group, log group, DNS record, IAM instance profile) plus reads/
+# writes OpenTofu's own remote state. Scoped with aws:ResourceTag / aws:RequestTag ABAC
+# conditions to the Trial Org each invocation targets, per ADR-0019.
+# ---------------------------------------------------------------------------
+
+resource "aws_iam_role" "ecs_task" {
+  name               = "${var.environment}-tofu-runner-task"
+  assume_role_policy = data.aws_iam_policy_document.ecs_task_trust.json
+}
+
+# Permissions boundary every per-Trial-Org instance role (created by the trial_org module, at
+# runtime, by this same ECS task role) must be attached to. Caps what that role can ever hold —
+# logs:PutLogEvents/CreateLogStream on its own Trial Org's log group, nothing else — as an
+# IAM-enforced backstop on top of ADR-0021's "narrow, logs-only" module-code guarantee.
+data "aws_iam_policy_document" "trial_org_instance_boundary" {
+  statement {
+    sid    = "PushOwnLogsOnlyBoundary"
+    effect = "Allow"
+    actions = [
+      "logs:PutLogEvents",
+      "logs:CreateLogStream",
+    ]
+    resources = [
+      "${local.trial_org_log_group_arn_prefix}*",
+      "${local.trial_org_log_group_arn_prefix}*:*",
+    ]
+  }
+}
+
+resource "aws_iam_policy" "trial_org_instance_boundary" {
+  name        = "${var.environment}-trial-org-instance-boundary"
+  description = "Permissions boundary attached to every per-Trial-Org EC2 instance role (ADR-0021): caps it at logs:PutLogEvents/CreateLogStream on its own log group, regardless of what the role's own inline policy grants."
+  policy      = data.aws_iam_policy_document.trial_org_instance_boundary.json
+}
+
+data "aws_iam_policy_document" "ecs_task" {
+  # OpenTofu's own remote state for the per-trial module: one object per Trial Org under
+  # trial-orgs/<trial_org_id>/terraform.tfstate, plus the S3-backend DynamoDB lock table.
+  statement {
+    sid    = "TofuStateBackend"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = ["arn:aws:s3:::${var.tofu_state_bucket}/trial-orgs/*"]
+  }
+
+  statement {
+    sid       = "TofuStateBackendListBucket"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = ["arn:aws:s3:::${var.tofu_state_bucket}"]
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["trial-orgs/*"]
+    }
+  }
+
+  statement {
+    sid    = "TofuStateLockTable"
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:DeleteItem",
+    ]
+    resources = ["arn:aws:dynamodb:${var.aws_region}:${local.account_id}:table/${var.tofu_state_lock_table}"]
+  }
+
+  # EC2 resources the per-trial module manages. ec2:RunInstances authorizes against several
+  # resource types at once (instance, volume, network-interface, subnet, image, security-group,
+  # key-pair — AWS's own RunInstances IAM reference); only the ones actually *created* by the
+  # call (instance, volume) carry the request's own tags, so only those two are tag-conditioned.
+  # The rest (existing subnet/security-group/image/network-interface) are referenced, not
+  # created, and so are granted unconditioned here — they're already scoped elsewhere (the
+  # foundation's own VPC/subnets, and the AMI account in var.base_ami_owner_account_id).
+  statement {
+    sid    = "RunInstancesReferencedResources"
+    effect = "Allow"
+    actions = [
+      "ec2:RunInstances",
+    ]
+    resources = [
+      "arn:aws:ec2:${var.aws_region}:${local.account_id}:subnet/*",
+      "arn:aws:ec2:${var.aws_region}:${local.account_id}:security-group/*",
+      "arn:aws:ec2:${var.aws_region}:${local.account_id}:network-interface/*",
+      "arn:aws:ec2:${var.aws_region}:${local.account_id}:key-pair/*",
+      "arn:aws:ec2:${var.aws_region}:${var.base_ami_owner_account_id}:image/*",
+    ]
+  }
+
+  # Require TrialOrgId to be present (any value) on the instance/volume RunInstances actually
+  # creates. aws:RequestTag can't be pinned to one specific Trial Org id here since the same
+  # shared ECS task role launches every trial's instance — "Null: false" (any value present)
+  # is the tightest condition expressible without per-invocation session tags, which RunInstances
+  # itself doesn't consult the way the ABAC statements below do for reads.
+  statement {
+    sid    = "RunInstancesTaggedResources"
+    effect = "Allow"
+    actions = [
+      "ec2:RunInstances",
+    ]
+    resources = [
+      "arn:aws:ec2:${var.aws_region}:${local.account_id}:instance/*",
+      "arn:aws:ec2:${var.aws_region}:${local.account_id}:volume/*",
+    ]
+    condition {
+      test     = "Null"
+      variable = "aws:RequestTag/TrialOrgId"
+      values   = ["false"]
+    }
+  }
+
+  statement {
+    sid    = "CreateSecurityGroupTagged"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateSecurityGroup",
+    ]
+    resources = ["arn:aws:ec2:${var.aws_region}:${local.account_id}:security-group/*"]
+    condition {
+      test     = "Null"
+      variable = "aws:RequestTag/TrialOrgId"
+      values   = ["false"]
+    }
+  }
+
+  # ec2:CreateTags is scoped to the moment of creation (ec2:CreateAction), so it can never be
+  # used to retag an unrelated pre-existing resource outside of RunInstances/CreateSecurityGroup.
+  statement {
+    sid    = "CreateTagsOnCreate"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateTags",
+    ]
+    resources = [
+      "arn:aws:ec2:${var.aws_region}:${local.account_id}:instance/*",
+      "arn:aws:ec2:${var.aws_region}:${local.account_id}:volume/*",
+      "arn:aws:ec2:${var.aws_region}:${local.account_id}:security-group/*",
+      "arn:aws:ec2:${var.aws_region}:${local.account_id}:network-interface/*",
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:CreateAction"
+      values   = ["RunInstances", "CreateSecurityGroup"]
+    }
+  }
+
+  # Mutations against an *existing* instance/security-group: scoped by aws:ResourceTag, requiring
+  # the resource already carry a TrialOrgId tag (excludes every non-Trial-Org resource in the
+  # account, e.g. anything belonging to the foundation itself). Full per-execution isolation (this
+  # task role touching only the one Trial Org its own invocation targets) would need session tags
+  # ECS RunTask doesn't propagate into the task role's STS session the way AssumeRole does for
+  # hosting_admin above — see the ReadTrialOrgLogs statement's PrincipalTag pattern for where that
+  # ARE available. Tracked as a known gap, not silently accepted: revisit if ECS task role session
+  # tagging becomes available.
+  statement {
+    sid    = "ManageTrialOrgEc2Existing"
+    effect = "Allow"
+    actions = [
+      "ec2:TerminateInstances",
+      "ec2:StopInstances",
+      "ec2:StartInstances",
+      "ec2:DeleteSecurityGroup",
+      "ec2:AuthorizeSecurityGroupIngress",
+      "ec2:AuthorizeSecurityGroupEgress",
+      "ec2:RevokeSecurityGroupIngress",
+      "ec2:RevokeSecurityGroupEgress",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "Null"
+      variable = "aws:ResourceTag/TrialOrgId"
+      values   = ["false"]
+    }
+  }
+
+  # Read-only EC2 describes have no per-resource tag scoping in the IAM action reference
+  # (Describe* actions do not support resource-level permissions), so they're granted broadly;
+  # this is a read-only grant, not a mutation.
+  statement {
+    sid    = "DescribeEc2"
+    effect = "Allow"
+    actions = [
+      "ec2:DescribeInstances",
+      "ec2:DescribeSecurityGroups",
+      "ec2:DescribeSubnets",
+      "ec2:DescribeVpcs",
+      "ec2:DescribeImages",
+      "ec2:DescribeNetworkInterfaces",
+    ]
+    resources = ["*"]
+  }
+
+  # Per-Trial-Org CloudWatch log group + subscription filter (ADR-0023).
+  statement {
+    sid    = "ManageTrialOrgLogGroups"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:DeleteLogGroup",
+      "logs:PutRetentionPolicy",
+      "logs:TagResource",
+      "logs:PutSubscriptionFilter",
+      "logs:DeleteSubscriptionFilter",
+      "logs:DescribeLogGroups",
+      "logs:DescribeSubscriptionFilters",
+    ]
+    resources = [
+      "${local.trial_org_log_group_arn_prefix}*",
+      "${local.trial_org_log_group_arn_prefix}*:*",
+    ]
+  }
+
+  # Per-Trial-Org narrow instance role + instance profile (ADR-0021). Scoped to the naming
+  # convention the trial_org module uses, not a bare "*" (see locals.tf) — and, since the module
+  # itself deciding what permissions the role gets is not a guarantee IAM enforces on its own,
+  # iam:CreateRole additionally requires the role be created with the permissions boundary below
+  # attached, so even a compromised or buggy tofu-runner task can never grant this role anything
+  # broader than logs:PutLogEvents/CreateLogStream regardless of what PutRolePolicy is asked to do.
+  statement {
+    sid    = "CreateTrialOrgInstanceRole"
+    effect = "Allow"
+    actions = [
+      "iam:CreateRole",
+    ]
+    resources = ["arn:aws:iam::${local.account_id}:role/${local.trial_org_role_name_prefix}*${local.trial_org_role_name_suffix}"]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PermissionsBoundary"
+      values   = [aws_iam_policy.trial_org_instance_boundary.arn]
+    }
+  }
+
+  statement {
+    sid    = "ManageTrialOrgInstanceRole"
+    effect = "Allow"
+    actions = [
+      "iam:DeleteRole",
+      "iam:PutRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:GetRole",
+      "iam:GetRolePolicy",
+      "iam:TagRole",
+      "iam:CreateInstanceProfile",
+      "iam:DeleteInstanceProfile",
+      "iam:AddRoleToInstanceProfile",
+      "iam:RemoveRoleFromInstanceProfile",
+      "iam:GetInstanceProfile",
+    ]
+    resources = [
+      "arn:aws:iam::${local.account_id}:role/${local.trial_org_role_name_prefix}*${local.trial_org_role_name_suffix}",
+      "arn:aws:iam::${local.account_id}:instance-profile/${local.trial_org_role_name_prefix}*${local.trial_org_role_name_suffix}",
+    ]
+  }
+
+  # iam:PassRole so RunInstances can attach the per-Trial-Org instance profile. Scoped to the
+  # same narrow naming convention and to EC2 as the only service allowed to assume it (never a
+  # wildcard across arbitrary roles) — the ADR-0021 "never one without the other" boundary,
+  # applied at the granularity available at foundation-apply-time (a per-trial-exact ARN can't be
+  # enumerated here since each role is created by this same task at trial-provisioning time).
+  statement {
+    sid       = "PassTrialOrgInstanceRole"
+    effect    = "Allow"
+    actions   = ["iam:PassRole"]
+    resources = ["arn:aws:iam::${local.account_id}:role/${local.trial_org_role_name_prefix}*${local.trial_org_role_name_suffix}"]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ec2.amazonaws.com"]
+    }
+  }
+
+  # Per-Trial-Org DNS record under the shared zone. The task role is shared across every Trial
+  # Org's provisioning invocation, so this can't be scoped to one exact record name — instead it's
+  # narrowed to only the two hostname patterns modules/trial_org ever writes
+  # (*.<root_domain>/*.<dev_subdomain>), to record type A, and to the UPSERT/DELETE actions the
+  # aws_route53_record resource actually issues (never CREATE). This still lets one Trial Org's
+  # task touch another Trial Org's record under the same pattern — full per-Trial-Org isolation
+  # would need a per-Trial-Org IAM identity or an identity check ahead of the DNS change, which is
+  # out of scope here.
+  statement {
+    sid       = "ManageTrialOrgDnsRecords"
+    effect    = "Allow"
+    actions   = ["route53:ChangeResourceRecordSets"]
+    resources = [aws_route53_zone.root.arn]
+
+    condition {
+      test     = "ForAllValues:StringLike"
+      variable = "route53:ChangeResourceRecordSetsNormalizedRecordNames"
+      values   = ["*.${var.root_domain}", "*.${var.dev_subdomain}"]
+    }
+    condition {
+      test     = "Null"
+      variable = "route53:ChangeResourceRecordSetsNormalizedRecordNames"
+      values   = ["false"]
+    }
+    condition {
+      test     = "ForAllValues:StringEquals"
+      variable = "route53:ChangeResourceRecordSetsRecordTypes"
+      values   = ["A"]
+    }
+    condition {
+      test     = "Null"
+      variable = "route53:ChangeResourceRecordSetsRecordTypes"
+      values   = ["false"]
+    }
+    condition {
+      test     = "ForAllValues:StringEquals"
+      variable = "route53:ChangeResourceRecordSetsActions"
+      values   = ["UPSERT", "DELETE"]
+    }
+    condition {
+      test     = "Null"
+      variable = "route53:ChangeResourceRecordSetsActions"
+      values   = ["false"]
+    }
+  }
+
+  statement {
+    sid       = "ReadTrialOrgDnsRecords"
+    effect    = "Allow"
+    actions   = ["route53:GetChange", "route53:ListResourceRecordSets"]
+    resources = ["arn:aws:route53:::change/*", aws_route53_zone.root.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "ecs_task" {
+  name   = "${var.environment}-tofu-runner-task"
+  role   = aws_iam_role.ecs_task.id
+  policy = data.aws_iam_policy_document.ecs_task.json
+}
