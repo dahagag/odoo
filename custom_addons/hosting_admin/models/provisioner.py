@@ -132,9 +132,14 @@ class AwsProvisioner(Provisioner):
         # fail the state machine itself with a JSONPath resolution error before ever reaching
         # ECS. Use the org's own recorded Deployment Version (docs/adr/0024), not the
         # currently-configured one, since a destroy must tear down what was actually deployed.
+        # Fall back to the pending fields when the audit fields are still blank: a prior Issue
+        # can have failed (or still be running) without ever reaching check_status()'s SUCCEEDED
+        # promotion, yet still moved this org to 'active' and left real infrastructure behind for
+        # destroy() to clean up - pending_ami_id/pending_tofu_module_git_sha are what that Issue
+        # actually told RunTofu to use.
         self._start_execution(trial_org, job_id, 'destroy', extra_input={
-            'ami_id': trial_org.ami_id,
-            'module_git_sha': trial_org.tofu_module_git_sha,
+            'ami_id': trial_org.ami_id or trial_org.pending_ami_id,
+            'module_git_sha': trial_org.tofu_module_git_sha or trial_org.pending_tofu_module_git_sha,
         })
 
     def check_status(self, trial_org):

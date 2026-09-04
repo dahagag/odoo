@@ -113,6 +113,23 @@ class TestAwsProvisioner(TransactionCase):
         self.assertEqual(execution_input['ami_id'], 'ami-deployed')
         self.assertEqual(execution_input['module_git_sha'], 'deployedsha')
 
+    def test_destroy_falls_back_to_pending_deployment_version_when_audit_fields_are_blank(self):
+        # A prior Issue can move the org to 'active' and leave real infrastructure behind
+        # without ever reaching check_status()'s SUCCEEDED promotion (still running, or it
+        # failed) - the pending fields it staged are the only known-good values at that point.
+        self.trial_org.write({
+            'pending_ami_id': 'ami-pending',
+            'pending_tofu_module_git_sha': 'pendingsha',
+        })
+        client = _make_fake_client()
+        provisioner = self._make_provisioner(client=client)
+
+        provisioner.destroy(self.trial_org, 'job-3')
+
+        execution_input = json.loads(client.start_execution.call_args.kwargs['input'])
+        self.assertEqual(execution_input['ami_id'], 'ami-pending')
+        self.assertEqual(execution_input['module_git_sha'], 'pendingsha')
+
     def test_issue_records_the_execution_arn_returned_by_start_execution(self):
         provisioner = self._make_provisioner()
 
