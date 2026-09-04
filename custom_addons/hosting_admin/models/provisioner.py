@@ -158,14 +158,16 @@ class AwsProvisioner(Provisioner):
         if status == 'RUNNING':
             return
         if status == 'SUCCEEDED':
-            values = {'last_job_status': 'succeeded', 'last_job_error': False}
-            if trial_org.last_job_action == 'issue':
-                # Only issue() ever sets these pending fields - promote them onto the audit
-                # fields (docs/adr/0024) now that the execution actually completed. Suspend/
-                # wake/destroy successes leave ami_id/tofu_module_git_sha untouched.
-                values['ami_id'] = trial_org.pending_ami_id
-                values['tofu_module_git_sha'] = trial_org.pending_tofu_module_git_sha
-            trial_org.write(values)
+            # Promoting pending_ami_id/pending_tofu_module_git_sha here is a no-op for a
+            # suspend/wake/destroy success - only issue() ever changes those pending fields, so
+            # this just re-copies whatever the last issue already recorded (or blanks, if this
+            # Trial Org has never been issued through this Provisioner).
+            trial_org.write({
+                'last_job_status': 'succeeded',
+                'last_job_error': False,
+                'ami_id': trial_org.pending_ami_id,
+                'tofu_module_git_sha': trial_org.pending_tofu_module_git_sha,
+            })
         else:
             # FAILED, TIMED_OUT or ABORTED - including a failure Step Functions itself
             # terminates the execution for (e.g. after exhausting a Task's Retry). Surfaced as
