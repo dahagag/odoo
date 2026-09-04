@@ -26,11 +26,6 @@ TRIAL_DEFAULT_EXTENSION_DAYS = 14
 # informational display text here, not any enforced system behavior.
 TRIAL_DATA_RETENTION_DAYS = 7
 
-# Context key create()/write() require to accept a caller-supplied trial_org_id - see the
-# docstring on those overrides below. Mirrors hosting.trial.org's own ALLOW_STATE_WRITE_KEY
-# pattern for its 'state' field.
-ALLOW_TRIAL_ORG_WRITE_KEY = 'crm_lead_allow_trial_org_write'
-
 
 class CrmLead(models.Model):
     _inherit = 'crm.lead'
@@ -140,10 +135,10 @@ class CrmLead(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        """Reject a caller-supplied ``trial_org_id`` unless it comes from
-        action_issue_trial() itself (signalled via ALLOW_TRIAL_ORG_WRITE_KEY) - see write()
-        below for why ``readonly=True`` alone isn't enough."""
-        if not self.env.context.get(ALLOW_TRIAL_ORG_WRITE_KEY):
+        """Reject a caller-supplied ``trial_org_id`` unless the call is already elevated via
+        ``sudo()`` - see write() below for why ``readonly=True`` alone isn't enough, and why
+        this checks ``self.env.su`` rather than a context flag."""
+        if not self.env.su:
             for vals in vals_list:
                 if 'trial_org_id' in vals:
                     raise AccessError(_(
@@ -161,15 +156,22 @@ class CrmLead(models.Model):
         return super().create(vals_list)
 
     def write(self, vals):
-        """Reject a caller-supplied ``trial_org_id`` unless it comes from
-        action_issue_trial() itself. ``trial_org_id``'s own ``readonly=True`` only hides the
-        field in form views - it does nothing to stop a direct ORM/RPC write() by any user with
-        ordinary write access to crm.lead, who could otherwise point a lead at an arbitrary
-        hosting.trial.org record (an IDOR: action_extend_trial's sudo()-elevated write would
-        then update a Trial Org that caller was never authorized to touch) or clear it to bypass
-        action_issue_trial()'s "already issued" check. Mirrors hosting.trial.org's own guard on
-        its 'state' field."""
-        if 'trial_org_id' in vals and not self.env.context.get(ALLOW_TRIAL_ORG_WRITE_KEY):
+        """Reject a caller-supplied ``trial_org_id`` unless the call is already elevated via
+        ``sudo()``. ``trial_org_id``'s own ``readonly=True`` only hides the field in form views
+        - it does nothing to stop a direct ORM/RPC write() by any user with ordinary write
+        access to crm.lead, who could otherwise point a lead at an arbitrary hosting.trial.org
+        record (an IDOR: action_extend_trial's sudo()-elevated write would then update a Trial
+        Org that caller was never authorized to touch) or clear it to bypass
+        action_issue_trial()'s "already issued" check.
+
+        This checks ``self.env.su`` rather than a context flag deliberately: ``context`` is a
+        plain caller-supplied dict on every ORM/RPC call (``with_context()`` is public API, and
+        RPC's ``execute_kw`` takes a ``context`` kwarg directly from the client), so gating on a
+        context key - as an earlier version of this guard did, and as hosting.trial.org's own
+        ALLOW_STATE_WRITE_KEY guard on its 'state' field still does - can be forged by any
+        caller and defeats the guard entirely. ``env.su`` can only become true via an internal
+        ``.sudo()`` call, which no RPC client can inject."""
+        if 'trial_org_id' in vals and not self.env.su:
             raise AccessError(_(
                 "trial_org_id cannot be set directly; it is only assigned by "
                 "issuing a Trial Org through action_issue_trial()."))
@@ -307,7 +309,10 @@ class CrmLead(models.Model):
             'expiry_date': fields.Date.context_today(self) + timedelta(days=TRIAL_INITIAL_EXPIRY_DAYS),
         })
         trial_org.action_issue()
-        self.with_context(**{ALLOW_TRIAL_ORG_WRITE_KEY: True}).write({'trial_org_id': trial_org.id})
+        # Narrow, post-validation sudo() boundary, same as the create() above: write() rejects
+        # this field unless self.env.su is already true, which only a real .sudo() call (not a
+        # forged context key) can set.
+        self.sudo().write({'trial_org_id': trial_org.id})
         if invite_type == 'targeted':
             message = _("Trial Org issued via a Targeted Invite to %(email)s.", email=invite_email)
         else:

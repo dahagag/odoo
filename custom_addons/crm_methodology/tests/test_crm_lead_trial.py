@@ -232,6 +232,23 @@ class TestCrmLeadTrial(TransactionCase):
         with self.assertRaises(AccessError):
             lead.with_user(self.salesperson).write({'trial_org_id': other_trial_org.id})
 
+    def test_trial_org_id_write_guard_cannot_be_forged_via_context(self):
+        # Regression test for a real gap in an earlier version of this guard, flagged on PR
+        # #131: it checked a context flag (self.env.context.get(ALLOW_TRIAL_ORG_WRITE_KEY))
+        # rather than self.env.su. context is a plain caller-supplied dict on every ORM/RPC call
+        # - with_context() is ordinary public API, and RPC's execute_kw takes a context kwarg
+        # straight from the client - so any caller could forge that exact key and defeat the
+        # guard entirely. Only self.env.su (settable only by an internal .sudo() call, never by
+        # RPC-supplied context) is a genuine server-only signal.
+        lead = self._create_lead(user_id=self.salesperson.id)
+        other_trial_org = self.env['hosting.trial.org'].sudo().create({
+            'name': "Someone Else's Trial Org", 'prospect_domain': "other.example.com",
+        })
+        forged_context = {'crm_lead_allow_trial_org_write': True}
+        with self.assertRaises(AccessError):
+            lead.with_user(self.salesperson).with_context(**forged_context).write(
+                {'trial_org_id': other_trial_org.id})
+
     def test_trial_org_id_cannot_be_set_on_create(self):
         preexisting_trial_org = self.env['hosting.trial.org'].sudo().create({
             'name': "Preexisting Trial Org", 'prospect_domain': "preexisting.example.com",
