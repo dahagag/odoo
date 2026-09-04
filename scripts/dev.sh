@@ -14,8 +14,13 @@ EXTRA="${3:-}"
 CLEANUP_OPTION="${4:-}"
 COMPOSE=()
 
+# The 16-language "Translated" tier established for the Trial Org feature's translations
+# (custom_addons/crm_methodology/i18n/README.md), reused here as i18n-export's default target
+# set when a module doesn't ask for a narrower one.
+DEFAULT_I18N_LANGUAGES="ar,de,es,fr,it,ja,ko,nl,pl,pt,pt_BR,ru,sv,tr,zh_CN,zh_TW"
+
 usage() {
-    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|docs-build|docs-build:doc|docs-build:video|reset} [argument] [extra] [option]" >&2
+    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|i18n-export|docs-build|docs-build:doc|docs-build:video|reset} [argument] [extra] [option]" >&2
     exit "${1:-2}"
 }
 
@@ -233,6 +238,40 @@ module_test() {
     exit "$result"
 }
 
+module_i18n_export() {
+    local module="$1" languages="$2" user prefix stamp export_database lang result
+    assert_module "$module" true
+    languages="${languages:-$DEFAULT_I18N_LANGUAGES}"
+    IFS=',' read -r -a lang_array <<<"$languages"
+    for lang in "${lang_array[@]}"; do
+        [[ "$lang" =~ ^[a-zA-Z][a-zA-Z_]*$ ]] || { echo "Invalid language code: '$lang'." >&2; exit 1; }
+    done
+    start_database
+    user="$(setting POSTGRES_USER odoo)"
+    prefix="$(setting ODOO_TEST_DB_PREFIX agentic_erp_test)"
+    assert_identifier "$prefix" "Test database prefix"
+    stamp="$(date -u +%Y%m%d%H%M%S)"
+    export_database="${prefix}_i18n_${stamp}_$$"
+    assert_identifier "$export_database" "i18n export database name"
+
+    compose exec -T db createdb -U "$user" "$export_database"
+    set +e
+    odoo_run "--database=$export_database" "--init=$module" --without-demo --stop-after-init && \
+        I18N_EXPORT_MODULE="$module" I18N_EXPORT_LANGS="$languages" \
+            compose run --rm --no-deps -T \
+                -e I18N_EXPORT_MODULE -e I18N_EXPORT_LANGS \
+                odoo odoo-source shell "--database=$export_database" --no-http \
+                < scripts/i18n_export_shell.py
+    result=$?
+    set -e
+    compose exec -T db dropdb -U "$user" "$export_database" || true
+    if ((result != 0)); then
+        echo "i18n-export failed with exit code $result." >&2
+        exit "$result"
+    fi
+    echo "Updated custom_addons/$module/i18n/*.po for: $languages"
+}
+
 doctor() {
     local path server_version http_port gevent_port running_services port
     resolve_compose
@@ -290,6 +329,7 @@ case "$COMMAND" in
     install) module_lifecycle "$ARGUMENT" install ;;
     update) module_lifecycle "$ARGUMENT" update ;;
     test) module_test "$ARGUMENT" "$EXTRA" "$CLEANUP_OPTION" ;;
+    i18n-export) module_i18n_export "$ARGUMENT" "$EXTRA" ;;
     lint)
         lint_path="${ARGUMENT:-custom_addons}"
         assert_relative_path "$lint_path" "Lint"

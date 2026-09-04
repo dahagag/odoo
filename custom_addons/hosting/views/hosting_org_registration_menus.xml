@@ -1,0 +1,10 @@
+<odoo>
+    <menuitem id="menu_hosting_root" name="Hosting" sequence="95"/>
+    <menuitem
+        id="menu_hosting_org_registration"
+        name="Org Registration"
+        parent="menu_hosting_root"
+        action="action_hosting_org_registration"
+        sequence="10"
+    />
+</odoo>

@@ -17,11 +17,18 @@ $ErrorActionPreference = 'Stop'
 $script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $script:ComposeKind = $null
 $script:LastComposeExitCode = 0
+# The 16-language "Translated" tier established for the Trial Org feature's translations
+# (custom_addons/crm_methodology/i18n/README.md), reused here as i18n-export's default target
+# set when a module doesn't ask for a narrower one.
+$script:DefaultI18nLanguages = @(
+    'ar', 'de', 'es', 'fr', 'it', 'ja', 'ko', 'nl', 'pl', 'pt', 'pt_BR', 'ru', 'sv', 'tr',
+    'zh_CN', 'zh_TW'
+)
 Set-Location -LiteralPath $script:RepoRoot
 
 function Show-Usage {
     param([int]$ExitCode = 2)
-    Write-Host 'Usage: ./scripts/dev.ps1 {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|docs-build|docs-build:doc|docs-build:video|reset} [argument] [extra] [-CleanupOnFailure]'
+    Write-Host 'Usage: ./scripts/dev.ps1 {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|i18n-export|docs-build|docs-build:doc|docs-build:video|reset} [argument] [extra] [-CleanupOnFailure]'
     exit $ExitCode
 }
 
@@ -56,6 +63,23 @@ function Invoke-Compose {
     }
     $script:LastComposeExitCode = $LASTEXITCODE
     if ($script:LastComposeExitCode -ne 0 -and -not $AllowFailure) {
+        throw "Docker Compose failed with exit code $script:LastComposeExitCode."
+    }
+}
+
+function Invoke-ComposePiped {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$InputText
+    )
+    Resolve-Compose
+    if ($script:ComposeKind -eq 'plugin') {
+        $InputText | & docker compose @Arguments
+    } else {
+        $InputText | & docker-compose @Arguments
+    }
+    $script:LastComposeExitCode = $LASTEXITCODE
+    if ($script:LastComposeExitCode -ne 0) {
         throw "Docker Compose failed with exit code $script:LastComposeExitCode."
     }
 }
@@ -266,6 +290,38 @@ function Invoke-ModuleTest {
     exit $testExitCode
 }
 
+function Invoke-ModuleI18nExport {
+    param([string]$Module, [string]$LanguagesArg)
+    Assert-Module $Module -MustExist
+    $languages = if ($LanguagesArg) { $LanguagesArg -split ',' } else { $script:DefaultI18nLanguages }
+    foreach ($lang in $languages) {
+        if ($lang -notmatch '^[a-zA-Z][a-zA-Z_]*$') { throw "Invalid language code: '$lang'." }
+    }
+    Start-Database
+    $user = Get-DevSetting 'POSTGRES_USER' 'odoo'
+    $prefix = Get-DevSetting 'ODOO_TEST_DB_PREFIX' 'agentic_erp_test'
+    Assert-Identifier $prefix 'Test database prefix'
+    $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddHHmmss')
+    $exportDatabase = "${prefix}_i18n_${stamp}_$PID"
+    Assert-Identifier $exportDatabase 'i18n export database name'
+    $langCsv = $languages -join ','
+
+    Invoke-Compose -Arguments @('exec', '-T', 'db', 'createdb', '-U', $user, $exportDatabase)
+    try {
+        Invoke-OdooRun -Arguments @("--database=$exportDatabase", "--init=$Module", '--without-demo', '--stop-after-init')
+        $scriptContent = Get-Content -LiteralPath (Join-Path $script:RepoRoot 'scripts/i18n_export_shell.py') -Raw
+        Invoke-ComposePiped -InputText $scriptContent -Arguments @(
+            'run', '--rm', '--no-deps', '-T',
+            '-e', "I18N_EXPORT_MODULE=$Module",
+            '-e', "I18N_EXPORT_LANGS=$langCsv",
+            'odoo', 'odoo-source', 'shell', "--database=$exportDatabase", '--no-http'
+        )
+    } finally {
+        Invoke-Compose -Arguments @('exec', '-T', 'db', 'dropdb', '-U', $user, $exportDatabase) -AllowFailure
+    }
+    Write-Host "Updated custom_addons/$Module/i18n/*.po for: $langCsv"
+}
+
 function Invoke-Doctor {
     Resolve-Compose
     $required = @('compose.yaml', 'docker\odoo-dev.Dockerfile', 'docker\odoo.conf', '.env.example', 'custom_addons\README.md')
@@ -338,6 +394,7 @@ switch ($Command) {
     'install' { Invoke-ModuleLifecycle $Argument 'install' }
     'update' { Invoke-ModuleLifecycle $Argument 'update' }
     'test' { Invoke-ModuleTest $Argument $Extra $CleanupOnFailure.IsPresent }
+    'i18n-export' { Invoke-ModuleI18nExport $Argument $Extra }
     'lint' {
         $path = if ($Argument) { $Argument } else { 'custom_addons' }
         $path = Assert-RelativePath -Path $path -Label 'Lint'
