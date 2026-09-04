@@ -1,6 +1,6 @@
 import re
 import uuid
-from datetime import timedelta
+from datetime import timedelta, timezone
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, ValidationError
@@ -132,6 +132,31 @@ class HostingTrialOrg(models.Model):
         help="Step Functions execution ARN for last_job_id, recorded by AwsProvisioner so "
              "check_status() knows what to poll (docs/adr/0019).")
 
+    # Lifecycle audit trail (docs/adr/0022): pulled live from AWS every time this record is
+    # read, never cached or persisted - non-stored computed fields are the natural fit, since
+    # an ordinary (stored) field only recomputes on write, while these must reflect whatever
+    # AWS says *right now*. _compute_audit_trail() below is a single method computing all of
+    # them together (one Provisioner.get_audit_trail() call per record) rather than one compute
+    # method per field, since they're all facets of that one call's result.
+    audit_trail_available = fields.Boolean(
+        compute='_compute_audit_trail',
+        help="Whether a lifecycle audit trail could be read from AWS at all for this Trial "
+             "Org (false if it has never run a lifecycle action, or the AWS call itself "
+             "failed).")
+    audit_trail_action = fields.Char(compute='_compute_audit_trail', string="Audited Action")
+    audit_trail_status = fields.Char(compute='_compute_audit_trail', string="Audited Status")
+    audit_trail_started_at = fields.Datetime(compute='_compute_audit_trail', string="Audited Start")
+    audit_trail_stopped_at = fields.Datetime(compute='_compute_audit_trail', string="Audited Stop")
+    audit_trail_steps_available = fields.Boolean(
+        compute='_compute_audit_trail',
+        help="Whether step-by-step execution history could be read from AWS (false if it has "
+             "aged out of Step Functions' own retention window, even when the execution's "
+             "overall status/timing above is still available).")
+    audit_trail_steps = fields.Text(
+        compute='_compute_audit_trail', string="Audited Steps",
+        help="One line per Step Functions execution-history event: when it happened, which "
+             "state/task it belongs to, and its error/cause if it failed.")
+
     # EC2 instance id Suspend/Wake need for their execution input
     # (infra/foundation/state_machine.asl.json.tftpl's SuspendInstance/WakeInstance Task
     # states, docs/adr/0021). Not populated by this ticket: it's only known once an Issue
@@ -219,6 +244,51 @@ class HostingTrialOrg(models.Model):
             tofu_module_git_sha=ICP.get_param(CONFIG_PARAM_TOFU_MODULE_GIT_SHA),
             region_name=ICP.get_param(CONFIG_PARAM_AWS_REGION),
         )
+
+    def _compute_audit_trail(self):
+        """Populate the audit_trail_* fields (docs/adr/0022) by calling the current
+        Provisioner's get_audit_trail() for each record - live, on every read, since these are
+        non-stored computed fields with no @api.depends: there's nothing in Odoo for an AWS
+        Step Functions execution's status to depend on. Degrades every field to its falsy
+        default when the trail isn't available, rather than raising, so opening a Trial Org
+        whose audit trail can't be read still renders a form instead of an error page."""
+        for trial_org in self:
+            trail = trial_org._get_provisioner().get_audit_trail(trial_org)
+            trial_org.audit_trail_available = trail.get('available', False)
+            trial_org.audit_trail_action = trail.get('action')
+            trial_org.audit_trail_status = trail.get('status')
+            trial_org.audit_trail_started_at = self._audit_trail_datetime(trail.get('start_date'))
+            trial_org.audit_trail_stopped_at = self._audit_trail_datetime(trail.get('stop_date'))
+            trial_org.audit_trail_steps_available = trail.get('steps_available', False)
+            trial_org.audit_trail_steps = self._format_audit_trail_steps(trail.get('steps') or [])
+
+    @staticmethod
+    def _audit_trail_datetime(value):
+        """AWS SDK datetimes are timezone-aware; Odoo's Datetime field stores naive UTC. None
+        passes through as False, this model's own convention for "nothing to show" on a
+        Datetime field."""
+        if value is None:
+            return False
+        if value.tzinfo is not None:
+            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
+
+    @classmethod
+    def _format_audit_trail_steps(cls, steps):
+        """Render get_audit_trail()'s ``steps`` list as one readable line per event - state/
+        task name first (falling back to the event type itself for events with no name, e.g.
+        ``ExecutionStarted``), then its error/cause when it has one."""
+        lines = []
+        for step in steps:
+            label = step.get('name') or step.get('type')
+            timestamp = cls._audit_trail_datetime(step.get('timestamp'))
+            line = f"{timestamp or '?'}  {label}"
+            if step.get('error'):
+                line += f" - {step['error']}"
+                if step.get('cause'):
+                    line += f": {step['cause']}"
+            lines.append(line)
+        return "\n".join(lines)
 
     def action_issue(self):
         """Issue this Trial Org: issued -> active."""

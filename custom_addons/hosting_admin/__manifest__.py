@@ -24,6 +24,8 @@ Auto-Destroy, Deployment Version).
         'security/hosting_admin_groups.xml',
         'security/ir.model.access.csv',
         'data/ir_cron.xml',
+        'views/hosting_trial_org_views.xml',
+        'views/hosting_trial_org_menus.xml',
     ],
 
     'license': 'LGPL-3',

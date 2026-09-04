@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- hosting_admin's own root menu (docs/adr/0018): this addon never depends on the
+         org-facing `hosting` addon, so it cannot reuse that addon's menu_hosting_root - the two
+         are never installed on the same Odoo instance. -->
+    <menuitem id="menu_hosting_admin_root" name="Hosting Administration" sequence="95"
+              groups="group_hosting_admin_administrator"/>
+    <menuitem
+        id="menu_hosting_trial_org"
+        name="Trial Orgs"
+        parent="menu_hosting_admin_root"
+        action="action_hosting_trial_org"
+        sequence="10"
+    />
+</odoo>
