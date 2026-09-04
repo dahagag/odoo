@@ -5,7 +5,7 @@ from datetime import timedelta
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, ValidationError
 
-from .provisioner import StubProvisioner
+from .provisioner import AwsProvisioner, StubProvisioner
 
 # The system-wide seat cap from docs/contexts/hosting/CONTEXT.md's Seat entry: "The count is
 # set per-trial at issuance (system-wide max 25)". A single Trial Org's own seat_cap may be
@@ -13,8 +13,7 @@ from .provisioner import StubProvisioner
 SYSTEM_WIDE_SEAT_CAP = 25
 
 # The idle timeout docs/adr/0014 sets for a Trial Org's compute: "stopped after an idle timeout
-# (~30 min)". Checked by a scheduled action (_cron_suspend_idle), never inline on request - this
-# ticket's stub Provisioner never actually stops anything, but the scheduling logic is real.
+# (~30 min)". Checked by a scheduled action (_cron_suspend_idle), never inline on request.
 IDLE_TIMEOUT_MINUTES = 30
 
 # The snapshot retention window docs/contexts/hosting/CONTEXT.md's Auto-Destroy entry sets: "A
@@ -41,6 +40,19 @@ _TRANSITIONS = {
     'wake': ({'suspended'}, 'active'),
     'destroy': ({'active', 'suspended'}, 'destroyed'),
 }
+
+# ir.config_parameter keys AwsProvisioner is configured from (_get_provisioner below). Unset
+# (the default for dev/test environments with no AWS wiring) falls back to StubProvisioner -
+# see docs/adr/0019 for the state machine/IAM design these values plug into.
+CONFIG_PARAM_STATE_MACHINE_ARN = 'hosting_admin.aws_state_machine_arn'
+CONFIG_PARAM_AWS_REGION = 'hosting_admin.aws_region'
+CONFIG_PARAM_BASE_AMI_ID = 'hosting_admin.base_ami_id'
+CONFIG_PARAM_TOFU_MODULE_GIT_SHA = 'hosting_admin.tofu_module_git_sha'
+
+# The AWS-documented TTL on ECS RunTask's own ClientToken reuse (docs/adr/0019's Job identity
+# section): a retry of the same lifecycle request within this window reuses the existing
+# unfinished job id; past it, hosting_admin treats the request as needing a fresh one.
+JOB_ID_RETRY_WINDOW = timedelta(hours=24)
 
 # Context key ``_apply_transition`` sets to authorize its own ``write({'state': ...})`` call.
 # ``state`` is declared ``readonly=True`` below, but that only hides the field in form views -
@@ -86,8 +98,8 @@ class HostingTrialOrg(models.Model):
         help="The date Auto-Destroy fires for this Trial Org, absent an Extension.")
 
     # Deployment Version (docs/adr/0024, docs/contexts/hosting/CONTEXT.md): audit-only facts
-    # recording what a Trial Org actually ran. Populated by the real Provisioner in a later
-    # ticket - left blank here since this ticket makes no real AWS call.
+    # recording what a Trial Org actually ran. Populated by AwsProvisioner.issue() - blank on
+    # StubProvisioner-backed records, since no real AWS call was ever made.
     ami_id = fields.Char(
         string="AMI ID", copy=False,
         help="The base AMI this Trial Org was provisioned from. Audit-only; populated by the "
@@ -97,11 +109,35 @@ class HostingTrialOrg(models.Model):
         help="The git SHA of the per-trial OpenTofu module this Trial Org was provisioned "
              "from. Audit-only; populated by the real Provisioner implementation.")
 
-    # The most recent lifecycle action's job id (docs/adr/0019): generated once per action and,
-    # in the real implementation, reused verbatim on any retry of that same action within 24h.
-    # This ticket's stub Provisioner does not retry, so a fresh id is simply recorded here on
-    # every successful transition for the real implementation to build on later.
+    # The most recent lifecycle action's job id (docs/adr/0019): generated once per action and
+    # reused verbatim on a retry of that same action within JOB_ID_RETRY_WINDOW - see
+    # _get_or_create_job_id(). last_job_action/last_job_started_at are the bookkeeping
+    # _get_or_create_job_id() reads back to decide whether to reuse it; last_job_status/
+    # last_job_error/last_execution_arn are what AwsProvisioner.check_status() polls onto the
+    # record once that job's Step Functions execution finishes.
     last_job_id = fields.Char(copy=False, readonly=True)
+    last_job_action = fields.Char(copy=False, readonly=True)
+    last_job_started_at = fields.Datetime(copy=False, readonly=True)
+    last_job_status = fields.Selection([
+        ('running', "Running"),
+        ('succeeded', "Succeeded"),
+        ('failed', "Failed"),
+    ], copy=False, readonly=True)
+    last_job_error = fields.Text(copy=False, readonly=True)
+    last_execution_arn = fields.Char(
+        copy=False, readonly=True,
+        help="Step Functions execution ARN for last_job_id, recorded by AwsProvisioner so "
+             "check_status() knows what to poll (docs/adr/0019).")
+
+    # EC2 instance id Suspend/Wake need for their execution input
+    # (infra/foundation/state_machine.asl.json.tftpl's SuspendInstance/WakeInstance Task
+    # states, docs/adr/0021). Not populated by this ticket: it's only known once an Issue
+    # execution's `tofu apply` actually runs, and #113's state machine doesn't yet surface its
+    # outputs back onto the execution's own result for hosting_admin to read (a gap for a
+    # follow-up ticket, not something #114 can close from the hosting_admin side alone).
+    # AwsProvisioner.suspend()/wake() raise a clear error rather than start an execution AWS
+    # would reject anyway if this is still blank.
+    instance_id = fields.Char(copy=False, readonly=True)
 
     # Last recorded activity on this Trial Org's compute, checked by the idle-timeout Suspend
     # scheduled action (docs/adr/0014) against IDLE_TIMEOUT_MINUTES. Seeded to the moment it goes
@@ -166,10 +202,20 @@ class HostingTrialOrg(models.Model):
         return super().write(vals)
 
     def _get_provisioner(self):
-        """Return the ``Provisioner`` implementation to call at each lifecycle transition.
-        A later ticket replaces this stub with the real AWS/OpenTofu-backed implementation;
-        tests override this method to inject a recording fake."""
-        return StubProvisioner()
+        """Return the ``Provisioner`` implementation to call at each lifecycle transition:
+        ``AwsProvisioner`` once AWS wiring is configured (CONFIG_PARAM_STATE_MACHINE_ARN and
+        friends, above), ``StubProvisioner`` otherwise - dev/test environments with no AWS
+        account to talk to. Tests override this method directly to inject a recording fake."""
+        ICP = self.env['ir.config_parameter'].sudo()
+        state_machine_arn = ICP.get_param(CONFIG_PARAM_STATE_MACHINE_ARN)
+        if not state_machine_arn:
+            return StubProvisioner()
+        return AwsProvisioner(
+            state_machine_arn=state_machine_arn,
+            base_ami_id=ICP.get_param(CONFIG_PARAM_BASE_AMI_ID),
+            tofu_module_git_sha=ICP.get_param(CONFIG_PARAM_TOFU_MODULE_GIT_SHA),
+            region_name=ICP.get_param(CONFIG_PARAM_AWS_REGION),
+        )
 
     def action_issue(self):
         """Issue this Trial Org: issued -> active."""
@@ -187,13 +233,39 @@ class HostingTrialOrg(models.Model):
         """Auto-Destroy (or manually tear down) this Trial Org: active/suspended -> destroyed."""
         self._apply_transition('destroy')
 
+    def _get_or_create_job_id(self, action_name):
+        """Return (job_id, started_at) for ``action_name`` on this record (docs/adr/0019's Job
+        identity design): reuse the existing job id verbatim if the last job recorded on this
+        record was for this same action, is still ``running``, and started within
+        JOB_ID_RETRY_WINDOW - a retry of the same lifecycle request - otherwise mint a fresh
+        UUID. ``started_at`` is returned alongside so a reused job keeps its *original* start
+        time rather than resetting the 24h window on every retry.
+
+        Scope note: this bookkeeping lives inside _apply_transition()'s own savepoint, so it
+        only dedupes a retry that reaches Odoo again *after* a prior attempt's write actually
+        committed (e.g. a second call arriving while the record's last job is still 'running').
+        It cannot dedupe the narrower crash window between StartExecution succeeding in AWS and
+        that same savepoint later rolling back for an unrelated reason - Odoo has no record of
+        the job id to reuse in that case, so the next attempt mints a fresh one and a second,
+        differently-named execution reaches AWS. That's still safe, not silently inconsistent:
+        the second execution can't proceed until the first stray one's DynamoDB lock is
+        released (docs/adr/0020), which is the actual backstop for this specific race."""
+        self.ensure_one()
+        now = fields.Datetime.now()
+        if (self.last_job_action == action_name
+                and self.last_job_status == 'running'
+                and self.last_job_started_at
+                and now - self.last_job_started_at < JOB_ID_RETRY_WINDOW):
+            return self.last_job_id, self.last_job_started_at
+        return str(uuid.uuid4()), now
+
     def _apply_transition(self, action_name):
         """Validate every record in ``self`` is in a source state ``action_name`` allows, then
-        call the matching ``Provisioner`` method (with a freshly generated job id) for each one
-        before recording the new state and job id. The whole batch is applied inside one
-        savepoint, so a rejected transition or a Provisioner failure on any single record rolls
-        every record in the call back - a multi-record call is genuinely all-or-nothing, not
-        just pre-validated-then-hopefully-safe."""
+        call the matching ``Provisioner`` method (with a job id from ``_get_or_create_job_id``)
+        for each one before recording the new state and job id. The whole batch is applied
+        inside one savepoint, so a rejected transition or a Provisioner failure on any single
+        record rolls every record in the call back - a multi-record call is genuinely
+        all-or-nothing, not just pre-validated-then-hopefully-safe."""
         allowed_source_states, target_state = _TRANSITIONS[action_name]
         with self.env.cr.savepoint():
             for trial_org in self:
@@ -209,9 +281,16 @@ class HostingTrialOrg(models.Model):
             provisioner = self._get_provisioner()
             now = fields.Datetime.now()
             for trial_org in self:
-                job_id = str(uuid.uuid4())
+                job_id, job_started_at = trial_org._get_or_create_job_id(action_name)
                 getattr(provisioner, action_name)(trial_org, job_id)
-                values = {'state': target_state, 'last_job_id': job_id}
+                values = {
+                    'state': target_state,
+                    'last_job_id': job_id,
+                    'last_job_action': action_name,
+                    'last_job_started_at': job_started_at,
+                    'last_job_status': 'running',
+                    'last_job_error': False,
+                }
                 if target_state == 'active':
                     # Issue and Wake both start (or restart) the idle-timeout clock.
                     values['last_activity_at'] = now
@@ -247,3 +326,17 @@ class HostingTrialOrg(models.Model):
         ])
         if expired_trial_orgs:
             expired_trial_orgs.action_destroy()
+
+    def _cron_poll_pending_jobs(self):
+        """Scheduled action: poll every Trial Org with an unfinished lifecycle job
+        (last_job_status == 'running') via the Provisioner's check_status() (docs/adr/0019),
+        surfacing succeeded/failed onto the record. A StubProvisioner-backed record (no AWS
+        wiring configured) is included in the search but check_status() is a no-op for it, so
+        it simply stays 'running' forever - harmless, and consistent with the stub never making
+        any AWS call."""
+        pending_trial_orgs = self.search([('last_job_status', '=', 'running')])
+        if not pending_trial_orgs:
+            return
+        provisioner = self._get_provisioner()
+        for trial_org in pending_trial_orgs:
+            provisioner.check_status(trial_org)

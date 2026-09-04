@@ -1,6 +1,17 @@
+from datetime import timedelta
+
+from odoo import fields
 from odoo.tests import TransactionCase, tagged
 
-from odoo.addons.hosting_admin.models.provisioner import Provisioner, StubProvisioner
+from odoo.addons.hosting_admin.models.provisioner import (
+    AwsProvisioner,
+    Provisioner,
+    StubProvisioner,
+)
+from odoo.addons.hosting_admin.models.trial_org import (
+    CONFIG_PARAM_STATE_MACHINE_ARN,
+    JOB_ID_RETRY_WINDOW,
+)
 
 
 class RecordingProvisioner(Provisioner):
@@ -149,3 +160,91 @@ class TestTrialOrgProvisioner(TransactionCase):
 
         self.assertEqual(self.trial_org.state, 'issued', "the first record's write must be rolled back too")
         self.assertEqual(other.state, 'issued')
+
+    def test_default_provisioner_falls_back_to_stub_when_unconfigured(self):
+        self.env['ir.config_parameter'].sudo().set_param(CONFIG_PARAM_STATE_MACHINE_ARN, '')
+        self.assertIsInstance(self.trial_org._get_provisioner(), StubProvisioner)
+
+    def test_provisioner_is_aws_backed_once_state_machine_arn_is_configured(self):
+        self.env['ir.config_parameter'].sudo().set_param(
+            CONFIG_PARAM_STATE_MACHINE_ARN, 'arn:aws:states:us-east-1:123456789012:stateMachine:x')
+        self.assertIsInstance(self.trial_org._get_provisioner(), AwsProvisioner)
+
+    def test_reissuing_within_the_retry_window_reuses_the_job_id(self):
+        # _get_or_create_job_id() is exercised directly here rather than through two real
+        # action_issue() calls, since a second action_issue() while still 'active' is rejected
+        # by source-state validation - see _apply_transition()'s docstring on why the reuse
+        # path is only reachable across separate transaction boundaries (docs/adr/0019).
+        first_job_id, first_started_at = self.trial_org._get_or_create_job_id('issue')
+        self.trial_org.with_context(hosting_trial_org_allow_state_write=True).write({
+            'last_job_id': first_job_id,
+            'last_job_action': 'issue',
+            'last_job_started_at': first_started_at,
+            'last_job_status': 'running',
+        })
+
+        reused_job_id, reused_started_at = self.trial_org._get_or_create_job_id('issue')
+
+        self.assertEqual(reused_job_id, first_job_id)
+        self.assertEqual(reused_started_at, first_started_at)
+
+    def test_a_different_action_never_reuses_the_job_id(self):
+        job_id, started_at = self.trial_org._get_or_create_job_id('issue')
+        self.trial_org.with_context(hosting_trial_org_allow_state_write=True).write({
+            'last_job_id': job_id,
+            'last_job_action': 'issue',
+            'last_job_started_at': started_at,
+            'last_job_status': 'running',
+        })
+
+        other_job_id, _started_at = self.trial_org._get_or_create_job_id('destroy')
+
+        self.assertNotEqual(other_job_id, job_id)
+
+    def test_a_finished_job_is_never_reused(self):
+        job_id, started_at = self.trial_org._get_or_create_job_id('issue')
+        self.trial_org.with_context(hosting_trial_org_allow_state_write=True).write({
+            'last_job_id': job_id,
+            'last_job_action': 'issue',
+            'last_job_started_at': started_at,
+            'last_job_status': 'succeeded',
+        })
+
+        fresh_job_id, _started_at = self.trial_org._get_or_create_job_id('issue')
+
+        self.assertNotEqual(fresh_job_id, job_id)
+
+    def test_a_job_past_the_retry_window_is_never_reused(self):
+        stale_start = fields.Datetime.now() - JOB_ID_RETRY_WINDOW - timedelta(minutes=1)
+        self.trial_org.with_context(hosting_trial_org_allow_state_write=True).write({
+            'last_job_id': 'stale-job',
+            'last_job_action': 'issue',
+            'last_job_started_at': stale_start,
+            'last_job_status': 'running',
+        })
+
+        fresh_job_id, fresh_started_at = self.trial_org._get_or_create_job_id('issue')
+
+        self.assertNotEqual(fresh_job_id, 'stale-job')
+        self.assertNotEqual(fresh_started_at, stale_start)
+
+    def test_cron_poll_pending_jobs_calls_check_status_on_running_jobs_only(self):
+        calls = []
+
+        class RecordingCheckStatusProvisioner(RecordingProvisioner):
+            def check_status(self, trial_org):
+                calls.append(trial_org.id)
+
+        provisioner = RecordingCheckStatusProvisioner()
+        self._inject_provisioner(provisioner)
+        self.trial_org.action_issue()
+        other = self.env['hosting.trial.org'].create({
+            'name': "Other Trial",
+            'prospect_domain': "other.example.com",
+            'seat_cap': 5,
+        })  # left 'issued' - never gets a running job, so never polled
+
+        self.env['hosting.trial.org']._cron_poll_pending_jobs()
+
+        self.assertEqual(calls, [self.trial_org.id])
+        self.assertNotIn(other.id, calls)

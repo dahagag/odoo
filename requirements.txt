@@ -5,6 +5,7 @@ asn1crypto==1.5.1 ; python_version >= '3.11'
 Babel==2.9.1 ; python_version < '3.11'  # min version = 2.6.0 (Focal with security backports)
 Babel==2.10.3 ; python_version >= '3.11' and python_version < '3.13'
 Babel==2.17.0 ; python_version >= '3.13'
+boto3==1.34.162  # hosting_admin's AwsProvisioner: Step Functions StartExecution/DescribeExecution (docs/adr/0019)
 cbor2==5.4.2.post1 ; python_version < '3.11'  # (Jammy)
 cbor2==5.4.6 ; python_version >= '3.11' and python_version < '3.12'  # (Bookworm)
 cbor2==5.6.2 ; python_version >= '3.12'
