@@ -7,9 +7,10 @@ disable-model-invocation: true
 Implement the work described by the user in the spec or tickets.
 
 Before writing any view-layer code (Odoo views/QWeb/OWL), judge whether the ticket introduces a
-new screen/flow/widget ("major") or only tweaks an already-reviewed screen ("minor"), and ask the
-user whether to run a design-board pass first (`/design`, per `docs/agents/design-review.md`) —
-never decide silently either way.
+new screen/flow/widget, or reshapes the layout/interaction of an already-reviewed screen (both
+"major"), or only adds/removes fields on an already-reviewed screen without changing its
+layout/interaction ("minor"), and ask the user whether to run a design-board pass first
+(`/design`, per `docs/agents/design-review.md`) — never decide silently either way.
 
 Use /tdd where possible, at pre-agreed seams.
 

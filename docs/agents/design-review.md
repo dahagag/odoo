@@ -7,9 +7,11 @@ this project's own Odoo theme, so the direction can be agreed before real code e
 ## Judging major vs minor
 
 Neither `/to-tickets` nor `/implement` decides this silently. A ticket is **major** (worth a
-design-board pass) when it introduces a new screen, a new flow, or a new interactive widget;
-**minor** when it only adds/removes fields on an already-reviewed screen. Whichever a ticket looks
-like, ask the user before proceeding — the call is theirs, not a default to assume.
+design-board pass) when it introduces a new screen, a new flow, a new interactive widget, or
+reshapes the layout/interaction of an already-reviewed screen; **minor** when it only
+adds/removes fields on an already-reviewed screen without changing its layout or interaction.
+Whichever a ticket looks like, ask the user before proceeding — the call is theirs, not a
+default to assume.
 
 - `/to-tickets` adds a one-line suggestion to a new ticket's body
   (`Consider a design-board pass before implementing (see docs/agents/design-review.md).`) without
