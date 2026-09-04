@@ -149,9 +149,14 @@ class HostingTrialOrg(models.Model):
     audit_trail_stopped_at = fields.Datetime(compute='_compute_audit_trail', string="Audited Stop")
     audit_trail_steps_available = fields.Boolean(
         compute='_compute_audit_trail',
-        help="Whether step-by-step execution history could be read from AWS (false if it has "
-             "aged out of Step Functions' own retention window, even when the execution's "
-             "overall status/timing above is still available).")
+        help="Whether step-by-step execution history could be read from AWS, even when the "
+             "execution's overall status/timing above is still available.")
+    audit_trail_steps_unavailable_reason = fields.Char(
+        compute='_compute_audit_trail',
+        help="The AWS error code GetExecutionHistory actually reported when "
+             "audit_trail_steps_available is false (e.g. AccessDeniedException, "
+             "ThrottlingException) - never a guessed cause such as retention expiry, which AWS "
+             "does not report as a distinct exception.")
     audit_trail_steps = fields.Text(
         compute='_compute_audit_trail', string="Audited Steps",
         help="One line per Step Functions execution-history event: when it happened, which "
@@ -260,6 +265,7 @@ class HostingTrialOrg(models.Model):
             trial_org.audit_trail_started_at = self._audit_trail_datetime(trail.get('start_date'))
             trial_org.audit_trail_stopped_at = self._audit_trail_datetime(trail.get('stop_date'))
             trial_org.audit_trail_steps_available = trail.get('steps_available', False)
+            trial_org.audit_trail_steps_unavailable_reason = trail.get('steps_unavailable_reason')
             trial_org.audit_trail_steps = self._format_audit_trail_steps(trail.get('steps') or [])
 
     @staticmethod

@@ -22,6 +22,10 @@
         <field name="arch" type="xml">
             <form string="Trial Org">
                 <sheet>
+                    <!-- Odoo 19 requires a field referenced by any invisible= expression below
+                         to be present in the view's own field list, even hidden. -->
+                    <field name="audit_trail_available" invisible="1"/>
+                    <field name="audit_trail_steps_available" invisible="1"/>
                     <widget name="web_ribbon" title="Destroyed" bg_color="text-bg-danger" invisible="state != 'destroyed'"/>
                     <field name="state" widget="statusbar" statusbar_visible="issued,active,suspended,destroyed"/>
                     <group>
@@ -56,9 +60,11 @@
                             </group>
                             <div class="alert alert-warning" role="alert"
                                  invisible="not audit_trail_available or audit_trail_steps_available">
-                                Step-by-step detail is no longer available for this execution
-                                (it has aged out of Step Functions' retention window); the
-                                overall status/timing above is still current.
+                                Step-by-step detail could not be retrieved for this execution;
+                                the overall status/timing above is still current.
+                                <field name="audit_trail_steps_unavailable_reason"
+                                       invisible="not audit_trail_steps_unavailable_reason"
+                                       class="fw-bold" nolabel="1"/>
                             </div>
                             <field name="audit_trail_steps" widget="text" readonly="1"
                                    invisible="not audit_trail_steps_available"

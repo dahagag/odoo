@@ -157,13 +157,13 @@ class TestAwsProvisionerAuditTrail(TransactionCase):
         self.assertEqual(trail['steps'][0]['error'], 'TrialOrgLifecycleActionFailed')
         self.assertEqual(trail['steps'][0]['cause'], "the lock has been released")
 
-    def test_history_retention_gap_keeps_status_but_marks_steps_unavailable(self):
-        # The overall execution is still describable (it exists) but its step-by-step history
-        # has aged out of Step Functions' own retention window - degrade only the steps, not
-        # the whole trail, per the ticket's own requirement.
+    def test_history_failure_keeps_status_but_marks_steps_unavailable(self):
+        # The overall execution is still describable (it exists) but GetExecutionHistory itself
+        # failed for some reason - degrade only the steps, not the whole trail, per the ticket's
+        # own requirement.
         client = MagicMock()
         client.describe_execution.return_value = {'status': 'SUCCEEDED'}
-        client.get_execution_history.side_effect = RuntimeError("HistoryEventsNotFoundOrExpired")
+        client.get_execution_history.side_effect = RuntimeError("boom")
         provisioner = self._make_provisioner(client)
 
         trail = provisioner.get_audit_trail(self.trial_org)
@@ -172,6 +172,63 @@ class TestAwsProvisionerAuditTrail(TransactionCase):
         self.assertEqual(trail['status'], 'SUCCEEDED')
         self.assertFalse(trail['steps_available'])
         self.assertEqual(trail['steps'], [])
+        self.assertEqual(trail['steps_unavailable_reason'], 'RuntimeError')
+
+    def test_history_failure_reason_reads_the_aws_error_code_when_available(self):
+        # A real botocore ClientError carries the actual AWS error code on .response - surface
+        # that instead of the generic exception class name, and never a guessed cause like
+        # "retention expired" (AWS documents no such distinct exception at all).
+        class FakeClientError(Exception):
+            def __init__(self, code):
+                super().__init__(code)
+                self.response = {'Error': {'Code': code}}
+
+        client = MagicMock()
+        client.describe_execution.return_value = {'status': 'SUCCEEDED'}
+        client.get_execution_history.side_effect = FakeClientError('AccessDeniedException')
+        provisioner = self._make_provisioner(client)
+
+        trail = provisioner.get_audit_trail(self.trial_org)
+
+        self.assertFalse(trail['steps_available'])
+        self.assertEqual(trail['steps_unavailable_reason'], 'AccessDeniedException')
+
+    def test_get_execution_history_follows_the_pagination_token(self):
+        # GetExecutionHistory defaults to (and caps a single page at) 100 events; a retried Task
+        # or a long execution can exceed that, so a single-page read must not silently truncate
+        # the trail - keep following nextToken until AWS stops returning one.
+        client = MagicMock()
+        client.describe_execution.return_value = {'status': 'SUCCEEDED'}
+        client.get_execution_history.side_effect = [
+            {
+                'events': [{
+                    'timestamp': datetime(2026, 1, 1, 10, 0, 1, tzinfo=timezone.utc),
+                    'type': 'TaskStateEntered',
+                    'stateEnteredEventDetails': {'name': 'AcquireLock'},
+                }],
+                'nextToken': 'page-2',
+            },
+            {
+                'events': [{
+                    'timestamp': datetime(2026, 1, 1, 10, 0, 5, tzinfo=timezone.utc),
+                    'type': 'TaskStateEntered',
+                    'stateEnteredEventDetails': {'name': 'RunTofu'},
+                }],
+            },
+        ]
+        provisioner = self._make_provisioner(client)
+
+        trail = provisioner.get_audit_trail(self.trial_org)
+
+        self.assertEqual(client.get_execution_history.call_count, 2)
+        first_call_kwargs = client.get_execution_history.call_args_list[0].kwargs
+        second_call_kwargs = client.get_execution_history.call_args_list[1].kwargs
+        self.assertNotIn('nextToken', first_call_kwargs)
+        self.assertEqual(second_call_kwargs['nextToken'], 'page-2')
+        self.assertTrue(trail['steps_available'])
+        self.assertEqual(len(trail['steps']), 2)
+        self.assertEqual(trail['steps'][0]['name'], 'AcquireLock')
+        self.assertEqual(trail['steps'][1]['name'], 'RunTofu')
 
 
 @tagged('post_install', '-at_install')
@@ -278,6 +335,7 @@ class TestTrialOrgAuditTrailFields(TransactionCase):
                     'start_date': None,
                     'stop_date': None,
                     'steps_available': False,
+                    'steps_unavailable_reason': 'AccessDeniedException',
                     'steps': [],
                 }
 
@@ -287,3 +345,5 @@ class TestTrialOrgAuditTrailFields(TransactionCase):
         self.assertTrue(self.trial_org.audit_trail_available)
         self.assertFalse(self.trial_org.audit_trail_steps_available)
         self.assertFalse(self.trial_org.audit_trail_steps)
+        self.assertEqual(
+            self.trial_org.audit_trail_steps_unavailable_reason, 'AccessDeniedException')

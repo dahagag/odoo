@@ -212,10 +212,13 @@ class AwsProvisioner(Provisioner):
         execution to ask about, or ``DescribeExecution`` itself fails (e.g. transient AWS/
         network trouble) - the ticket's own requirement that a failed AWS call show a clear
         "unavailable" state on the view instead of an error page. A ``GetExecutionHistory``
-        failure alone (e.g. the execution's history has aged out of Step Functions' retention
-        window, while the execution record itself is still describable) instead keeps
+        failure alone (e.g. an IAM/KMS permission problem, throttling, or transient AWS/network
+        trouble - AWS documents no distinct "history expired past retention" exception at all,
+        and a genuinely retention-purged execution already fails the ``DescribeExecution`` call
+        above, since the whole execution record is gone, not just its history) instead keeps
         ``available: True`` with ``steps_available: False`` - the overall status/timing is
-        still real and worth showing even without the step detail.
+        still real and worth showing even without the step detail. ``steps_unavailable_reason``
+        carries whatever AWS actually reported for that failure, never a guessed cause.
         """
         if not trial_org.last_execution_arn:
             return {'available': False}
@@ -229,16 +232,29 @@ class AwsProvisioner(Provisioner):
             return {'available': False}
 
         steps_available = True
+        steps_unavailable_reason = None
         events = []
         try:
-            history = self.client.get_execution_history(
-                executionArn=trial_org.last_execution_arn, reverseOrder=False)
-            events = history.get('events', [])
-        except Exception:
+            next_token = None
+            while True:
+                # GetExecutionHistory defaults to (and caps a single page at) 100 events;
+                # a retried Task (docs/adr/0019's Retry/BackoffRate) or a long execution can
+                # exceed that, so a single-page read can silently truncate the trail - keep
+                # following nextToken until AWS stops returning one.
+                kwargs = {'executionArn': trial_org.last_execution_arn, 'reverseOrder': False}
+                if next_token:
+                    kwargs['nextToken'] = next_token
+                history = self.client.get_execution_history(**kwargs)
+                events.extend(history.get('events', []))
+                next_token = history.get('nextToken')
+                if not next_token:
+                    break
+        except Exception as exc:
             _logger.exception(
                 "Could not get Step Functions execution history for %s for Trial Org %s's "
                 "audit trail", trial_org.last_execution_arn, trial_org.id)
             steps_available = False
+            steps_unavailable_reason = self._describe_history_failure(exc)
 
         return {
             'available': True,
@@ -248,8 +264,20 @@ class AwsProvisioner(Provisioner):
             'start_date': execution.get('startDate'),
             'stop_date': execution.get('stopDate'),
             'steps_available': steps_available,
+            'steps_unavailable_reason': steps_unavailable_reason,
             'steps': [self._describe_event(event) for event in events],
         }
+
+    @staticmethod
+    def _describe_history_failure(exc):
+        """Best-effort label for why GetExecutionHistory failed, read from the AWS error code
+        when the client raised a real ``botocore.ClientError`` (e.g. ``AccessDeniedException``,
+        ``KmsAccessDeniedException``, ``ThrottlingException``) - never a guessed cause. Falls
+        back to the exception's own class name when it carries no AWS error code (e.g. a
+        network-level failure that never reached AWS at all)."""
+        response = getattr(exc, 'response', None)
+        code = response.get('Error', {}).get('Code') if isinstance(response, dict) else None
+        return code or exc.__class__.__name__
 
     @staticmethod
     def _describe_event(event):
