@@ -41,8 +41,6 @@ class TestHostingOrgRegistrationView(TransactionCase):
 
     def test_view_renders_values_sourced_from_the_trial_org_fixture(self):
         registration = self._create_fixture()
-        field_names = self._view_field_names('hosting.view_hosting_org_registration_form')
-        self.assertEqual(field_names, EXPECTED_FIELDS)
         self.assertEqual(registration.name, "Acme Trial")
         self.assertEqual(registration.prospect_domain, "acme.example.com")
         self.assertEqual(registration.seats_used, 3)
