@@ -23,6 +23,12 @@ class CrmLead(models.Model):
         'hosting.trial.org', string="Trial Org", copy=False, readonly=True,
         help="The Trial Org issued for this opportunity's prospect, if any.",
     )
+    trial_expiry_date = fields.Date(
+        related='trial_org_id.expiry_date', string="Trial Expiry",
+        help="The date Auto-Destroy fires for this opportunity's Trial Org, absent a further "
+             "Extension. Rendered in the viewing user's own date format/timezone by the Date "
+             "widget, same as any other date field.",
+    )
     methodology_id = fields.Many2one(
         'crm.methodology', string="Sales Methodology",
         help="Defaults from the client's Sales Methodology when this opportunity is created. "
