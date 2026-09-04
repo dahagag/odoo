@@ -7,9 +7,11 @@ to how the execution's own mutex works ([ADR-0020](0020-dynamodb-per-trial-org-l
 or what OpenTofu does and doesn't own about the EC2 instance
 ([ADR-0021](0021-trial-org-ec2-power-state-and-instance-profile-boundary.md)).
 
-**Job identity.** Before calling `StartExecution`, `hosting_admin` generates a fresh UUID and
-persists it on the Trial Org record as that lifecycle action's **job id**. The Step Functions
-execution name is derived from it (e.g. `trial-<trial_org_id>-<job_id>`), and the same job id
+**Job identity.** `hosting_admin` generates a fresh UUID in memory as that lifecycle action's
+**job id** and passes it into the `StartExecution` call; the id is persisted on the Trial Org
+record only after that call returns (`_apply_transition()` writes `last_job_id` together with
+the new lifecycle state, not before). The Step Functions execution name is derived from it
+(e.g. `trial-<trial_org_id>-<job_id>`), and the same job id
 becomes the base of the `ClientToken` passed to the ECS `RunTask` call inside the execution
 (folded together with `$$.State.RetryCount`, so a Step Functions-level Task retry launches a
 fresh attempt rather than ECS's own `ClientToken` dedup handing back an already-failed task,
