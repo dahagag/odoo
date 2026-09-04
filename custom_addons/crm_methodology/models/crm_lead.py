@@ -6,8 +6,14 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 # docs/contexts/hosting/CONTEXT.md: "An isolated Odoo instance ... running for a fixed window
 # (default 14 days) before Auto-Destroy." hosting_admin's own Trial Org model never sets
 # expiry_date itself (it only tracks the issued/active/suspended/destroyed state machine), so
-# the 14-day default and every later Extension are this addon's responsibility.
-TRIAL_DEFAULT_EXPIRY_DAYS = 14
+# this addon is responsible for the initial 14-day window.
+TRIAL_INITIAL_EXPIRY_DAYS = 14
+
+# docs/contexts/hosting/CONTEXT.md's Extension entry doesn't mandate a specific increment, only
+# that the action "pushes out a Trial Org's expiry date". 14 days is a reasonable, editable
+# starting point on the wizard, not a value the spec ties to TRIAL_INITIAL_EXPIRY_DAYS above -
+# kept as its own constant so the two can diverge later without looking like a bug.
+TRIAL_DEFAULT_EXTENSION_DAYS = 14
 
 
 class CrmLead(models.Model):
@@ -142,7 +148,10 @@ class CrmLead(models.Model):
     def action_issue_trial(self, prospect_domain, seat_cap, invite_type, invite_email=False):
         """Issue a Trial Org for this Opportunity's prospect via hosting_admin's model (docs/adr/
         0018, docs/adr/0026). Both invite paths lock the same ``prospect_domain`` on the Trial
-        Org; only the delivery mechanism (a specific email vs. a domain-only link) differs."""
+        Org; only the delivery mechanism (a specific email vs. a domain-only link) differs -
+        hosting_admin (ticket #108) has no Seat sub-model yet, so there is nothing here to
+        pre-create for a Targeted Invite beyond the Trial Org itself; the distinction is
+        recorded in the chatter message below instead."""
         self.ensure_one()
         if not self.env.user.has_group('sales_team.group_sale_salesman'):
             raise AccessError(_("Only Salespeople can issue a Trial Org."))
@@ -156,15 +165,21 @@ class CrmLead(models.Model):
             raise UserError(_("A Targeted Invite needs a specific email address."))
         if invite_type == 'open' and invite_email:
             raise UserError(_("An Open Invite Link doesn't take a specific email address."))
+        if not prospect_domain:
+            raise UserError(_("A prospect domain is required to issue a Trial Org."))
+        if not isinstance(seat_cap, int) or seat_cap <= 0:
+            raise UserError(_("Seat count must be a positive whole number."))
         # hosting.trial.org is Platform-only, cross-org data (docs/adr/0018) that an ordinary
         # salesperson has no direct access to. Elevate only after validating the caller and the
         # collected inputs above, and only for the exact create()/action_issue() this confirmed
-        # action promises.
+        # action promises. hosting.trial.org's own constraints (domain format, system-wide seat
+        # cap) still apply on top of these checks - this only stops obviously-bad input from
+        # ever reaching the elevated call.
         trial_org = self.env['hosting.trial.org'].sudo().create({
             'name': self.partner_id.name or self.name,
             'prospect_domain': prospect_domain,
             'seat_cap': seat_cap,
-            'expiry_date': fields.Date.context_today(self) + timedelta(days=TRIAL_DEFAULT_EXPIRY_DAYS),
+            'expiry_date': fields.Date.context_today(self) + timedelta(days=TRIAL_INITIAL_EXPIRY_DAYS),
         })
         trial_org.action_issue()
         self.trial_org_id = trial_org.id
@@ -176,7 +191,7 @@ class CrmLead(models.Model):
         self.message_post(body=message)
         return trial_org
 
-    def action_extend_trial(self, additional_days=TRIAL_DEFAULT_EXPIRY_DAYS):
+    def action_extend_trial(self, additional_days=TRIAL_DEFAULT_EXTENSION_DAYS):
         """Push out the linked Trial Org's expiry date (docs/contexts/hosting/CONTEXT.md's
         Extension), restricted to the Opportunity's owning salesperson or a sales manager."""
         self.ensure_one()
@@ -185,6 +200,8 @@ class CrmLead(models.Model):
         self.check_access('write')
         if not self.trial_org_id:
             raise UserError(_("No Trial Org has been issued for this opportunity yet."))
+        if not isinstance(additional_days, int) or additional_days <= 0:
+            raise UserError(_("Additional days must be a positive whole number."))
         # See action_issue_trial() above: same narrow, post-validation sudo() boundary.
         trial_org = self.trial_org_id.sudo()
         base_date = trial_org.expiry_date or fields.Date.context_today(self)
