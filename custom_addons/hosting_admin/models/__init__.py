@@ -1,1 +1,1 @@
-from . import provisioner, trial_org
+from . import provisioner, seat, trial_org
