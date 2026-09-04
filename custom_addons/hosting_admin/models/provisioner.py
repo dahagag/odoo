@@ -17,10 +17,11 @@ class Provisioner(ABC):
     no-op stand-in for environments (tests, dev) with no AWS wiring configured.
 
     Each method takes the ``hosting.trial.org`` record the action targets and a ``job_id`` -
-    the UUID persisted on the record for that action (docs/adr/0019) so an implementation can
-    derive a deterministic Step Functions execution name / ECS ``ClientToken`` and safely
-    dedupe a retry within its 24-hour window. Returns a Provisioner-defined execution handle
-    (e.g. a Step Functions execution ARN); ``StubProvisioner`` returns ``None``.
+    a fresh UUID minted for this call (docs/adr/0019) so an implementation can derive a
+    deterministic Step Functions execution name / ECS ``ClientToken``, making a Step
+    Functions-level Task retry of the same execution attempt safely idempotent. Returns a
+    Provisioner-defined execution handle (e.g. a Step Functions execution ARN);
+    ``StubProvisioner`` returns ``None``.
     """
 
     @abstractmethod
@@ -99,17 +100,19 @@ class AwsProvisioner(Provisioner):
 
     def issue(self, trial_org, job_id):
         self._start_execution(trial_org, job_id, 'issue', extra_input={
-            'ami_id': self._base_ami_id,
-            'module_git_sha': self._tofu_module_git_sha,
+            'ami_id': self._require_module_config('base_ami_id', self._base_ami_id),
+            'module_git_sha': self._require_module_config(
+                'tofu_module_git_sha', self._tofu_module_git_sha),
         })
-        # Both the AMI id and the module's git SHA are already known here - hosting_admin is
-        # telling the per-trial OpenTofu module which of each to use (they're inputs to the
-        # module, not something to discover from the apply's result), so they can be recorded
-        # onto the Deployment Version fields (docs/adr/0024) right away rather than waiting for
-        # the execution to finish.
+        # The AMI id and the module's git SHA are already known here - hosting_admin is telling
+        # the per-trial OpenTofu module which of each to use - but the execution can still fail
+        # (FAILED/TIMED_OUT/ABORTED) after StartExecution returns. Stash them as pending rather
+        # than writing the Deployment Version fields (docs/adr/0024) directly: check_status()
+        # only promotes them once the execution actually reports SUCCEEDED, so a failed deploy
+        # never claims a version it didn't complete.
         trial_org.write({
-            'ami_id': self._base_ami_id,
-            'tofu_module_git_sha': self._tofu_module_git_sha,
+            'pending_ami_id': self._base_ami_id,
+            'pending_tofu_module_git_sha': self._tofu_module_git_sha,
         })
 
     def suspend(self, trial_org, job_id):
@@ -123,7 +126,21 @@ class AwsProvisioner(Provisioner):
         })
 
     def destroy(self, trial_org, job_id):
-        self._start_execution(trial_org, job_id, 'destroy')
+        # RunTofu (infra/foundation/state_machine.asl.json.tftpl) is the same Task for 'issue'
+        # and 'destroy', and now always reads $.ami_id/$.module_git_sha for the ECS task's
+        # AMI_ID/MODULE_GIT_SHA env vars - a destroy execution input missing either key would
+        # fail the state machine itself with a JSONPath resolution error before ever reaching
+        # ECS. Use the org's own recorded Deployment Version (docs/adr/0024), not the
+        # currently-configured one, since a destroy must tear down what was actually deployed.
+        # Fall back to the pending fields when the audit fields are still blank: a prior Issue
+        # can have failed (or still be running) without ever reaching check_status()'s SUCCEEDED
+        # promotion, yet still moved this org to 'active' and left real infrastructure behind for
+        # destroy() to clean up - pending_ami_id/pending_tofu_module_git_sha are what that Issue
+        # actually told RunTofu to use.
+        self._start_execution(trial_org, job_id, 'destroy', extra_input={
+            'ami_id': trial_org.ami_id or trial_org.pending_ami_id,
+            'module_git_sha': trial_org.tofu_module_git_sha or trial_org.pending_tofu_module_git_sha,
+        })
 
     def check_status(self, trial_org):
         """Poll this Trial Org's most recently started execution and surface
@@ -146,7 +163,16 @@ class AwsProvisioner(Provisioner):
         if status == 'RUNNING':
             return
         if status == 'SUCCEEDED':
-            trial_org.write({'last_job_status': 'succeeded', 'last_job_error': False})
+            # Promoting pending_ami_id/pending_tofu_module_git_sha here is a no-op for a
+            # suspend/wake/destroy success - only issue() ever changes those pending fields, so
+            # this just re-copies whatever the last issue already recorded (or blanks, if this
+            # Trial Org has never been issued through this Provisioner).
+            trial_org.write({
+                'last_job_status': 'succeeded',
+                'last_job_error': False,
+                'ami_id': trial_org.pending_ami_id,
+                'tofu_module_git_sha': trial_org.pending_tofu_module_git_sha,
+            })
         else:
             # FAILED, TIMED_OUT or ABORTED - including a failure Step Functions itself
             # terminates the execution for (e.g. after exhausting a Task's Retry). Surfaced as
@@ -172,9 +198,28 @@ class AwsProvisioner(Provisioner):
         return f"trial-{trial_org.id}-{job_id}"
 
     def _execution_arn(self, execution_name):
-        # arn:aws:states:<region>:<account>:stateMachine:<name>
+        # arn:aws:states:<region>:<account>:stateMachine:<name>[:qualifier]
         #   -> arn:aws:states:<region>:<account>:execution:<name>:<execution_name>
-        return self._state_machine_arn.replace(':stateMachine:', ':execution:') + f":{execution_name}"
+        # hosting_admin.aws_state_machine_arn (docs/adr/0022) may be a version- or
+        # alias-qualified ARN - StartExecution accepts that, but a Step Functions *execution*
+        # ARN never carries that trailing qualifier segment, so it's dropped before rebuilding
+        # one (docs/adr/0019's IAM scope documents the unqualified execution ARN format).
+        unqualified_state_machine_arn = ':'.join(self._state_machine_arn.split(':')[:7])
+        return (unqualified_state_machine_arn.replace(':stateMachine:', ':execution:')
+                + f":{execution_name}")
+
+    @staticmethod
+    def _require_module_config(name, value):
+        # RunTofu (infra/foundation/state_machine.asl.json.tftpl) forwards $.ami_id/
+        # $.module_git_sha to the ECS task as AMI_ID/MODULE_GIT_SHA - the trial_org OpenTofu
+        # module (infra/modules/trial_org/variables.tf) requires both. Starting an execution
+        # without them would fail deep inside the ECS task's `tofu apply` instead of here.
+        if not value:
+            raise UserError(_(
+                "Cannot issue a Trial Org: %(name)s is not configured "
+                "(ir.config_parameter).", name=name,
+            ))
+        return value
 
     @staticmethod
     def _require_instance_id(trial_org, action):
@@ -210,7 +255,7 @@ class AwsProvisioner(Provisioner):
             execution_input.update({k: v for k, v in extra_input.items() if v is not None})
 
         try:
-            self.client.start_execution(
+            response = self.client.start_execution(
                 stateMachineArn=self._state_machine_arn,
                 name=execution_name,
                 input=json.dumps(execution_input),
@@ -218,14 +263,24 @@ class AwsProvisioner(Provisioner):
         except self.client.exceptions.ExecutionAlreadyExists:
             # A genuine retry of the same request: the same job id derives the same execution
             # name/input, which Step Functions itself already recognizes as the same execution
-            # rather than starting a second one (docs/adr/0019) - nothing else to do.
+            # rather than starting a second one (docs/adr/0019) - nothing else to do. There's no
+            # response to read an executionArn from here, so fall back to reconstructing it -
+            # safe in this one case because it's built from the same unqualified
+            # _state_machine_arn StartExecution itself was just called with, not from whatever
+            # arbitrary ARN hosting_admin.aws_state_machine_arn holds in the general case below.
             _logger.info(
                 "StartExecution retry for Trial Org %s job %s already exists; reusing it.",
                 trial_org.id, job_id)
+            trial_org.write({'last_execution_arn': self._execution_arn(execution_name)})
+            return
         except Exception as exc:
             raise UserError(_(
                 "Could not start the %(action)s action for Trial Org %(name)s: %(error)s",
                 action=action, name=trial_org.name, error=exc,
             )) from exc
 
-        trial_org.write({'last_execution_arn': self._execution_arn(execution_name)})
+        # Read the executionArn StartExecution actually returned rather than reconstructing it
+        # from hosting_admin.aws_state_machine_arn: that config value can be version- or
+        # alias-qualified, which _execution_arn()'s naive string replacement would carry into an
+        # invalid execution ARN, breaking check_status()'s later describe_execution call.
+        trial_org.write({'last_execution_arn': response['executionArn']})

@@ -49,11 +49,6 @@ CONFIG_PARAM_AWS_REGION = 'hosting_admin.aws_region'
 CONFIG_PARAM_BASE_AMI_ID = 'hosting_admin.base_ami_id'
 CONFIG_PARAM_TOFU_MODULE_GIT_SHA = 'hosting_admin.tofu_module_git_sha'
 
-# The AWS-documented TTL on ECS RunTask's own ClientToken reuse (docs/adr/0019's Job identity
-# section): a retry of the same lifecycle request within this window reuses the existing
-# unfinished job id; past it, hosting_admin treats the request as needing a fresh one.
-JOB_ID_RETRY_WINDOW = timedelta(hours=24)
-
 # Context key ``_apply_transition`` sets to authorize its own ``write({'state': ...})`` call.
 # ``state`` is declared ``readonly=True`` below, but that only hides the field in form views -
 # it does not stop a caller with model access from setting it directly via ORM or RPC
@@ -108,13 +103,21 @@ class HostingTrialOrg(models.Model):
         string="OpenTofu Module Git SHA", copy=False,
         help="The git SHA of the per-trial OpenTofu module this Trial Org was provisioned "
              "from. Audit-only; populated by the real Provisioner implementation.")
+    pending_ami_id = fields.Char(
+        copy=False, readonly=True,
+        help="ami_id staged by AwsProvisioner.issue() before its execution has finished. "
+             "Promoted to ami_id once check_status() sees that job SUCCEEDED, so a failed or "
+             "still-running deploy never claims a version it didn't complete.")
+    pending_tofu_module_git_sha = fields.Char(
+        copy=False, readonly=True,
+        help="tofu_module_git_sha staged by AwsProvisioner.issue() before its execution has "
+             "finished - see pending_ami_id.")
 
-    # The most recent lifecycle action's job id (docs/adr/0019): generated once per action and
-    # reused verbatim on a retry of that same action within JOB_ID_RETRY_WINDOW - see
-    # _get_or_create_job_id(). last_job_action/last_job_started_at are the bookkeeping
-    # _get_or_create_job_id() reads back to decide whether to reuse it; last_job_status/
-    # last_job_error/last_execution_arn are what AwsProvisioner.check_status() polls onto the
-    # record once that job's Step Functions execution finishes.
+    # The most recent lifecycle action's job id (docs/adr/0019): a fresh UUID minted for every
+    # call to _new_job_id(). last_job_action/last_job_started_at record which action it
+    # was for and when; last_job_status/last_job_error/last_execution_arn are what
+    # AwsProvisioner.check_status() polls onto the record once that job's Step Functions
+    # execution finishes.
     last_job_id = fields.Char(copy=False, readonly=True)
     last_job_action = fields.Char(copy=False, readonly=True)
     last_job_started_at = fields.Datetime(copy=False, readonly=True)
@@ -233,36 +236,25 @@ class HostingTrialOrg(models.Model):
         """Auto-Destroy (or manually tear down) this Trial Org: active/suspended -> destroyed."""
         self._apply_transition('destroy')
 
-    def _get_or_create_job_id(self, action_name):
-        """Return (job_id, started_at) for ``action_name`` on this record (docs/adr/0019's Job
-        identity design): reuse the existing job id verbatim if the last job recorded on this
-        record was for this same action, is still ``running``, and started within
-        JOB_ID_RETRY_WINDOW - a retry of the same lifecycle request - otherwise mint a fresh
-        UUID. ``started_at`` is returned alongside so a reused job keeps its *original* start
-        time rather than resetting the 24h window on every retry.
+    def _new_job_id(self):
+        """Return (job_id, started_at) for a lifecycle action about to start on this record
+        (docs/adr/0019's Job identity design): a fresh UUID and the current time, every call.
 
-        Scope note: this bookkeeping lives inside _apply_transition()'s own savepoint, so it
-        only dedupes a retry that reaches Odoo again *after* a prior attempt's write actually
-        committed (e.g. a second call arriving while the record's last job is still 'running').
-        It cannot dedupe the narrower crash window between StartExecution succeeding in AWS and
-        that same savepoint later rolling back for an unrelated reason - Odoo has no record of
-        the job id to reuse in that case, so the next attempt mints a fresh one and a second,
-        differently-named execution reaches AWS. That's still safe, not silently inconsistent:
-        the second execution can't proceed until the first stray one's DynamoDB lock is
-        released (docs/adr/0020), which is the actual backstop for this specific race."""
+        There's no reuse-across-calls path: _apply_transition() writes the new ``state``
+        together with ``last_job_status: 'running'`` in the same call that starts the job, so by
+        the time any later call could reach this method, the source-state check in
+        _apply_transition() has already moved on or rejected it - a same-action retry never gets
+        here with the prior job still recorded as 'running'. The job id still does real work
+        within a single call: it's what StartExecution's execution name and the ECS ClientToken
+        are derived from (docs/adr/0019, docs/adr/0020's DynamoDB lock is the actual backstop for
+        a stray duplicate execution, not this)."""
         self.ensure_one()
-        now = fields.Datetime.now()
-        if (self.last_job_action == action_name
-                and self.last_job_status == 'running'
-                and self.last_job_started_at
-                and now - self.last_job_started_at < JOB_ID_RETRY_WINDOW):
-            return self.last_job_id, self.last_job_started_at
-        return str(uuid.uuid4()), now
+        return str(uuid.uuid4()), fields.Datetime.now()
 
     def _apply_transition(self, action_name):
         """Validate every record in ``self`` is in a source state ``action_name`` allows, then
-        call the matching ``Provisioner`` method (with a job id from ``_get_or_create_job_id``)
-        for each one before recording the new state and job id. The whole batch is applied
+        call the matching ``Provisioner`` method (with a fresh job id from ``_new_job_id``) for
+        each one before recording the new state and job id. The whole batch is applied
         inside one savepoint, so a rejected transition or a Provisioner failure on any single
         record rolls every record in the call back - a multi-record call is genuinely
         all-or-nothing, not just pre-validated-then-hopefully-safe."""
@@ -281,7 +273,7 @@ class HostingTrialOrg(models.Model):
             provisioner = self._get_provisioner()
             now = fields.Datetime.now()
             for trial_org in self:
-                job_id, job_started_at = trial_org._get_or_create_job_id(action_name)
+                job_id, job_started_at = trial_org._new_job_id()
                 getattr(provisioner, action_name)(trial_org, job_id)
                 values = {
                     'state': target_state,

@@ -7,18 +7,25 @@ to how the execution's own mutex works ([ADR-0020](0020-dynamodb-per-trial-org-l
 or what OpenTofu does and doesn't own about the EC2 instance
 ([ADR-0021](0021-trial-org-ec2-power-state-and-instance-profile-boundary.md)).
 
-**Job identity.** Before calling `StartExecution`, `hosting_admin` generates a UUID and persists
-it on the Trial Org record as that lifecycle action's **job id** — created once, reused verbatim
-on every retry of that same request. The Step Functions execution name is derived from it (e.g.
-`trial-<trial_org_id>-<job_id>`), and the same job id becomes the `ClientToken` passed to the ECS
-`RunTask` call inside the execution. This closes two separate retry hazards with one value:
-`StartExecution` only dedupes a Standard-workflow retry when the execution *name and input* both
-match exactly, and `RunTask`'s own `ClientToken` (a distinct, ECS-level dedup mechanism, valid for
-24 hours per AWS's own documented TTL) only dedupes when reused across retries with identical
-parameters — a fresh UUID per attempt would defeat both. A retry that arrives more than 24 hours
-after the original attempt is outside `RunTask`'s `ClientToken` window; `hosting_admin` treats
-that as requiring a fresh job id (a new lifecycle request), not a transparent retry of the stale
-one.
+**Job identity.** `hosting_admin` generates a fresh UUID in memory as that lifecycle action's
+**job id** and passes it into the `StartExecution` call; the id is persisted on the Trial Org
+record only after that call returns (`_apply_transition()` writes `last_job_id` together with
+the new lifecycle state, not before). The Step Functions execution name is derived from it
+(e.g. `trial-<trial_org_id>-<job_id>`), and the same job id
+becomes the base of the `ClientToken` passed to the ECS `RunTask` call inside the execution
+(folded together with `$$.State.RetryCount`, so a Step Functions-level Task retry launches a
+fresh attempt rather than ECS's own `ClientToken` dedup handing back an already-failed task,
+while transport-level retries of that same attempt still share one token and get its dedup
+protection). This closes the retry hazard within a single `StartExecution` call and the
+execution it starts.
+
+`hosting_admin` itself does not reuse a job id across separate calls: `_apply_transition()`
+writes the new lifecycle state together with `last_job_status: 'running'` in the same call that
+starts the job, so a same-action retry always fails source-state validation before it could ever
+reach a reuse check - by design there's no window where a second top-level call finds a prior
+job for the same action still outstanding. (An earlier revision of this design attempted such a
+reuse window keyed off a 24-hour TTL; it turned out to be unreachable given the state/job-status
+write above and was removed - see the CodeRabbit finding this addressed on PR #138.)
 
 **Trigger.** `hosting_admin` calls `StartExecution` on a per-lifecycle-action state machine,
 passing the Trial Org's id, the job id, and the requested action, then polls or receives a
