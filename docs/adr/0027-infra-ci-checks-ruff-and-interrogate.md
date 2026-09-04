@@ -10,8 +10,10 @@ A new required job, **`infra-checks`** (display name **"Infra checks (required)"
 workflow's existing `"Lint (required)"`/`"Docs-build tooling tests (required)"` naming), closes that
 gap: `tofu fmt -check`/`tofu validate` against all three OpenTofu modules (via the official
 `opentofu/setup-opentofu` action, with `tofu_version: 1.8.5` pinning the OpenTofu CLI version
-installed by that action — distinct from the action's own version reference), `ruff==0.16.1`
-(matching the pin already used
+installed by that action — distinct from the action's own version reference). Each module's
+working directory is initialized first (`tofu init -backend=false`; no backend needed for a
+CI-only validate pass), since `tofu validate` requires installed providers/modules to run.
+`ruff==0.16.1` (matching the pin already used
 in `docker/odoo-dev.Dockerfile`) for general Python code quality, and `interrogate==1.7.0
 --fail-under 80` for docstring coverage — both scoped to `infra/**` broadly rather than narrowly to
 `infra/foundation/lambda_src` (the only place Python exists under `infra/` today), so a future
@@ -48,6 +50,15 @@ identically to the Docker-wrapped invocation), so pulling that heavyweight image
 handful of infra Python files would be pure waste. This is also the seed of a separate, larger
 decision recorded in ADR-0028.
 
+**The bare invocation differs from the wrapped one only in transport, not command.** Today's
+Compose-wrapped invocation (`scripts/dev.sh lint`/`scripts/dev.ps1 lint`) runs from `/workspace`
+inside the container against `/workspace/<path>`, adding `--ignore EXE002` on Windows/MSYS (a rule
+that misfires on scripts without a shebang on those hosts). The Docker-free job runs the same
+`ruff check` directly on the Linux runner against the repo-relative path, with no `--ignore EXE002`
+(the exclusion is Windows-specific and doesn't apply there). Config discovery and exit-code
+semantics are identical either way, since `ruff` walks up from each file to find `ruff.toml`
+regardless of invocation style.
+
 **`ruff.toml` is never modified.** Its own header states it is auto-generated, synced nightly from
 upstream Odoo's own runbot CI config. `ruff` auto-discovers the nearest config by walking up the
 directory tree from each file it lints (confirmed via `ruff`'s own debug log:
@@ -62,9 +73,10 @@ docstring coverage (141 functions analyzed, 132 missing). A whole-tree 80% gate 
 permanently without a large, unrelated retrofit; a diff-scoped version (checking only files touched
 by a given PR) is possible in principle but is separate, unscoped future work.
 
-**The reusable `trial_org` module needs a real fixture to validate.** It has no root config of its
-own, so `tofu validate` needs a wrapper supplying dummy-but-valid variable values.
-`infra/modules/trial_org/examples/validate/main.tf` is a committed fixture, reused by both CI and
-any human validating locally — not an ephemeral, CI-only inline wrapper, which would be invisible
-outside CI and silently drift from the module's actual `variables.tf` the moment a variable changed
-without anyone noticing.
+**The reusable `trial_org` module validates on its own, with no fixture needed.** `tofu validate`
+checks internal consistency and syntax against installed providers/modules — it does not evaluate
+variable values, so `tofu init -backend=false && tofu validate` passes on the module's own
+directory with no wrapper or example root required. A fixture supplying dummy-but-valid variable
+values would only become necessary if a future CI check needs `tofu plan` on this module, or
+validates a concrete consumer root composing it — out of scope here, and no such fixture exists
+in this repo today.

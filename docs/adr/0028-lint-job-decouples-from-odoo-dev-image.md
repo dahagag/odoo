@@ -15,6 +15,15 @@ importable, only that import statements match a naming pattern textually. The im
 exists because `lint` reuses the image `test` already needs, not because `ruff` needs anything from
 it.
 
+The one concrete difference is transport, not command: today's Compose-wrapped invocation runs
+from `/workspace` inside the container against `/workspace/<path>`, and adds `--ignore EXE002` on
+Windows/MSYS (a rule that misfires on scripts without a shebang on those hosts, from both
+`scripts/dev.sh lint` and `scripts/dev.ps1 lint`). A Docker-free `lint` job on a Linux runner drops
+that Windows-only exclusion — it doesn't apply there — while config discovery and exit-code
+semantics stay identical, since `ruff` walks up from each file to find `ruff.toml` regardless of
+invocation style. Whichever future ticket implements the decoupling needs to preserve that
+exclusion for local Windows/MSYS dev use, not carry it into the CI job where it doesn't apply.
+
 That matters because it means this repo's one universal, fast, Docker-free lint pattern — already
 proven out for `infra/**` in ADR-0027 — generalizes to `custom_addons/**` too, and beyond that to
 any future per-language linter (e.g. `tsc` for TypeScript) without recoupling everything to one
