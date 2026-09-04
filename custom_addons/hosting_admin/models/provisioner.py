@@ -17,10 +17,11 @@ class Provisioner(ABC):
     no-op stand-in for environments (tests, dev) with no AWS wiring configured.
 
     Each method takes the ``hosting.trial.org`` record the action targets and a ``job_id`` -
-    the UUID persisted on the record for that action (docs/adr/0019) so an implementation can
-    derive a deterministic Step Functions execution name / ECS ``ClientToken`` and safely
-    dedupe a retry within its 24-hour window. Returns a Provisioner-defined execution handle
-    (e.g. a Step Functions execution ARN); ``StubProvisioner`` returns ``None``.
+    a fresh UUID minted for this call (docs/adr/0019) so an implementation can derive a
+    deterministic Step Functions execution name / ECS ``ClientToken``, making a Step
+    Functions-level Task retry of the same execution attempt safely idempotent. Returns a
+    Provisioner-defined execution handle (e.g. a Step Functions execution ARN);
+    ``StubProvisioner`` returns ``None``.
     """
 
     @abstractmethod

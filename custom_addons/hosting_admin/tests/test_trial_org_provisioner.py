@@ -1,6 +1,3 @@
-from datetime import timedelta
-
-from odoo import fields
 from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.hosting_admin.models.provisioner import (
@@ -8,10 +5,7 @@ from odoo.addons.hosting_admin.models.provisioner import (
     Provisioner,
     StubProvisioner,
 )
-from odoo.addons.hosting_admin.models.trial_org import (
-    CONFIG_PARAM_STATE_MACHINE_ARN,
-    JOB_ID_RETRY_WINDOW,
-)
+from odoo.addons.hosting_admin.models.trial_org import CONFIG_PARAM_STATE_MACHINE_ARN
 
 
 class RecordingProvisioner(Provisioner):
@@ -170,63 +164,19 @@ class TestTrialOrgProvisioner(TransactionCase):
             CONFIG_PARAM_STATE_MACHINE_ARN, 'arn:aws:states:us-east-1:123456789012:stateMachine:x')
         self.assertIsInstance(self.trial_org._get_provisioner(), AwsProvisioner)
 
-    def test_reissuing_within_the_retry_window_reuses_the_job_id(self):
-        # _get_or_create_job_id() is exercised directly here rather than through two real
-        # action_issue() calls, since a second action_issue() while still 'active' is rejected
-        # by source-state validation - see _apply_transition()'s docstring on why the reuse
-        # path is only reachable across separate transaction boundaries (docs/adr/0019).
-        first_job_id, first_started_at = self.trial_org._get_or_create_job_id('issue')
+    def test_new_job_id_is_always_a_fresh_uuid(self):
+        # No reuse-across-calls path (see _new_job_id()'s own docstring for why): every call
+        # mints a fresh job id, even immediately after one was just recorded as 'running'.
+        first_job_id, _first_started_at = self.trial_org._new_job_id()
         self.trial_org.with_context(hosting_trial_org_allow_state_write=True).write({
             'last_job_id': first_job_id,
             'last_job_action': 'issue',
-            'last_job_started_at': first_started_at,
             'last_job_status': 'running',
         })
 
-        reused_job_id, reused_started_at = self.trial_org._get_or_create_job_id('issue')
+        second_job_id, _second_started_at = self.trial_org._new_job_id()
 
-        self.assertEqual(reused_job_id, first_job_id)
-        self.assertEqual(reused_started_at, first_started_at)
-
-    def test_a_different_action_never_reuses_the_job_id(self):
-        job_id, started_at = self.trial_org._get_or_create_job_id('issue')
-        self.trial_org.with_context(hosting_trial_org_allow_state_write=True).write({
-            'last_job_id': job_id,
-            'last_job_action': 'issue',
-            'last_job_started_at': started_at,
-            'last_job_status': 'running',
-        })
-
-        other_job_id, _started_at = self.trial_org._get_or_create_job_id('destroy')
-
-        self.assertNotEqual(other_job_id, job_id)
-
-    def test_a_finished_job_is_never_reused(self):
-        job_id, started_at = self.trial_org._get_or_create_job_id('issue')
-        self.trial_org.with_context(hosting_trial_org_allow_state_write=True).write({
-            'last_job_id': job_id,
-            'last_job_action': 'issue',
-            'last_job_started_at': started_at,
-            'last_job_status': 'succeeded',
-        })
-
-        fresh_job_id, _started_at = self.trial_org._get_or_create_job_id('issue')
-
-        self.assertNotEqual(fresh_job_id, job_id)
-
-    def test_a_job_past_the_retry_window_is_never_reused(self):
-        stale_start = fields.Datetime.now() - JOB_ID_RETRY_WINDOW - timedelta(minutes=1)
-        self.trial_org.with_context(hosting_trial_org_allow_state_write=True).write({
-            'last_job_id': 'stale-job',
-            'last_job_action': 'issue',
-            'last_job_started_at': stale_start,
-            'last_job_status': 'running',
-        })
-
-        fresh_job_id, fresh_started_at = self.trial_org._get_or_create_job_id('issue')
-
-        self.assertNotEqual(fresh_job_id, 'stale-job')
-        self.assertNotEqual(fresh_started_at, stale_start)
+        self.assertNotEqual(second_job_id, first_job_id)
 
     def test_cron_poll_pending_jobs_calls_check_status_on_running_jobs_only(self):
         calls = []
