@@ -35,6 +35,12 @@ class TestAwsProvisioner(TransactionCase):
         })
 
     def _make_provisioner(self, client=None, **kwargs):
+        # issue() requires both configured (see the dedicated tests below for what happens when
+        # one is missing) - default them here so tests that only care about other behavior don't
+        # each have to supply throwaway values. Pass base_ami_id=None/tofu_module_git_sha=None
+        # explicitly to override.
+        kwargs.setdefault('base_ami_id', 'ami-0abc123')
+        kwargs.setdefault('tofu_module_git_sha', 'deadbeef')
         return AwsProvisioner(
             state_machine_arn=STATE_MACHINE_ARN,
             client=client or _make_fake_client(),
@@ -71,6 +77,37 @@ class TestAwsProvisioner(TransactionCase):
         self.assertEqual(self.trial_org.pending_tofu_module_git_sha, 'deadbeef')
         self.assertFalse(self.trial_org.ami_id)
         self.assertFalse(self.trial_org.tofu_module_git_sha)
+
+    def test_issue_without_base_ami_id_raises_a_clear_error_instead_of_calling_aws(self):
+        client = _make_fake_client()
+        provisioner = self._make_provisioner(client=client, base_ami_id=None)
+
+        with self.assertRaises(UserError):
+            provisioner.issue(self.trial_org, 'job-1')
+        client.start_execution.assert_not_called()
+
+    def test_issue_without_module_git_sha_raises_a_clear_error_instead_of_calling_aws(self):
+        client = _make_fake_client()
+        provisioner = self._make_provisioner(client=client, tofu_module_git_sha=None)
+
+        with self.assertRaises(UserError):
+            provisioner.issue(self.trial_org, 'job-1')
+        client.start_execution.assert_not_called()
+
+    def test_destroy_forwards_the_org_s_own_recorded_deployment_version(self):
+        # Not the currently-configured base_ami_id/tofu_module_git_sha - a destroy must tear
+        # down what was actually deployed, and RunTofu (shared with 'issue') needs both keys
+        # present in every execution input regardless of action.
+        self.trial_org.write({'ami_id': 'ami-deployed', 'tofu_module_git_sha': 'deployedsha'})
+        client = _make_fake_client()
+        provisioner = self._make_provisioner(client=client, base_ami_id='ami-configured-now',
+                                              tofu_module_git_sha='configuredshanow')
+
+        provisioner.destroy(self.trial_org, 'job-3')
+
+        execution_input = json.loads(client.start_execution.call_args.kwargs['input'])
+        self.assertEqual(execution_input['ami_id'], 'ami-deployed')
+        self.assertEqual(execution_input['module_git_sha'], 'deployedsha')
 
     def test_issue_records_execution_arn(self):
         provisioner = self._make_provisioner()

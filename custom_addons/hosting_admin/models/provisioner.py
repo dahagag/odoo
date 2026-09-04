@@ -99,8 +99,9 @@ class AwsProvisioner(Provisioner):
 
     def issue(self, trial_org, job_id):
         self._start_execution(trial_org, job_id, 'issue', extra_input={
-            'ami_id': self._base_ami_id,
-            'module_git_sha': self._tofu_module_git_sha,
+            'ami_id': self._require_module_config('base_ami_id', self._base_ami_id),
+            'module_git_sha': self._require_module_config(
+                'tofu_module_git_sha', self._tofu_module_git_sha),
         })
         # The AMI id and the module's git SHA are already known here - hosting_admin is telling
         # the per-trial OpenTofu module which of each to use - but the execution can still fail
@@ -124,7 +125,16 @@ class AwsProvisioner(Provisioner):
         })
 
     def destroy(self, trial_org, job_id):
-        self._start_execution(trial_org, job_id, 'destroy')
+        # RunTofu (infra/foundation/state_machine.asl.json.tftpl) is the same Task for 'issue'
+        # and 'destroy', and now always reads $.ami_id/$.module_git_sha for the ECS task's
+        # AMI_ID/MODULE_GIT_SHA env vars - a destroy execution input missing either key would
+        # fail the state machine itself with a JSONPath resolution error before ever reaching
+        # ECS. Use the org's own recorded Deployment Version (docs/adr/0024), not the
+        # currently-configured one, since a destroy must tear down what was actually deployed.
+        self._start_execution(trial_org, job_id, 'destroy', extra_input={
+            'ami_id': trial_org.ami_id,
+            'module_git_sha': trial_org.tofu_module_git_sha,
+        })
 
     def check_status(self, trial_org):
         """Poll this Trial Org's most recently started execution and surface
@@ -183,6 +193,19 @@ class AwsProvisioner(Provisioner):
         # arn:aws:states:<region>:<account>:stateMachine:<name>
         #   -> arn:aws:states:<region>:<account>:execution:<name>:<execution_name>
         return self._state_machine_arn.replace(':stateMachine:', ':execution:') + f":{execution_name}"
+
+    @staticmethod
+    def _require_module_config(name, value):
+        # RunTofu (infra/foundation/state_machine.asl.json.tftpl) forwards $.ami_id/
+        # $.module_git_sha to the ECS task as AMI_ID/MODULE_GIT_SHA - the trial_org OpenTofu
+        # module (infra/modules/trial_org/variables.tf) requires both. Starting an execution
+        # without them would fail deep inside the ECS task's `tofu apply` instead of here.
+        if not value:
+            raise UserError(_(
+                "Cannot issue a Trial Org: %(name)s is not configured "
+                "(ir.config_parameter).", name=name,
+            ))
+        return value
 
     @staticmethod
     def _require_instance_id(trial_org, action):
