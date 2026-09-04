@@ -27,5 +27,19 @@
             <field name="active">True</field>
         </record>
 
+        <!-- Poll unfinished lifecycle jobs (docs/adr/0019): surfaces a Step Functions
+             execution's succeeded/failed status back onto the Trial Org record once it
+             finishes. A no-op for any record still on the StubProvisioner (no AWS wiring
+             configured). -->
+        <record id="ir_cron_hosting_trial_org_poll_pending_jobs" model="ir.cron">
+            <field name="name">Hosting: Poll pending Trial Org lifecycle jobs</field>
+            <field name="model_id" ref="model_hosting_trial_org"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_poll_pending_jobs()</field>
+            <field name="interval_number">2</field>
+            <field name="interval_type">minutes</field>
+            <field name="active">True</field>
+        </record>
+
     </data>
 </odoo>
