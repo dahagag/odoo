@@ -107,6 +107,6 @@ For a large-fix item specifically, the guide's framing is "this is real, and her
 - **Body**: everything the target skill would need as its own opening prompt, since a human will paste this straight after the command: the concrete finding (quote the flagged lines/diff), why it matters, and whatever repo-specific context made it non-trivial in the first place (the same material the bite-sized guide already gathered). Lead with one line naming the next step verbatim, e.g. "**Next step:** run `/to-spec` against this issue."
 - **Label**: `ready-for-human` (`docs/agents/triage-labels.md`) — the routing decision is already made; what's missing is a human session actually running a skill the agent is barred from invoking.
 
-Reply on the review thread with a link to the created issue, but leave the thread unresolved regardless — it resolves only once the routed work actually lands (e.g. a merged follow-up PR), or via the explicit "dismiss" path above, never merely because a ticket now exists for it.
+Reply on the review thread citing the created issue by number/link as the resolution, then mark the thread resolved (`resolveReviewThread`, same GraphQL endpoint as Step 1) — the issue is what closes the loop on this PR, not a promise that the underlying problem is fixed. The thread's job was to get this finding tracked somewhere durable, and once the issue exists, it has been.
 
-Done when every triaged item is either resolved (Steps 3–4) or has a routing decision made and its handoff issue published (Step 5).
+Done when every triaged item is either resolved (Steps 3–4) or has a routing decision made, its handoff issue published, and the thread resolved citing it (Step 5).
