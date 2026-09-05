@@ -1,0 +1,43 @@
+.o_hosting_expiry_countdown_systray {
+    font-weight: 600;
+    border: 1px solid;
+    border-radius: 4px;
+    padding: 3px 10px 3px 8px;
+
+    .o_hosting_expiry_countdown_systray_dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+
+    &--green {
+        background-color: $success-bg-subtle;
+        border-color: $success-border-subtle;
+        color: $success-text-emphasis;
+
+        .o_hosting_expiry_countdown_systray_dot {
+            background-color: $success;
+        }
+    }
+
+    &--yellow {
+        background-color: $warning-bg-subtle;
+        border-color: $warning-border-subtle;
+        color: $warning-text-emphasis;
+
+        .o_hosting_expiry_countdown_systray_dot {
+            background-color: $warning;
+        }
+    }
+
+    &--red {
+        background-color: $danger-bg-subtle;
+        border-color: $danger-border-subtle;
+        color: $danger-text-emphasis;
+
+        .o_hosting_expiry_countdown_systray_dot {
+            background-color: $danger;
+        }
+    }
+}

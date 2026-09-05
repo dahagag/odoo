@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 19.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-04 13:20+0000\n"
-"PO-Revision-Date: 2026-09-04 13:20+0000\n"
+"POT-Creation-Date: 2026-09-05 04:06+0000\n"
+"PO-Revision-Date: 2026-09-05 04:06+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "Language: ja\n"
@@ -17,9 +17,27 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/js/expiry_countdown_systray.js:0
+msgid "%(days)sd left"
+msgstr "残り%(days)s日"
+
+#. module: hosting
 #: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__prospect_domain
 msgid "Domain"
 msgstr "ドメイン"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/js/expiry_countdown_systray.js:0
+msgid "Expired %(days)sd ago"
+msgstr "%(days)s日前に期限切れ"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/js/expiry_countdown_systray.js:0
+msgid "Expires today"
+msgstr "本日期限切れ"
 
 #. module: hosting
 #: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__expiry_date
@@ -54,3 +72,9 @@ msgstr "席数上限"
 #: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__seats_used
 msgid "Seats Used"
 msgstr "使用済み席数"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/js/expiry_countdown_systray.js:0
+msgid "Trial: %(label)s"
+msgstr "Trial: %(label)s"

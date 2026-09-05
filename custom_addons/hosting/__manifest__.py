@@ -15,13 +15,26 @@ for vocabulary (Trial Org, Seat, Org Registration).
     'category': 'Hosting',
     'version': '19.0.1.0.0',
 
-    'depends': ['base'],
+    'depends': ['base', 'web', 'web_tour'],
 
     'data': [
         'security/ir.model.access.csv',
         'views/hosting_org_registration_views.xml',
         'views/hosting_org_registration_menus.xml',
     ],
+
+    'assets': {
+        'web.assets_backend': [
+            'hosting/static/src/js/**/*',
+            'hosting/static/src/scss/**/*',
+        ],
+        'web.assets_unit_tests': [
+            'hosting/static/tests/expiry_countdown_systray.test.js',
+        ],
+        'web.assets_tests': [
+            'hosting/static/tests/tours/**/*',
+        ],
+    },
 
     'license': 'LGPL-3',
 }
