@@ -82,8 +82,9 @@ announcement) is plain `res.users` state, surfaced through `ir.http.session_info
 extra RPC round-trip on webclient boot:
 
 - Add the flag as a `fields.Boolean` on an owned `_inherit = 'res.users'` extension (default
-  `False`). Do not model it as a separate `res.users`-keyed table unless more than a flag or two is
-  needed.
+  `False`, `copy=False` — fields default to `copy=True`, so without it a duplicated user record
+  would inherit "already seen" from whoever it was copied from). Do not model it as a separate
+  `res.users`-keyed table unless more than a flag or two is needed.
 - Extend `ir.http.session_info()` (`_inherit = 'ir.http'`, call `super()` and add a key) to expose
   the flag to the client on load, instead of a dedicated `read`/`search_read` call before the
   webclient can decide whether to show anything.
