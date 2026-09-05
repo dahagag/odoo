@@ -25,6 +25,13 @@ export class HostingTrialOrgLogViewer extends Component {
         this.state = useState({ lines: [], userFilter: "" });
         this.scrollContainerRef = useRef("scrollContainer");
         this.channel = null;
+        // addChannel() only sends BUS:ADD_CHANNEL to the worker once it's finished starting up,
+        // so it can still be pending when this widget gets torn down (e.g. the user switches
+        // away from the tab right after opening it). Without waiting for it, onWillDestroy's
+        // deleteChannel() could run and complete before the delayed add ever reaches the
+        // worker, leaving the channel subscribed forever. Storing the promise here and awaiting
+        // it before deleting (below) keeps the two calls correctly ordered regardless of timing.
+        this.channelAdded = null;
         this.onLogLines = this.onLogLines.bind(this);
 
         onWillStart(() => {
@@ -35,15 +42,21 @@ export class HostingTrialOrgLogViewer extends Component {
             }
             this.trialOrgId = trialOrgId;
             this.channel = `${TRIAL_ORG_LOG_BUS_CHANNEL_PREFIX}${trialOrgId}`;
-            this.busService.addChannel(this.channel);
+            this.channelAdded = this.busService.addChannel(this.channel);
             this.busService.subscribe(TRIAL_ORG_LOG_BUS_NOTIFICATION_TYPE, this.onLogLines);
         });
 
-        onWillDestroy(() => {
+        onWillDestroy(async () => {
             if (!this.channel) {
                 return;
             }
             this.busService.unsubscribe(TRIAL_ORG_LOG_BUS_NOTIFICATION_TYPE, this.onLogLines);
+            // Swallow a rejection here (e.g. the shared bus worker failed to start) rather than
+            // letting it propagate as an unhandled rejection out of this destroy hook - either
+            // way the add never reached the worker, so there's nothing left to delete, but a
+            // silently-dropped rejection must not also skip the deleteChannel call below for an
+            // unrelated widget-cleanup reason.
+            await this.channelAdded.catch(() => {});
             this.busService.deleteChannel(this.channel);
         });
 

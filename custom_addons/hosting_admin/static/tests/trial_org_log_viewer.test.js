@@ -1,6 +1,6 @@
 import { describe, destroy, expect, test } from "@odoo/hoot";
 import { click, edit, queryAllTexts } from "@odoo/hoot-dom";
-import { animationFrame } from "@odoo/hoot-mock";
+import { animationFrame, Deferred } from "@odoo/hoot-mock";
 import {
     defineModels,
     getService,
@@ -133,6 +133,56 @@ describe("hosting_trial_org_log_viewer", () => {
         expect(deletedChannels).toEqual([]);
 
         destroy(component);
+        expect(deletedChannels).toEqual([CHANNEL]);
+    });
+
+    test("waits for a slow addChannel to settle before deleting on early destroy", async () => {
+        // addChannel() only sends BUS:ADD_CHANNEL once the shared worker has finished starting,
+        // so it can still be pending when the widget is destroyed right after mounting (e.g.
+        // the user switches away from the tab immediately). deleteChannel() must not fire until
+        // that add has actually settled, or the delayed add could land after the delete and
+        // leave the channel subscribed forever.
+        const addChannelDeferred = new Deferred();
+        const deletedChannels = [];
+        mockService("bus_service", {
+            addChannel(channel) {
+                return addChannelDeferred.then(() => super.addChannel(channel));
+            },
+            deleteChannel(channel) {
+                deletedChannels.push(channel);
+                return super.deleteChannel(channel);
+            },
+        });
+
+        const component = await mountView(viewData);
+        destroy(component);
+        await animationFrame();
+        expect(deletedChannels).toEqual([]);
+
+        addChannelDeferred.resolve();
+        await animationFrame();
+        expect(deletedChannels).toEqual([CHANNEL]);
+    });
+
+    test("still deletes the channel if a pending addChannel rejects", async () => {
+        // A rejected addChannel (e.g. the shared worker failed to start) must not turn into an
+        // unhandled rejection that skips deleteChannel entirely.
+        const addChannelDeferred = new Deferred();
+        const deletedChannels = [];
+        mockService("bus_service", {
+            addChannel() {
+                return addChannelDeferred;
+            },
+            deleteChannel(channel) {
+                deletedChannels.push(channel);
+                return super.deleteChannel(channel);
+            },
+        });
+
+        const component = await mountView(viewData);
+        destroy(component);
+        addChannelDeferred.reject(new Error("worker failed to start"));
+        await animationFrame();
         expect(deletedChannels).toEqual([CHANNEL]);
     });
 });
