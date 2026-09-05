@@ -135,9 +135,13 @@ class TestTrialOrgLogWebhook(HttpCase):
         # json.loads() accepts any JSON value, not just objects - a validly-signed top-level
         # array must be dropped rather than raising AttributeError on payload.get().
         body = json.dumps([1, 2, 3]).encode('utf-8')
+        before = self.env['bus.bus'].sudo().search([])
         with mute_logger('odoo.addons.hosting_admin.controllers.log_webhook'):
             response = self._post(body, self._sign(body))
         self.assertEqual(response.status_code, 200)
+        after = self.env['bus.bus'].sudo().search([])
+        self.assertEqual(
+            after, before, "No bus.bus row should be created for a malformed top-level payload.")
 
     def test_non_list_events_is_a_silent_no_op(self):
         # A truthy non-list `events` value (e.g. a bare integer) must be dropped rather than
