@@ -15,6 +15,7 @@ jobs:
     outputs:
       image_relevant: ${{ steps.check.outputs.image_relevant }}
       docs_build: ${{ steps.check.outputs.docs_build }}
+      infra_relevant: ${{ steps.check.outputs.infra_relevant }}
       test_modules: ${{ steps.plan.outputs.modules }}
     steps:
       # image_relevant and docs_build are deliberately independent: docs_build's
@@ -39,6 +40,9 @@ jobs:
               - 'scripts/docs_build/**'
               - 'docs/**'
               - 'custom_addons/crm_methodology/static/docs/**/*.html'
+            infra_relevant:
+              - 'infra/**'
+              - '.github/workflows/ci.yml'
       - uses: actions/checkout@v4
       - name: Build per-module change filters
         run: |
@@ -190,23 +194,63 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts/docs_build/tests -t .
 
+  infra-checks:
+    name: Infra checks
+    needs: changes
+    if: needs.changes.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        if: needs.changes.outputs.infra_relevant == 'true'
+      - uses: opentofu/setup-opentofu@v1
+        if: needs.changes.outputs.infra_relevant == 'true'
+        with:
+          tofu_version: 1.8.5
+      - name: tofu fmt -check
+        if: needs.changes.outputs.infra_relevant == 'true'
+        run: tofu fmt -check -recursive infra/
+      - name: tofu validate (bootstrap, foundation, trial_org, and its validate fixture)
+        if: needs.changes.outputs.infra_relevant == 'true'
+        run: |
+          for dir in infra/bootstrap infra/foundation infra/modules/trial_org infra/modules/trial_org/examples/validate; do
+            echo "::group::tofu validate $dir"
+            (cd "$dir" && tofu init -backend=false -input=false && tofu validate)
+            echo "::endgroup::"
+          done
+      - uses: actions/setup-python@v5
+        if: needs.changes.outputs.infra_relevant == 'true'
+        with:
+          python-version: '3.x'
+      - name: Install ruff and interrogate
+        if: needs.changes.outputs.infra_relevant == 'true'
+        run: pip install ruff==0.16.1 interrogate==1.7.0
+      - name: Run ruff
+        if: needs.changes.outputs.infra_relevant == 'true'
+        run: ruff check --config ruff.toml infra/
+      - name: Run interrogate (docstring-coverage regression tripwire, not a documentation-quality proxy — 80% floor matches CodeRabbit's own default)
+        if: needs.changes.outputs.infra_relevant == 'true'
+        run: interrogate --fail-under 80 infra/
+
   ci-required:
     name: CI required checks (required)
-    needs: [lint, docs-build-tests]
-    # if: always() so this still runs (and can fail) even when lint or
-    # docs-build-tests was skipped — e.g. because the upstream `changes` job
-    # itself errored. GitHub branch protection treats a skipped required
-    # check as passing, so without this a `changes` failure would let a PR
-    # merge without lint or docs-build-tests ever having run.
+    needs: [lint, docs-build-tests, infra-checks]
+    # if: always() so this still runs (and can fail) even when lint,
+    # docs-build-tests, or infra-checks was skipped — e.g. because the
+    # upstream `changes` job itself errored. GitHub branch protection treats
+    # a skipped required check as passing, so without this a `changes`
+    # failure would let a PR merge without any of them ever having run.
     if: always()
     runs-on: ubuntu-latest
     permissions: {}
     steps:
-      - name: Require lint and docs-build-tests to have succeeded
-        if: needs.lint.result != 'success' || needs.docs-build-tests.result != 'success'
+      - name: Require lint, docs-build-tests, and infra-checks to have succeeded
+        if: needs.lint.result != 'success' || needs.docs-build-tests.result != 'success' || needs.infra-checks.result != 'success'
         run: |
           echo "lint: ${{ needs.lint.result }}"
           echo "docs-build-tests: ${{ needs.docs-build-tests.result }}"
+          echo "infra-checks: ${{ needs.infra-checks.result }}"
           exit 1
 
   test:

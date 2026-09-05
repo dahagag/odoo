@@ -8,6 +8,7 @@ Not exercised by `tofu validate`/`tofu plan` (those only check the OpenTofu that
 function and zips this file) — this is the function body AWS actually runs once applied.
 """
 import base64
+import functools
 import gzip
 import hashlib
 import hmac
@@ -15,25 +16,22 @@ import json
 import os
 import urllib.request
 
+import boto3
+
 WEBHOOK_URL_PARAM = os.environ["WEBHOOK_URL_SSM_PARAMETER"]
 HMAC_SECRET_PARAM = os.environ["HMAC_SECRET_SSM_PARAMETER"]
 LOG_GROUP_PREFIX = os.environ.get("LOG_GROUP_PREFIX", "/hosting/trial-orgs/")
 
-_ssm = None
 # Cached across warm invocations of the same execution environment. Both parameters change rarely
 # (an ops rotation, not a per-invocation value), so re-fetching them from SSM on every log batch
 # would just add latency and API calls for no freshness benefit within one container's lifetime.
 _parameter_cache = {}
 
 
+@functools.cache
 def _ssm_client():
-    """Returns a lazily-created, module-cached boto3 SSM client."""
-    global _ssm
-    if _ssm is None:
-        import boto3
-
-        _ssm = boto3.client("ssm")
-    return _ssm
+    """Returns a lazily-created, cached boto3 SSM client."""
+    return boto3.client("ssm")
 
 
 def _get_parameter(name, decrypt=False):
@@ -84,7 +82,7 @@ def handler(event, _context):
             "events": [
                 {"timestamp": e["timestamp"], "message": e["message"]} for e in log_events
             ],
-        }
+        },
     ).encode("utf-8")
 
     webhook_url = _get_parameter(WEBHOOK_URL_PARAM)
