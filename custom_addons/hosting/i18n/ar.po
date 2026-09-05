@@ -20,7 +20,7 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/hosting/static/src/js/expiry_countdown_systray.js:0
 msgid "%(days)sd left"
-msgstr "متبقي %(days)s يوم"
+msgstr "الأيام المتبقية: %(days)s"
 
 #. module: hosting
 #: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__prospect_domain
@@ -31,7 +31,7 @@ msgstr "النطاق"
 #. odoo-javascript
 #: code:addons/hosting/static/src/js/expiry_countdown_systray.js:0
 msgid "Expired %(days)sd ago"
-msgstr "انتهت منذ %(days)s يوم"
+msgstr "الأيام منذ الانتهاء: %(days)s"
 
 #. module: hosting
 #. odoo-javascript

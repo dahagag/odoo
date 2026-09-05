@@ -27,6 +27,16 @@ kept untranslated in every language, the same way `crm_methodology`'s translatio
 "Trial Org" itself in English. Everything else, including the older 7 strings ("Org
 Registration", "Domain", "Seat Cap", etc.), is ordinary UI labels translated normally.
 
+The two day-count phrasings (`%(days)sd left` / `Expired %(days)sd ago`) interpolate a single
+integer into one fixed string with no plural-form support - Odoo's JS `_t` has no `ngettext`
+equivalent, so a count of 1 needs to read correctly in the same `msgstr` as a count of 10.
+Most languages sidestep this with an invariant unit abbreviation ("d", "j", "g", "дн.", "日"...)
+that doesn't inflect for number. German and Spanish use the parenthetical-plural convention
+their own software ecosystems already use for this exact problem ("Tag(e)", "restante(s)").
+Arabic's numeral-noun agreement doesn't have an equivalent shorthand, so those two strings use
+a fixed "label: count" phrasing ("الأيام المتبقية: %(days)s") instead of attaching a noun
+directly to the number.
+
 ## Regenerating
 
 `./scripts/dev.ps1 i18n-export hosting` (or the `dev.sh` equivalent) with no explicit
