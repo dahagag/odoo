@@ -1,14 +1,17 @@
 # Translations
 
-Scope: the 7 user-facing strings the Org Registration view introduces (menu/action/view
-titles and the five `hosting.org.registration` field labels). One `.po` file exists for
-every language code in `dev.ps1`/`dev.sh`'s `i18n-export` default set (`$DefaultI18nLanguages`
-/ `DEFAULT_I18N_LANGUAGES`) - the same "Translated" tier `crm_methodology` ships (see
-`custom_addons/crm_methodology/i18n/README.md`), just scoped to this addon's much smaller
-7-string surface instead of a full skeleton for every Odoo-shipped language:
+Scope: the 11 user-facing strings this addon introduces - the 7 from the Org Registration
+view (menu/action/view titles and the five `hosting.org.registration` field labels) plus the
+4 the expiry countdown systray (issue #137) added (`expiry_countdown_systray.js`'s `_t`
+strings: the "Trial: ..." wrapper and the left/expired/expires-today day-count phrasing). One
+`.po` file exists for every language code in `dev.ps1`/`dev.sh`'s `i18n-export` default set
+(`$DefaultI18nLanguages` / `DEFAULT_I18N_LANGUAGES`) - the same "Translated" tier
+`crm_methodology` ships (see `custom_addons/crm_methodology/i18n/README.md`), just scoped to
+this addon's much smaller 11-string surface instead of a full skeleton for every Odoo-shipped
+language:
 
 - **`ar`, `de`, `es`, `fr`, `it`, `ja`, `ko`, `nl`, `pl`, `pt`, `pt_BR`, `ru`, `sv`, `tr`,
-  `zh_CN`, `zh_TW`**: real, hand-authored translations of all 7 strings.
+  `zh_CN`, `zh_TW`**: real, hand-authored translations of all 11 strings.
 
 This tier is LLM-drafted, not reviewed by a native speaker of each language - treat it the
 way you would any community-contributed `.po` file and get a native-speaker review before
@@ -17,10 +20,12 @@ treating the wording as final.
 No other language codes are shipped here - add one by hand the same way (a new `<lang>.po`
 following the header/entry shape below) if a broader rollout is needed later.
 
-None of this addon's strings fall under `docs/contexts/hosting/CONTEXT.md`'s glossary
-treatment of specific product/technical terms kept in English (Trial Org, Auto-Destroy,
-Extension, the `hosting_admin` module name) - "Org Registration", "Domain", "Seat Cap", etc.
-are ordinary UI labels here, translated normally.
+Only "Trial" in the systray's "Trial: ..." wrapper falls under
+`docs/contexts/hosting/CONTEXT.md`'s glossary treatment of specific product/technical terms
+kept in English (Trial Org, Auto-Destroy, Extension, the `hosting_admin` module name) - it's
+kept untranslated in every language, the same way `crm_methodology`'s translations keep
+"Trial Org" itself in English. Everything else, including the older 7 strings ("Org
+Registration", "Domain", "Seat Cap", etc.), is ordinary UI labels translated normally.
 
 ## Regenerating
 

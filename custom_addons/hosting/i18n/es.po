@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 19.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-04 13:19+0000\n"
-"PO-Revision-Date: 2026-09-04 13:19+0000\n"
+"POT-Creation-Date: 2026-09-05 04:04+0000\n"
+"PO-Revision-Date: 2026-09-05 04:04+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "Language: es\n"
@@ -17,9 +17,27 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/js/expiry_countdown_systray.js:0
+msgid "%(days)sd left"
+msgstr "%(days)s d restantes"
+
+#. module: hosting
 #: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__prospect_domain
 msgid "Domain"
 msgstr "Dominio"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/js/expiry_countdown_systray.js:0
+msgid "Expired %(days)sd ago"
+msgstr "Caducado hace %(days)s d"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/js/expiry_countdown_systray.js:0
+msgid "Expires today"
+msgstr "Caduca hoy"
 
 #. module: hosting
 #: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__expiry_date
@@ -54,3 +72,9 @@ msgstr "Límite de asientos"
 #: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__seats_used
 msgid "Seats Used"
 msgstr "Asientos utilizados"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/js/expiry_countdown_systray.js:0
+msgid "Trial: %(label)s"
+msgstr "Trial: %(label)s"
