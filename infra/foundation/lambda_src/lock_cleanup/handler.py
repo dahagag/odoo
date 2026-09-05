@@ -14,15 +14,14 @@ from botocore.exceptions import ClientError
 
 LOCK_TABLE_NAME = os.environ["LOCK_TABLE_NAME"]
 
-_dynamodb = None
+_cache = {}
 
 
 def _table():
     """Returns the lock table resource, via a lazily-created, module-cached DynamoDB resource."""
-    global _dynamodb
-    if _dynamodb is None:
-        _dynamodb = boto3.resource("dynamodb")
-    return _dynamodb.Table(LOCK_TABLE_NAME)
+    if "dynamodb" not in _cache:
+        _cache["dynamodb"] = boto3.resource("dynamodb")
+    return _cache["dynamodb"].Table(LOCK_TABLE_NAME)
 
 
 def handler(event, _context):

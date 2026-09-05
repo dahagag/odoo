@@ -9,15 +9,14 @@ has actually reached its target state — never immediately after the API call i
 """
 import boto3
 
-_ec2 = None
+_cache = {}
 
 
 def _client():
     """Returns a lazily-created, module-cached boto3 EC2 client."""
-    global _ec2
-    if _ec2 is None:
-        _ec2 = boto3.client("ec2")
-    return _ec2
+    if "ec2" not in _cache:
+        _cache["ec2"] = boto3.client("ec2")
+    return _cache["ec2"]
 
 
 def handler(event, _context):

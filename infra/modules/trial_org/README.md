@@ -70,3 +70,14 @@ tofu validate
 `tofu plan` isn't meaningful run directly against this directory (no backend, and most variables
 have no default) — plan it via the future wrapper root module described above instead, supplying
 concrete `-var` values.
+
+The committed `examples/validate` fixture instead instantiates the module with dummy-but-valid
+values for every required variable, so `tofu validate` there also exercises the variable
+validation blocks above and the module's own resource wiring, not just its syntax. This is what
+the `infra-checks` CI job runs; the same commands work locally:
+
+```sh
+cd infra/modules/trial_org/examples/validate
+tofu init -backend=false
+tofu validate
+```

@@ -15,15 +15,14 @@ from botocore.exceptions import ClientError
 LOCK_TABLE_NAME = os.environ["LOCK_TABLE_NAME"]
 LOCK_TTL_SECONDS = int(os.environ.get("LOCK_TTL_SECONDS", str(4 * 3600)))
 
-_dynamodb = None
+_cache = {}
 
 
 def _table():
     """Returns the lock table resource, via a lazily-created, module-cached DynamoDB resource."""
-    global _dynamodb
-    if _dynamodb is None:
-        _dynamodb = boto3.resource("dynamodb")
-    return _dynamodb.Table(LOCK_TABLE_NAME)
+    if "dynamodb" not in _cache:
+        _cache["dynamodb"] = boto3.resource("dynamodb")
+    return _cache["dynamodb"].Table(LOCK_TABLE_NAME)
 
 
 def handler(event, _context):
@@ -48,7 +47,7 @@ def handler(event, _context):
     except ClientError as exc:
         if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
             raise RuntimeError(
-                f"lock already held for trial_org_id={trial_org_id}"
+                f"lock already held for trial_org_id={trial_org_id}",
             ) from exc
         raise
 

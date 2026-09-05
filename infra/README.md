@@ -54,8 +54,18 @@ tofu plan   # will fail past the provider-auth step without real AWS credentials
 ```
 
 `infra/modules/trial_org` has no root-level backend or provider block of its own (it's a reusable
-module), so `tofu validate` there needs a thin example root to instantiate it against. See
-`infra/modules/trial_org/README.md` for how later tickets are expected to invoke it.
+module), so `tofu validate` there needs a thin example root to instantiate it against — use the
+committed `infra/modules/trial_org/examples/validate` fixture (dummy-but-valid variable values,
+shared with the CI `infra-checks` job) instead of writing one from scratch:
+
+```sh
+cd infra/modules/trial_org/examples/validate
+tofu init -backend=false
+tofu validate
+```
+
+See `infra/modules/trial_org/README.md` for how later tickets are expected to invoke the module
+for real.
 
 ## `tofu apply` is a deliberate human/ops action
 
