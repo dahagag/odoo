@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from scripts.docs_build.video_cli import DocsBuildError, render_video
+from scripts.docs_build.video_cli import DocsBuildError, main, render_video
 
 
 def _fake_runner(returncode=0, stderr="", write_output=True):
@@ -127,6 +127,51 @@ class RenderVideoTests(unittest.TestCase):
                     render_video(project_dir, output_dir, runner=_fake_runner())
 
             self.assertIn("npx", str(ctx.exception))
+
+
+class MainAddonInferenceTests(unittest.TestCase):
+    def test_infers_addon_output_dir_from_the_project_dirs_teach_prefix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project_dir = root / "docs" / "teach-hosting" / "videos" / "index"
+            project_dir.mkdir(parents=True)
+            (project_dir / "hyperframes.json").write_text("{}", encoding="utf-8")
+
+            with mock.patch("scripts.docs_build.video_cli.render_video") as render_mock:
+                render_mock.return_value = project_dir / "fake.mp4"
+                exit_code = main([str(project_dir)])
+
+            self.assertEqual(exit_code, 0)
+            render_mock.assert_called_once_with(
+                project_dir, Path("custom_addons") / "hosting" / "static" / "docs",
+            )
+
+    def test_crm_methodology_project_dir_still_infers_the_original_output_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project_dir = root / "docs" / "teach" / "videos" / "methodologies"
+            project_dir.mkdir(parents=True)
+            (project_dir / "hyperframes.json").write_text("{}", encoding="utf-8")
+
+            with mock.patch("scripts.docs_build.video_cli.render_video") as render_mock:
+                render_mock.return_value = project_dir / "fake.mp4"
+                exit_code = main([str(project_dir)])
+
+            self.assertEqual(exit_code, 0)
+            render_mock.assert_called_once_with(
+                project_dir, Path("custom_addons") / "crm_methodology" / "static" / "docs",
+            )
+
+    def test_a_project_dir_outside_any_teach_dir_fails_clearly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "somewhere" / "else"
+            project_dir.mkdir(parents=True)
+
+            with mock.patch("scripts.docs_build.video_cli.render_video") as render_mock:
+                exit_code = main([str(project_dir)])
+
+            self.assertEqual(exit_code, 1)
+            render_mock.assert_not_called()
 
 
 if __name__ == "__main__":
