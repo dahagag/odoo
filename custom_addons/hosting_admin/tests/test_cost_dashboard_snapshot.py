@@ -67,6 +67,40 @@ class TestCostDashboardSnapshot(TransactionCase):
         self.assertEqual(snapshot.credit_amount, 200.0)
         self.assertEqual(len(snapshot.line_ids), 2)
 
+    def test_trial_org_count_excludes_the_unattributed_line(self):
+        today = date.today()
+        self._set_credit_config(amount=200.0, start_date=today)
+        self._inject_cost_explorer_client(FakeCostExplorerClient([
+            {'date': today, 'trial_org_id': self.trial_org.id, 'amount': 12.5},
+            {'date': today, 'trial_org_id': None, 'amount': 1.5},
+        ]))
+
+        snapshot = self.Snapshot._cron_refresh_snapshot()
+
+        self.assertEqual(snapshot.trial_org_count, 1)
+
+    def test_credit_remaining_is_credit_amount_minus_total_spend(self):
+        today = date.today()
+        self._set_credit_config(amount=200.0, start_date=today)
+        self._inject_cost_explorer_client(FakeCostExplorerClient([
+            {'date': today, 'trial_org_id': self.trial_org.id, 'amount': 12.5},
+        ]))
+
+        snapshot = self.Snapshot._cron_refresh_snapshot()
+
+        self.assertEqual(snapshot.credit_remaining, 187.5)
+
+    def test_credit_remaining_never_goes_negative_once_the_credit_is_exhausted(self):
+        today = date.today()
+        self._set_credit_config(amount=200.0, start_date=today)
+        self._inject_cost_explorer_client(FakeCostExplorerClient([
+            {'date': today, 'trial_org_id': self.trial_org.id, 'amount': 250.0},
+        ]))
+
+        snapshot = self.Snapshot._cron_refresh_snapshot()
+
+        self.assertEqual(snapshot.credit_remaining, 0.0)
+
     def test_cron_refresh_snapshot_marks_days_remaining_unknown_with_no_spend_yet(self):
         # A Float field can't distinguish "nothing to project" from a genuine 0 (credit
         # exhausted) - days_remaining_on_credit_known is what the view branches on instead of

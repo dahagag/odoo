@@ -58,12 +58,31 @@ class HostingCostDashboardSnapshot(models.Model):
     line_ids = fields.One2many(
         'hosting.cost.dashboard.line', 'snapshot_id', string="Spend by Trial Org",
         readonly=True)
+    trial_org_count = fields.Integer(
+        compute='_compute_trial_org_count',
+        help="Number of distinct Trial Orgs with recorded spend on this snapshot (excludes "
+             "the \"Unattributed\" line, if any) - the design-board's own \"across N Trial "
+             "Orgs\" caption on the Total Spend figure.")
+    credit_remaining = fields.Float(
+        compute='_compute_credit_remaining', digits=(16, 2),
+        help="credit_amount minus total_spend - the design-board's own \"$X left of $Y\" "
+             "caption on the Days Remaining figure. Never negative (0 once exhausted).")
 
     _snapshot_date_unique = models.Constraint(
         'UNIQUE(snapshot_date)',
         "Only one snapshot is kept per day; refresh the existing one instead of creating a "
         "second.",
     )
+
+    @api.depends('line_ids.trial_org_id')
+    def _compute_trial_org_count(self):
+        for snapshot in self:
+            snapshot.trial_org_count = len(snapshot.line_ids.mapped('trial_org_id'))
+
+    @api.depends('credit_amount', 'total_spend')
+    def _compute_credit_remaining(self):
+        for snapshot in self:
+            snapshot.credit_remaining = max(0.0, snapshot.credit_amount - snapshot.total_spend)
 
     def _get_cost_explorer_client(self):
         """Return the ``CostExplorerClient`` implementation to call: ``AwsCostExplorerClient``
