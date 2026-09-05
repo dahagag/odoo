@@ -33,6 +33,7 @@ jobs:
               - 'requirements.txt'
               - 'compose.yaml'
               - '.github/workflows/ci.yml'
+              - '.github/actions/**'
             docs_build:
               - '.github/workflows/ci.yml'
               - 'scripts/docs_build/**'
@@ -48,6 +49,7 @@ jobs:
             echo "  - 'requirements.txt'"
             echo "  - 'compose.yaml'"
             echo "  - '.github/workflows/ci.yml'"
+            echo "  - '.github/actions/**'"
             for manifest in custom_addons/*/__manifest__.py; do
               module="$(basename "$(dirname "$manifest")")"
               echo "module_${module}:"
