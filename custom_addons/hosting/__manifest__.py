@@ -15,7 +15,7 @@ for vocabulary (Trial Org, Seat, Org Registration).
     'category': 'Hosting',
     'version': '19.0.1.0.0',
 
-    'depends': ['base', 'web'],
+    'depends': ['base', 'web', 'web_tour'],
 
     'data': [
         'security/ir.model.access.csv',
@@ -29,7 +29,10 @@ for vocabulary (Trial Org, Seat, Org Registration).
             'hosting/static/src/scss/**/*',
         ],
         'web.assets_unit_tests': [
-            'hosting/static/tests/**/*',
+            'hosting/static/tests/expiry_countdown_systray.test.js',
+        ],
+        'web.assets_tests': [
+            'hosting/static/tests/tours/**/*',
         ],
     },
 

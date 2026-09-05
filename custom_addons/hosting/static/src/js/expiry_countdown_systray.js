@@ -1,6 +1,7 @@
 import { Component, onWillStart, useState, xml } from "@odoo/owl";
 import { registry } from "@web/core/registry";
-import { useService } from "@web/core/utils/hooks";
+import { useBus, useService } from "@web/core/utils/hooks";
+import { routerBus } from "@web/core/browser/router";
 import { deserializeDate, today } from "@web/core/l10n/dates";
 import { _t } from "@web/core/l10n/translation";
 
@@ -44,21 +45,29 @@ export class ExpiryCountdownSystray extends Component {
         </span>`;
 
     setup() {
+        // Read-only, no sudo: relies on the ACL already established in ir.model.access.csv
+        // (base.group_user, read-only) for hosting.org.registration - the same boundary #112
+        // set for the Org Registration view itself.
         this.orm = useService("orm");
         this.state = useState({ daysLeft: null });
 
-        onWillStart(async () => {
-            const [registration] = await this.orm.searchRead(
-                "hosting.org.registration",
-                [],
-                ["expiry_date"],
-                { limit: 1 },
-            );
-            if (registration && registration.expiry_date) {
-                const expiry = deserializeDate(registration.expiry_date);
-                this.state.daysLeft = Math.round(expiry.diff(today(), "days").days);
-            }
-        });
+        onWillStart(() => this._fetchDaysLeft());
+        // Re-fetch on every in-app navigation (Odoo's backend routes client-side without a
+        // full page reload) so the count doesn't go stale across a long-lived session.
+        useBus(routerBus, "ROUTE_CHANGE", () => this._fetchDaysLeft());
+    }
+
+    async _fetchDaysLeft() {
+        const [registration] = await this.orm.searchRead(
+            "hosting.org.registration",
+            [],
+            ["expiry_date"],
+            { limit: 1 },
+        );
+        this.state.daysLeft =
+            registration && registration.expiry_date
+                ? Math.round(deserializeDate(registration.expiry_date).diff(today(), "days").days)
+                : null;
     }
 
     get tier() {
