@@ -55,6 +55,14 @@ Runtime behavior and established addon style outrank a style-only rewrite.
 - Use Hoot for isolated frontend logic and an `HttpCase` tour when Python and browser behavior must work together.
 - Run focused tests through `scripts/dev.ps1 test <module>` or `scripts/dev.sh test <module>` before broader selections.
 
+## Localization strings
+
+When work adds or changes translatable strings (Python `_(...)`, JS `_t(...)`, or translatable
+fields/QWeb), run `./scripts/dev.ps1 i18n-export <module> [langs]` (see
+`docs/agents/local-development.md`) once the strings are settled, then fill in the `msgstr`
+entries for the exported `.po` files — the export only picks up the new `msgid`s, it does not
+translate them.
+
 ## Autonomy and review
 
 Coding agents may inspect and edit the repository, scaffold owned modules, and create or discard local test databases. They do not receive production credentials or production database access.
