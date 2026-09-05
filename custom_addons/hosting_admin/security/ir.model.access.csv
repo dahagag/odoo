@@ -1,3 +1,5 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_hosting_trial_org_administrator,hosting.trial.org administrator,model_hosting_trial_org,group_hosting_admin_administrator,1,1,1,1
 access_hosting_trial_org_seat_administrator,hosting.trial.org.seat administrator,model_hosting_trial_org_seat,group_hosting_admin_administrator,1,1,1,1
+access_hosting_cost_dashboard_snapshot_administrator,hosting.cost.dashboard.snapshot administrator,model_hosting_cost_dashboard_snapshot,group_hosting_admin_administrator,1,1,1,1
+access_hosting_cost_dashboard_line_administrator,hosting.cost.dashboard.line administrator,model_hosting_cost_dashboard_line,group_hosting_admin_administrator,1,1,1,1

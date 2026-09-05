@@ -12,4 +12,11 @@
         action="action_hosting_trial_org"
         sequence="10"
     />
+    <menuitem
+        id="menu_hosting_cost_dashboard"
+        name="Cost Dashboard"
+        parent="menu_hosting_admin_root"
+        action="action_hosting_cost_dashboard"
+        sequence="20"
+    />
 </odoo>
