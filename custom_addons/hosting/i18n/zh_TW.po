@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 19.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-05 04:11+0000\n"
-"PO-Revision-Date: 2026-09-05 04:11+0000\n"
+"POT-Creation-Date: 2026-09-05 18:33+0000\n"
+"PO-Revision-Date: 2026-09-05 18:33+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "Language: zh_TW\n"
@@ -21,6 +21,12 @@ msgstr ""
 #: code:addons/hosting/static/src/js/expiry_countdown_systray.js:0
 msgid "%(days)sd left"
 msgstr "剩餘%(days)s天"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid "Close"
+msgstr "關閉"
 
 #. module: hosting
 #: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__prospect_domain
@@ -40,14 +46,56 @@ msgid "Expires today"
 msgstr "今天到期"
 
 #. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid "Expiry & extension"
+msgstr "到期與延期"
+
+#. module: hosting
 #: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__expiry_date
 msgid "Expiry Date"
 msgstr "到期日期"
 
 #. module: hosting
+#: model:ir.actions.act_url,name:hosting.action_hosting_getting_started
+#: model_terms:ir.ui.view,arch_db:hosting.view_hosting_org_registration_form
+msgid "Getting Started"
+msgstr "快速入門"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid "Got it"
+msgstr "知道了"
+
+#. module: hosting
+#: model:ir.model,name:hosting.model_ir_http
+msgid "HTTP Routing"
+msgstr "HTTP 路由"
+
+#. module: hosting
 #: model:ir.ui.menu,name:hosting.menu_hosting_root
 msgid "Hosting"
 msgstr "主機代管"
+
+#. module: hosting
+#: model:ir.model.fields,field_description:hosting.field_res_users__hosting_onboarding_seen
+msgid "Hosting Onboarding Seen"
+msgstr "已檢視代管導覽"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid ""
+"Idle instances suspend automatically to save cost. A \"Wake Up\"\n"
+"                            action brings it back in a minute or two."
+msgstr "閒置執行個體會自動暫停以節省成本。「喚醒」操作可在一兩分鐘內將其恢復。"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid "Inviting teammates"
+msgstr "邀請團隊成員"
 
 #. module: hosting
 #: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__name
@@ -69,12 +117,73 @@ msgid "Seat Cap"
 msgstr "席位上限"
 
 #. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid "Seats"
+msgstr "席位"
+
+#. module: hosting
 #: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__seats_used
 msgid "Seats Used"
 msgstr "已用席位"
 
 #. module: hosting
 #. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid "Suspend & Wake"
+msgstr "暫停與喚醒"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid ""
+"This is a quick orientation to how your trial works - not a product tour.\n"
+"                Here's what to know before you dive in."
+msgstr "這是關於試用版如何運作的簡要說明，並非產品導覽。以下是您開始使用前應瞭解的內容。"
+
+#. module: hosting
+#. odoo-javascript
 #: code:addons/hosting/static/src/js/expiry_countdown_systray.js:0
 msgid "Trial: %(label)s"
-msgstr "Trial: %(label)s"
+msgstr ""
+
+#. module: hosting
+#: model:ir.model,name:hosting.model_res_users
+msgid "User"
+msgstr "使用者"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid "View the full Getting Started guide"
+msgstr "檢視完整的入門指南"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid "Welcome to your trial"
+msgstr "歡迎使用您的試用版"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid ""
+"You can invite teammates yourself, up to the seat cap - no need to\n"
+"                            route it through factory1."
+msgstr "您可以自行邀請團隊成員，最多可達席位上限，不需透過 factory1。"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid ""
+"Your trial expires on a set date, shown in the systray up top. Ask\n"
+"                            your sales contact for an extension before it lapses."
+msgstr "您的試用版將於固定日期到期，該日期顯示於頂部的系統匣中。請在到期前聯絡您的業務窗口申請延期。"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid ""
+"Your trial has a fixed seat cap. Once a teammate joins, they take\n"
+"                            one of those seats."
+msgstr "您的試用版有固定的席位上限。團隊成員加入後，將佔用其中一個席位。"

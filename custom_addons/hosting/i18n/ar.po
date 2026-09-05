@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 19.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-05 04:03+0000\n"
-"PO-Revision-Date: 2026-09-05 04:03+0000\n"
+"POT-Creation-Date: 2026-09-05 18:28+0000\n"
+"PO-Revision-Date: 2026-09-05 18:28+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "Language: ar\n"
@@ -21,6 +21,12 @@ msgstr ""
 #: code:addons/hosting/static/src/js/expiry_countdown_systray.js:0
 msgid "%(days)sd left"
 msgstr "الأيام المتبقية: %(days)s"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid "Close"
+msgstr "إغلاق"
 
 #. module: hosting
 #: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__prospect_domain
@@ -40,14 +46,56 @@ msgid "Expires today"
 msgstr "تنتهي اليوم"
 
 #. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid "Expiry & extension"
+msgstr "الانتهاء والتمديد"
+
+#. module: hosting
 #: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__expiry_date
 msgid "Expiry Date"
 msgstr "تاريخ الانتهاء"
 
 #. module: hosting
+#: model:ir.actions.act_url,name:hosting.action_hosting_getting_started
+#: model_terms:ir.ui.view,arch_db:hosting.view_hosting_org_registration_form
+msgid "Getting Started"
+msgstr "دليل البدء"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid "Got it"
+msgstr "حسناً"
+
+#. module: hosting
+#: model:ir.model,name:hosting.model_ir_http
+msgid "HTTP Routing"
+msgstr "مسار HTTP"
+
+#. module: hosting
 #: model:ir.ui.menu,name:hosting.menu_hosting_root
 msgid "Hosting"
 msgstr "الاستضافة"
+
+#. module: hosting
+#: model:ir.model.fields,field_description:hosting.field_res_users__hosting_onboarding_seen
+msgid "Hosting Onboarding Seen"
+msgstr "تمت مشاهدة تهيئة الاستضافة"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid ""
+"Idle instances suspend automatically to save cost. A \"Wake Up\"\n"
+"                            action brings it back in a minute or two."
+msgstr "تُعلَّق النسخ الخاملة تلقائياً لتوفير التكلفة. يعيدها إجراء \"إيقاظ\" خلال دقيقة أو دقيقتين."
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid "Inviting teammates"
+msgstr "دعوة زملاء الفريق"
 
 #. module: hosting
 #: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__name
@@ -69,12 +117,73 @@ msgid "Seat Cap"
 msgstr "الحد الأقصى للمقاعد"
 
 #. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid "Seats"
+msgstr "المقاعد"
+
+#. module: hosting
 #: model:ir.model.fields,field_description:hosting.field_hosting_org_registration__seats_used
 msgid "Seats Used"
 msgstr "المقاعد المستخدمة"
 
 #. module: hosting
 #. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid "Suspend & Wake"
+msgstr "التعليق والإيقاظ"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid ""
+"This is a quick orientation to how your trial works - not a product tour.\n"
+"                Here's what to know before you dive in."
+msgstr "هذا توجيه سريع لكيفية عمل نسختك التجريبية - وليس جولة عن المنتج. إليك ما يجب معرفته قبل أن تبدأ."
+
+#. module: hosting
+#. odoo-javascript
 #: code:addons/hosting/static/src/js/expiry_countdown_systray.js:0
 msgid "Trial: %(label)s"
-msgstr "Trial: %(label)s"
+msgstr ""
+
+#. module: hosting
+#: model:ir.model,name:hosting.model_res_users
+msgid "User"
+msgstr "المستخدم"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid "View the full Getting Started guide"
+msgstr "عرض دليل البدء الكامل"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid "Welcome to your trial"
+msgstr "مرحباً بك في نسختك التجريبية"
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid ""
+"You can invite teammates yourself, up to the seat cap - no need to\n"
+"                            route it through factory1."
+msgstr "يمكنك دعوة زملاء الفريق بنفسك، حتى الحد الأقصى للمقاعد - دون الحاجة لتمرير ذلك عبر factory1."
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid ""
+"Your trial expires on a set date, shown in the systray up top. Ask\n"
+"                            your sales contact for an extension before it lapses."
+msgstr "تنتهي نسختك التجريبية في تاريخ محدد، يظهر أعلى الصفحة. اطلب من جهة اتصال المبيعات تمديدها قبل انتهائها."
+
+#. module: hosting
+#. odoo-javascript
+#: code:addons/hosting/static/src/xml/onboarding_prompt.xml:0
+msgid ""
+"Your trial has a fixed seat cap. Once a teammate joins, they take\n"
+"                            one of those seats."
+msgstr "لنسختك التجريبية حد أقصى ثابت للمقاعد. بمجرد انضمام زميل، يأخذ أحد تلك المقاعد."

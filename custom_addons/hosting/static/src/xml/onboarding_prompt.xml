@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="hosting.HostingOnboardingPrompt">
+        <Dialog size="'md'" contentClass="'o_hosting_onboarding_prompt'">
+            <t t-set-slot="header">
+                <div class="d-flex align-items-center gap-2">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="o_hosting_onboarding_prompt_title_icon">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 8v4"/>
+                        <path d="M12 16h.01"/>
+                    </svg>
+                    <h4 class="modal-title mb-0">Welcome to your trial</h4>
+                </div>
+                <button type="button" class="btn-close" aria-label="Close" t-on-click="onDismiss"/>
+            </t>
+            <p class="text-muted small mb-3">
+                This is a quick orientation to how your trial works - not a product tour.
+                Here's what to know before you dive in.
+            </p>
+            <div class="d-flex flex-column gap-3">
+                <div class="o_hosting_onboarding_prompt_mechanic">
+                    <div class="o_hosting_onboarding_prompt_icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="o_hosting_onboarding_prompt_mechanic_title">Seats</div>
+                        <div class="o_hosting_onboarding_prompt_mechanic_desc">
+                            Your trial has a fixed seat cap. Once a teammate joins, they take
+                            one of those seats.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="o_hosting_onboarding_prompt_mechanic">
+                    <div class="o_hosting_onboarding_prompt_icon o_hosting_onboarding_prompt_icon--amber">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M12 6v6l4 2"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="o_hosting_onboarding_prompt_mechanic_title">Expiry &amp; extension</div>
+                        <div class="o_hosting_onboarding_prompt_mechanic_desc">
+                            Your trial expires on a set date, shown in the systray up top. Ask
+                            your sales contact for an extension before it lapses.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="o_hosting_onboarding_prompt_mechanic">
+                    <div class="o_hosting_onboarding_prompt_icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 6 12 13 2 6"/>
+                            <rect x="2" y="4" width="20" height="16" rx="2"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="o_hosting_onboarding_prompt_mechanic_title">Inviting teammates</div>
+                        <div class="o_hosting_onboarding_prompt_mechanic_desc">
+                            You can invite teammates yourself, up to the seat cap - no need to
+                            route it through factory1.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="o_hosting_onboarding_prompt_mechanic">
+                    <div class="o_hosting_onboarding_prompt_icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 2v4"/>
+                            <path d="m16.2 7.8 2.9-2.9"/>
+                            <path d="M18 12h4"/>
+                            <path d="m16.2 16.2 2.9 2.9"/>
+                            <path d="M12 18v4"/>
+                            <path d="m4.9 19.1 2.9-2.9"/>
+                            <path d="M2 12h4"/>
+                            <path d="m4.9 4.9 2.9 2.9"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="o_hosting_onboarding_prompt_mechanic_title">Suspend &amp; Wake</div>
+                        <div class="o_hosting_onboarding_prompt_mechanic_desc">
+                            Idle instances suspend automatically to save cost. A "Wake Up"
+                            action brings it back in a minute or two.
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <t t-set-slot="footer">
+                <a t-att-href="guideUrl" target="_blank" class="me-auto">
+                    View the full Getting Started guide
+                </a>
+                <button class="btn btn-primary" t-on-click="onDismiss">Got it</button>
+            </t>
+        </Dialog>
+    </t>
+</templates>
