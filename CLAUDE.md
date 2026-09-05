@@ -1,1 +1,1 @@
-C:/workspace/agentic-erp/AGENTS.md
+AGENTS.md
