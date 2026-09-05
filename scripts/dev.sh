@@ -301,7 +301,9 @@ case "$COMMAND" in
     --help|-h) usage 0 ;;
     '') usage ;;
 esac
-require_env
+# lint is Docker-free (see docs/adr/0028) and doesn't touch the Compose stack,
+# so unlike every other subcommand it doesn't need a configured .env.
+[[ "$COMMAND" == lint ]] || require_env
 
 case "$COMMAND" in
     doctor) doctor ;;
@@ -331,13 +333,20 @@ case "$COMMAND" in
     test) module_test "$ARGUMENT" "$EXTRA" "$CLEANUP_OPTION" ;;
     i18n-export) module_i18n_export "$ARGUMENT" "$EXTRA" ;;
     lint)
+        # Docker-free: `ruff` is self-contained and needs neither the Odoo dev
+        # image nor a running Compose stack (verified in docs/adr/0028), so
+        # this runs directly on the host, unlike every other subcommand here.
         lint_path="${ARGUMENT:-custom_addons}"
         assert_relative_path "$lint_path" "Lint"
+        command -v ruff >/dev/null 2>&1 || { echo "Lint needs 'ruff' on PATH (pip install ruff==0.16.1)." >&2; exit 1; }
         ruff_options=()
         case "$(uname -s)" in
+            # EXE002 (shebang/executable-bit mismatch) misfires on scripts
+            # checked out under Windows/MSYS, which don't preserve the Unix
+            # executable bit; it doesn't apply on the Linux CI runner.
             CYGWIN*|MINGW*|MSYS*) ruff_options=(--ignore EXE002) ;;
         esac
-        compose run --rm --no-deps odoo ruff check "${ruff_options[@]}" "/workspace/$lint_path"
+        ruff check --config ruff.toml "${ruff_options[@]}" "$lint_path"
         ;;
     docs-build)
         docs_build_doc ""

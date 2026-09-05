@@ -16,13 +16,17 @@ jobs:
       image_relevant: ${{ steps.check.outputs.image_relevant }}
       docs_build: ${{ steps.check.outputs.docs_build }}
       infra_relevant: ${{ steps.check.outputs.infra_relevant }}
+      lint_relevant: ${{ steps.check.outputs.lint_relevant }}
       test_modules: ${{ steps.plan.outputs.modules }}
     steps:
-      # image_relevant and docs_build are deliberately independent: docs_build's
-      # docs-build-tests job runs on bare ubuntu-latest and never touches the
-      # Odoo dev image, so it shouldn't force build-image/lint/test to run, and
-      # vice versa.
-      - name: Check for changes affecting the Odoo dev image, lint, or tests
+      # image_relevant, docs_build, infra_relevant, and lint_relevant are deliberately
+      # independent of each other: docs-build-tests and infra-checks run on bare
+      # ubuntu-latest and never touch the Odoo dev image, and `ruff` (lint_relevant)
+      # doesn't need it either (see docs/adr/0028) — none of the three should force
+      # build-image/test to run, and a docker/**-only or requirements.txt-only change
+      # (image_relevant) shouldn't force lint to run since it can't affect `ruff`'s
+      # output.
+      - name: Check for changes affecting the Odoo dev image, lint, docs, tests, or infra
         id: check
         uses: dorny/paths-filter@v3
         with:
@@ -42,6 +46,12 @@ jobs:
               - 'custom_addons/crm_methodology/static/docs/**/*.html'
             infra_relevant:
               - 'infra/**'
+              - '.github/workflows/ci.yml'
+            lint_relevant:
+              - 'custom_addons/**'
+              - 'ruff.toml'
+              - 'scripts/dev.sh'
+              - 'scripts/dev.ps1'
               - '.github/workflows/ci.yml'
       - uses: actions/checkout@v4
       - name: Build per-module change filters
@@ -145,35 +155,26 @@ jobs:
 
   lint:
     name: Lint
-    needs: [changes, build-image]
-    # build-image is skipped (not failed) when nothing relevant changed; without
-    # this, GitHub's default skip-propagation would skip this required check
-    # entirely instead of letting it no-op via the steps' own `if` guards below.
-    # Still require `changes` to have actually succeeded, and don't proceed if
-    # build-image genuinely failed (as opposed to being skipped).
-    if: ${{ needs.changes.result == 'success' && needs.build-image.result != 'failure' && needs.build-image.result != 'cancelled' }}
+    needs: changes
+    if: needs.changes.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: read
     steps:
       - uses: actions/checkout@v4
-        if: needs.changes.outputs.image_relevant == 'true'
-      - name: Configure environment
-        if: needs.changes.outputs.image_relevant == 'true'
-        run: |
-          cp .env.example .env
-          echo "HOST_UID=$(id -u)" >> .env
-          echo "HOST_GID=$(id -g)" >> .env
-          echo "ODOO_DEV_IMAGE=${{ needs.build-image.outputs.image }}" >> .env
-      - uses: ./.github/actions/ghcr-login
-        if: needs.changes.outputs.image_relevant == 'true'
-      - name: Pull cached development image
-        if: needs.changes.outputs.image_relevant == 'true'
-        run: docker compose pull odoo
+        if: needs.changes.outputs.lint_relevant == 'true'
+      - uses: actions/setup-python@v5
+        if: needs.changes.outputs.lint_relevant == 'true'
+        with:
+          python-version: '3.x'
+      - name: Install ruff
+        if: needs.changes.outputs.lint_relevant == 'true'
+        run: pip install ruff==0.16.1
       - name: Run ruff
-        if: needs.changes.outputs.image_relevant == 'true'
-        run: bash scripts/dev.sh lint custom_addons
+        if: needs.changes.outputs.lint_relevant == 'true'
+        # No --ignore EXE002: that exclusion is Windows/MSYS-only local-dev
+        # noise (see docs/adr/0028) and doesn't apply on this Linux runner.
+        run: ruff check --config ruff.toml custom_addons
 
   docs-build-tests:
     name: Docs-build tooling tests
