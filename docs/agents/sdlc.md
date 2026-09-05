@@ -85,14 +85,14 @@ which cover issue triage, not PR review.
 
 ## Continuous integration
 
-Three GitHub Actions jobs. The workflow itself triggers on every PR
-targeting either `dev/19.0` (regular feature work) or `main/19.0` (release
-PRs promoting `dev/19.0` to the demo instance) — no path filter at the
-trigger level. A preliminary `changes` job diffs the PR against its base for
-`custom_addons/**`, `docker/**`, `scripts/**`, `requirements.txt`,
-`compose.yaml`, or the workflow file itself, and both other jobs read its
-`relevant` output to decide whether to actually do anything. There is no
-separate deploy workflow — Render's native branch auto-deploy handles
+The workflow itself triggers on every PR targeting either `dev/19.0`
+(regular feature work) or `main/19.0` (release PRs promoting `dev/19.0` to
+the demo instance) — no path filter at the trigger level. A preliminary
+`changes` job diffs the PR against its base for `custom_addons/**`,
+`docker/**`, `scripts/**`, `requirements.txt`, `compose.yaml`, or the
+workflow file itself, and the other jobs read its `image_relevant` and
+`docs_build` outputs to decide whether to actually do anything. There is
+no separate deploy workflow — Render's native branch auto-deploy handles
 promotion once a release PR merges.
 
 This replaced an earlier design where the whole workflow was gated by a
@@ -102,17 +102,17 @@ so they could never satisfy `dev/19.0`'s required status check and stayed
 permanently `BLOCKED` short of an admin bypass (`enforce_admins` is off for
 this repo, so the repo owner can merge past it, but that shouldn't be the
 routine path for an ordinary docs PR). The `lint` job now always completes
-— its steps are individually skipped when `changes.outputs.relevant` is
-`false`, so a docs-only PR gets a fast, real "success" for the required
+— its steps are individually skipped when `changes.outputs.image_relevant`
+is `false`, so a docs-only PR gets a fast, real "success" for the required
 check instead of no check at all.
 
 | Job | Trigger scope | Gate |
 |---|---|---|
-| `changes` | every PR | Not a check anyone gates on — feeds `relevant` to the other two jobs |
-| `lint` | every PR; steps run only when `relevant` | Feeds `ci-required`; not itself required by branch protection |
-| `docs-build-tests` | every PR; steps run only when `relevant` | Feeds `ci-required`; not itself required by branch protection |
+| `changes` | every PR | Not a check anyone gates on — feeds `image_relevant` and `docs_build` to the other jobs |
+| `lint` | every PR; steps run only when `image_relevant` | Feeds `ci-required`; not itself required by branch protection |
+| `docs-build-tests` | every PR; steps run only when `docs_build` | Feeds `ci-required`; not itself required by branch protection |
 | `ci-required` | every PR; `if: always()` | **Required** status check — fails unless both `lint` and `docs-build-tests` succeeded, even if either was `skipped` (e.g. because the upstream `changes` job errored) |
-| `test` | every PR; whole job skipped when not `relevant` | Visible, **non-blocking** for now — the full `custom_addons/` suite via the `compose.yaml` stack; revisit once the suite has proven itself over time |
+| `test` | every PR; whole job skipped when not `image_relevant` | Visible, **non-blocking** for now — the full `custom_addons/` suite via the `compose.yaml` stack; revisit once the suite has proven itself over time |
 
 `ci-required` exists because GitHub branch protection treats a `skipped` required check the
 same as a passing one for merge purposes. Without a trailing gate, a `changes` job failure would
