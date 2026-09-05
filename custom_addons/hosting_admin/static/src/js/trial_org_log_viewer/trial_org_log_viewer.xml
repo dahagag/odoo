@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="hosting_admin.TrialOrgLogViewer">
+        <div class="o_hosting_trial_org_log_viewer">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <input type="text"
+                       class="o_hosting_trial_org_log_viewer_user_filter form-control form-control-sm w-auto"
+                       placeholder="Filter by user login..."
+                       t-att-value="state.userFilter"
+                       t-on-input="onUserFilterInput"/>
+                <span class="text-muted small">
+                    <t t-esc="filteredLines.length"/> / <t t-esc="state.lines.length"/> lines
+                </span>
+            </div>
+            <div t-ref="scrollContainer"
+                 class="o_hosting_trial_org_log_viewer_lines border rounded p-2 bg-dark text-light font-monospace small"
+                 style="height: 400px; overflow-y: auto; white-space: pre-wrap;">
+                <div t-if="!filteredLines.length" class="text-muted">
+                    No log lines yet.
+                </div>
+                <div t-foreach="filteredLines" t-as="line" t-key="line_index"
+                     class="o_hosting_trial_org_log_viewer_line">
+                    <t t-esc="line.message"/>
+                </div>
+            </div>
+        </div>
+    </t>
+</templates>

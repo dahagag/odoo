@@ -70,6 +70,13 @@
                                    invisible="not audit_trail_steps_available"
                                    nolabel="1"/>
                         </page>
+                        <!-- docs/adr/0023: live-tailing, filterable-by-user log viewer, fed by
+                             the log webhook controller's bus.bus publications - never polling.
+                             Only meaningful once this record is saved (it subscribes to a
+                             channel keyed on its own id), so it is hidden until then. -->
+                        <page string="Live Log" invisible="not id">
+                            <widget name="hosting_trial_org_log_viewer"/>
+                        </page>
                     </notebook>
                 </sheet>
             </form>
