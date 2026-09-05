@@ -4,7 +4,7 @@ description: Fetch a PR's review comments (bots like CodeRabbit, and humans), tr
 disable-model-invocation: true
 ---
 
-Review comments — bot (CodeRabbit and similar) and human — pile up on a PR faster than a human wants to work them one by one. This skill fetches every unresolved thread, **triages** each into one of four buckets, lands the clear-cut ones, and gates anything non-trivial, or asked for by a human reviewer, behind informed consent before touching the branch.
+Review comments — bot (CodeRabbit and similar) and human — pile up on a PR faster than a human wants to work them one by one. This skill fetches every unresolved thread, **triages** each into one of five buckets, lands the clear-cut ones, and gates anything non-trivial, or asked for by a human reviewer, behind informed consent before touching the branch.
 
 ## Step 0: Preflight — merge conflicts
 
@@ -44,10 +44,11 @@ Done when you hold the full set of unresolved threads for the target PR.
 
 Sort each thread into exactly one bucket by your own judgment of the comment and the fix it implies — never by the bot's own severity label or heading (a "nitpick" collapsible section is a hint about the bot's confidence, not a verdict on the risk of the fix; judge the diff shape yourself). Group threads into one triage unit when they're clearly the same underlying issue (same file, same pattern, restated across a diff) — the rest of this skill treats a group like a single item.
 
-- **fix-now**: a real bug, security issue, or correctness problem.
+- **fix-now**: a real bug, security issue, or correctness problem — *and* a fix you could land inside this PR without it turning into a separate design effort. Size, not confidence, is the test: you know exactly what the patch looks like and it stays inside the shape of the existing change.
 - **fix-if-trivial**: the fix itself is a single line with no logic change — a rename, a formatting or typo fix, adding/removing a line that can't alter control flow or behavior. If applying the fix requires touching more than one line or reasoning about behavior at all, it's fix-now, whatever the bot called it.
 - **dismiss**: a false positive, or it conflicts with a deliberate, already-made design choice.
 - **escalate**: ambiguous or subjective — the comment reads as fair but you can't tell what "right" looks like without asking.
+- **large-fix**: unambiguously a real bug or security issue — you *do* know it's real — but the correct remediation is itself a substantial piece of new work: a new subsystem, a new data model or field, an authentication/authorization mechanism that doesn't exist yet, or any change that would need its own design pass rather than riding along inside a PR-comment cleanup. A bot's own effort tag (e.g. CodeRabbit's "🏗️ Heavy lift") lines up with this bucket often enough to be a useful hint, but never a verdict — judge the diff shape yourself, the same as every other bucket. The distinguishing question against escalate: do you already know what "right" looks like? If yes, but it's too big to build here, it's large-fix, not escalate.
 
 Done when every fetched thread (or group) has exactly one bucket.
 
@@ -70,7 +71,7 @@ A fix-if-trivial item whose thread was opened by a **human** reviewer skips this
 
 ## Step 4: Gate everything else
 
-Non-trivial code changes, dismissals, and any human-authored comment (trivial or not) all need a human to actually agree before they land. For each fix-now item, each dismiss item, and each human-authored fix-if-trivial item:
+Non-trivial code changes, dismissals, and any human-authored comment (trivial or not) all need a human to actually agree before they land. For each fix-now item, each dismiss item, and each human-authored fix-if-trivial item — **not** large-fix items, which skip straight to Step 5's routing instead of an inline "apply the fix" option:
 
 1. **Build the bite-sized guide, and post it as a normal chat message** — never packed into an `AskUserQuestion` field. Write it as prose a person can actually read: short sentences, paragraph breaks between beats, no telegraphic fragments or over-compressed clauses chasing brevity. Skimmable means well-paced, not crushed. Cover:
    - **Where**: a link to the exact line (`https://github.com/<owner>/<repo>/blob/<commit.oid>/<path>#L<line>`, from the comment's own `path`/`line`/`commit.oid`) plus its `diffHunk` as a fenced code block, so the user sees the real code the comment is about, not a paraphrase of it. If the fix touches real code or config elsewhere in the repo (not just the flagged line), quote that too — actual snippets and call chains you verified by reading the files, never reconstructed from memory.
@@ -90,14 +91,16 @@ Non-trivial code changes, dismissals, and any human-authored comment (trivial or
 
 Done when every item from this step has been presented and landed, rejected, or escalated.
 
-## Step 5: Route escalations
+## Step 5: Route escalations and large-fix items
 
-For every remaining escalate item (including anything rejected or test/lint-failed out of earlier steps), build the same bite-sized guide as Step 4, then present it via AskUserQuestion recommending exactly one of the following, chosen by the comment's actual scope, with the others still selectable:
+For every remaining escalate or large-fix item (including anything rejected or test/lint-failed out of earlier steps), build the same bite-sized guide as Step 4, then present it via AskUserQuestion recommending exactly one of the following, chosen by the comment's actual scope, with the others still selectable:
 
 - **`/to-tickets`** — the follow-up is small and already well understood.
 - **`/to-spec`** — it's a real problem or feature, but nobody's specified it yet.
 - **`/wayfinder`** — the implications are foggy and too big for one session; it needs its own decision map.
 
-Whichever the user picks, invoke that skill for the item. The thread stays unresolved regardless of the outcome — escalations are never auto-resolved.
+For a large-fix item specifically, the guide's framing is "this is real, and here's why fixing it properly is out of scope for a quick PR-comment pass" rather than an open question about whether it's a problem at all — the ambiguity being resolved is scope and routing, not whether the finding is valid. A large-fix item can also come back as "dismiss" here if, once written up, the user judges the risk acceptable to carry for now; treat that the same as a Step 4 dismiss (reply with the reasoning, resolve the thread) rather than forcing a routing choice that doesn't fit.
+
+Whichever the user picks, invoke that skill for the item. The thread stays unresolved regardless of the outcome — escalations and large-fix items are never auto-resolved except via that explicit dismiss.
 
 Done when every triaged item is either resolved (Steps 3–4) or has a routing decision made and its target skill invoked (Step 5).
