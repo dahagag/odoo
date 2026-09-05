@@ -138,7 +138,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   lint:
-    name: Lint (required)
+    name: Lint
     needs: [changes, build-image]
     # build-image is skipped (not failed) when nothing relevant changed; without
     # this, GitHub's default skip-propagation would skip this required check
@@ -170,7 +170,7 @@ jobs:
         run: bash scripts/dev.sh lint custom_addons
 
   docs-build-tests:
-    name: Docs-build tooling tests (required)
+    name: Docs-build tooling tests
     needs: changes
     if: needs.changes.result == 'success'
     runs-on: ubuntu-latest
@@ -187,6 +187,25 @@ jobs:
         if: needs.changes.outputs.docs_build == 'true'
         run: |
           python3 -m unittest discover -s scripts/docs_build/tests -t .
+
+  ci-required:
+    name: CI required checks (required)
+    needs: [lint, docs-build-tests]
+    # if: always() so this still runs (and can fail) even when lint or
+    # docs-build-tests was skipped — e.g. because the upstream `changes` job
+    # itself errored. GitHub branch protection treats a skipped required
+    # check as passing, so without this a `changes` failure would let a PR
+    # merge without lint or docs-build-tests ever having run.
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require lint and docs-build-tests to have succeeded
+        if: needs.lint.result != 'success' || needs.docs-build-tests.result != 'success'
+        run: |
+          echo "lint: ${{ needs.lint.result }}"
+          echo "docs-build-tests: ${{ needs.docs-build-tests.result }}"
+          exit 1
 
   test:
     name: Test (${{ matrix.module }})
