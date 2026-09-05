@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_hosting_cost_dashboard_snapshot_form" model="ir.ui.view">
+        <field name="name">hosting.cost.dashboard.snapshot.form</field>
+        <field name="model">hosting.cost.dashboard.snapshot</field>
+        <field name="arch" type="xml">
+            <form string="Cost Dashboard" create="false" delete="false">
+                <header>
+                    <button name="action_refresh_now" type="object" string="Refresh Now"
+                            class="btn-primary"/>
+                </header>
+                <sheet>
+                    <!-- Odoo 19 requires a field referenced by any invisible= expression below
+                         to be present in the view's own field list, even hidden. -->
+                    <field name="days_remaining_on_credit_known" invisible="1"/>
+                    <!-- docs/adr/0030 and the ticket's own acceptance criterion: figures are a
+                         daily-refresh snapshot, not a live AWS read, and can lag up to 24h
+                         behind actual spend (Cost Explorer's own tag-activation delay,
+                         docs/research/aws-hosting-foundation-tooling.md). -->
+                    <div class="alert alert-warning" role="alert">
+                        Figures may lag up to 24 hours behind actual AWS spend. AWS cost
+                        allocation tags take up to a day to become queryable in Cost Explorer,
+                        so these numbers reflect what AWS had indexed as of this snapshot's own
+                        refresh, not real-time usage.
+                    </div>
+                    <h1>
+                        <field name="snapshot_date"/>
+                    </h1>
+                    <group col="3">
+                        <group string="Total Spend">
+                            <field name="total_spend" nolabel="1"/>
+                        </group>
+                        <group string="Burn Rate">
+                            <field name="burn_rate_per_day" nolabel="1"/>
+                        </group>
+                        <group string="Days Remaining on Credit">
+                            <field name="days_remaining_on_credit" nolabel="1"
+                                   invisible="not days_remaining_on_credit_known"/>
+                            <span invisible="days_remaining_on_credit_known">
+                                Not yet available (no spend recorded)
+                            </span>
+                            <field name="credit_amount" string="Credit"/>
+                        </group>
+                    </group>
+                    <field name="line_ids" string="Spend by Trial Org">
+                        <list create="false" delete="false">
+                            <field name="org_label" string="Trial Org"/>
+                            <field name="spend_share_pct" widget="progressbar" string="Share of Spend"/>
+                            <field name="spend"/>
+                        </list>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_hosting_cost_dashboard" model="ir.actions.server">
+        <field name="name">Cost Dashboard</field>
+        <field name="model_id" ref="model_hosting_cost_dashboard_snapshot"/>
+        <field name="state">code</field>
+        <field name="code">action = model.action_open_dashboard()</field>
+    </record>
+
+</odoo>
