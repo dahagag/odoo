@@ -22,8 +22,9 @@ the client-demo instance (see
 release PR from `dev/19.0` with passing CI; no direct pushes. This repo has
 no external contributors (see the top of this doc), so there's no separate
 reviewer to require — the protection matches `dev/19.0`'s own (required
-`ci-required` check, no reviewer count, `enforce_admins: false` so the
-solo maintainer can merge once CI passes). Promoting a change to the demo
+`CI required checks (required)` check, no reviewer count,
+`enforce_admins: false` so the solo maintainer can merge once CI passes).
+Promoting a change to the demo
 instance means opening and merging a `dev/19.0` → `main/19.0` PR — that
 merge *is* the deploy gate, since Render's own git integration handles the
 rest with no separate approval step.
