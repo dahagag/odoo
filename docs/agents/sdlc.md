@@ -89,8 +89,8 @@ The workflow itself triggers on every PR targeting either `dev/19.0`
 (regular feature work) or `main/19.0` (release PRs promoting `dev/19.0` to
 the demo instance) — no path filter at the trigger level. A preliminary
 `changes` job diffs the PR against its base for `custom_addons/**`,
-`docker/**`, `scripts/**`, `requirements.txt`, `compose.yaml`, or the
-workflow file itself, and the other jobs read its `image_relevant`,
+`docker/**`, `scripts/**`, `requirements.txt`, `compose.yaml`, `infra/**`, or
+the workflow file itself, and the other jobs read its `image_relevant`,
 `docs_build`, and `infra_relevant` outputs to decide whether to actually do
 anything. There is no separate deploy workflow — Render's native branch
 auto-deploy handles promotion once a release PR merges.
