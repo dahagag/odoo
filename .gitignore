@@ -3,7 +3,6 @@ _build/
 
 # dotfiles
 .*
-!.agents
 !.env.example
 !.gitattributes
 !.gitignore
@@ -55,7 +54,7 @@ package.json
 /share/
 /src/
 
-# expose .claude/skills (symlinked to .agents/skills) to Claude Code
+# expose .claude/skills to git
 !.claude
 .claude/*
 !.claude/skills
