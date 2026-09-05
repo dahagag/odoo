@@ -6,6 +6,7 @@ owner-token-conditional delete the state machine's own release step does, so an 
 was stopped externally or timed out at the top level (neither of which a Catch block sees) still
 releases its lock promptly instead of relying solely on the DynamoDB TTL backstop.
 """
+import functools
 import json
 import os
 
@@ -14,15 +15,11 @@ from botocore.exceptions import ClientError
 
 LOCK_TABLE_NAME = os.environ["LOCK_TABLE_NAME"]
 
-_dynamodb = None
 
-
+@functools.cache
 def _table():
-    """Returns the lock table resource, via a lazily-created, module-cached DynamoDB resource."""
-    global _dynamodb
-    if _dynamodb is None:
-        _dynamodb = boto3.resource("dynamodb")
-    return _dynamodb.Table(LOCK_TABLE_NAME)
+    """Returns the lock table resource, via a lazily-created, cached DynamoDB resource."""
+    return boto3.resource("dynamodb").Table(LOCK_TABLE_NAME)
 
 
 def handler(event, _context):

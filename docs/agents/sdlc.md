@@ -90,10 +90,10 @@ The workflow itself triggers on every PR targeting either `dev/19.0`
 the demo instance) — no path filter at the trigger level. A preliminary
 `changes` job diffs the PR against its base for `custom_addons/**`,
 `docker/**`, `scripts/**`, `requirements.txt`, `compose.yaml`, or the
-workflow file itself, and the other jobs read its `image_relevant` and
-`docs_build` outputs to decide whether to actually do anything. There is
-no separate deploy workflow — Render's native branch auto-deploy handles
-promotion once a release PR merges.
+workflow file itself, and the other jobs read its `image_relevant`,
+`docs_build`, and `infra_relevant` outputs to decide whether to actually do
+anything. There is no separate deploy workflow — Render's native branch
+auto-deploy handles promotion once a release PR merges.
 
 This replaced an earlier design where the whole workflow was gated by a
 `paths:` filter on the trigger itself: docs-only PRs (regular feature PRs
@@ -108,16 +108,17 @@ check instead of no check at all.
 
 | Job | Trigger scope | Gate |
 |---|---|---|
-| `changes` | every PR | Not a check anyone gates on — feeds `image_relevant` and `docs_build` to the other jobs |
+| `changes` | every PR | Not a check anyone gates on — feeds `image_relevant`, `docs_build`, and `infra_relevant` to the other jobs |
 | `lint` | every PR; steps run only when `image_relevant` | Feeds `ci-required`; not itself required by branch protection |
 | `docs-build-tests` | every PR; steps run only when `docs_build` | Feeds `ci-required`; not itself required by branch protection |
-| `ci-required` | every PR; `if: always()` | **Required** status check — fails unless both `lint` and `docs-build-tests` succeeded, even if either was `skipped` (e.g. because the upstream `changes` job errored) |
+| `infra-checks` | every PR; steps run only when `infra_relevant` (`infra/**` or the workflow file) | Feeds `ci-required`; not itself required by branch protection — `tofu fmt`/`tofu validate` on all three OpenTofu modules, `ruff`, and `interrogate` docstring coverage, all Docker-free (`actions/setup-python`, no Odoo dev image) |
+| `ci-required` | every PR; `if: always()` | **Required** status check — fails unless `lint`, `docs-build-tests`, and `infra-checks` all succeeded, even if one was `skipped` (e.g. because the upstream `changes` job errored) |
 | `test` | every PR; whole job skipped when not `image_relevant` | Visible, **non-blocking** for now — the full `custom_addons/` suite via the `compose.yaml` stack; revisit once the suite has proven itself over time |
 
 `ci-required` exists because GitHub branch protection treats a `skipped` required check the
 same as a passing one for merge purposes. Without a trailing gate, a `changes` job failure would
-let `lint` and `docs-build-tests` turn `skipped` and still allow the PR to merge with neither
-having actually run.
+let `lint`, `docs-build-tests`, and `infra-checks` turn `skipped` and still allow the PR to merge
+with none of them having actually run.
 
 Lint blocks because it's cheap and deterministic (`ruff`, no services
 needed). Tests don't block yet because they're the newer, less-proven gate

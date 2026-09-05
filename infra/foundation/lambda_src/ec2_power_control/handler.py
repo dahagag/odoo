@@ -7,17 +7,15 @@ StartInstances/StopInstances the way it does for ECS/Batch/Glue, so this functio
 boto3 waiter (`instance_stopped`/`instance_running`) itself and only returns once the instance
 has actually reached its target state — never immediately after the API call is accepted.
 """
+import functools
+
 import boto3
 
-_ec2 = None
 
-
+@functools.cache
 def _client():
-    """Returns a lazily-created, module-cached boto3 EC2 client."""
-    global _ec2
-    if _ec2 is None:
-        _ec2 = boto3.client("ec2")
-    return _ec2
+    """Returns a lazily-created, cached boto3 EC2 client."""
+    return boto3.client("ec2")
 
 
 def handler(event, _context):
