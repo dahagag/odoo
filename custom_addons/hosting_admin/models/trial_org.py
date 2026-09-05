@@ -372,6 +372,14 @@ class HostingTrialOrg(models.Model):
         if trial_org.invite_type != 'open':
             raise UserError(_(
                 "%(name)s was not issued via an Open Invite Link.", name=trial_org.name))
+        # Lock this Trial Org's own row before the Seat create() below, so two concurrent joins
+        # racing the last remaining seat serialize instead of both reading the same
+        # not-yet-at-cap count and both committing (CodeRabbit, PR #160) - same pattern as
+        # crm_lead.action_issue_trial's own concurrent-issue guard (crm_lead.py, CodeRabbit #131).
+        # The blocked caller resumes only once the first join commits, so _check_seat_cap() on
+        # its create() sees that join's row and correctly rejects if the cap is now reached.
+        self.env.cr.execute(
+            "SELECT id FROM hosting_trial_org WHERE id = %s FOR UPDATE", (trial_org.id,))
         return self.env['hosting.trial.org.seat'].sudo().create({
             'trial_org_id': trial_org.id,
             'email': email,
