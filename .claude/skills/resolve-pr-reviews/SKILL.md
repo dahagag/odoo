@@ -101,6 +101,12 @@ For every remaining escalate or large-fix item (including anything rejected or t
 
 For a large-fix item specifically, the guide's framing is "this is real, and here's why fixing it properly is out of scope for a quick PR-comment pass" rather than an open question about whether it's a problem at all — the ambiguity being resolved is scope and routing, not whether the finding is valid. A large-fix item can also come back as "dismiss" here if, once written up, the user judges the risk acceptable to carry for now; treat that the same as a Step 4 dismiss (reply with the reasoning, resolve the thread) rather than forcing a routing choice that doesn't fit.
 
-Whichever the user picks, invoke that skill for the item. The thread stays unresolved regardless of the outcome — escalations and large-fix items are never auto-resolved except via that explicit dismiss.
+**`/to-tickets`, `/to-spec`, and `/wayfinder` are all `disable-model-invocation` — never attempt to invoke any of them via the Skill tool; the call errors, and even a well-formed prompt changes nothing about that restriction.** Whichever one the user picks, publish a GitHub issue instead (per `docs/agents/issue-tracker.md`) as a ready-to-run handoff — this is the routing's actual output, not a workaround:
 
-Done when every triaged item is either resolved (Steps 3–4) or has a routing decision made and its target skill invoked (Step 5).
+- **Title**: a short, descriptive title for the underlying problem — not "Route via /to-spec" or similar meta-phrasing.
+- **Body**: everything the target skill would need as its own opening prompt, since a human will paste this straight after the command: the concrete finding (quote the flagged lines/diff), why it matters, and whatever repo-specific context made it non-trivial in the first place (the same material the bite-sized guide already gathered). Lead with one line naming the next step verbatim, e.g. "**Next step:** run `/to-spec` against this issue."
+- **Label**: `ready-for-human` (`docs/agents/triage-labels.md`) — the routing decision is already made; what's missing is a human session actually running a skill the agent is barred from invoking.
+
+Reply on the review thread with a link to the created issue, but leave the thread unresolved regardless — it resolves only once the routed work actually lands (e.g. a merged follow-up PR), or via the explicit "dismiss" path above, never merely because a ticket now exists for it.
+
+Done when every triaged item is either resolved (Steps 3–4) or has a routing decision made and its handoff issue published (Step 5).
