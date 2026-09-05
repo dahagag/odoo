@@ -6,6 +6,7 @@ to compute the TTL backstop's expiry as a Unix-epoch-seconds number, which the A
 Language has no intrinsic function for (no ISO8601-to-epoch conversion) — done here in Python
 instead of fragile ASL date arithmetic.
 """
+import functools
 import os
 import time
 
@@ -15,15 +16,11 @@ from botocore.exceptions import ClientError
 LOCK_TABLE_NAME = os.environ["LOCK_TABLE_NAME"]
 LOCK_TTL_SECONDS = int(os.environ.get("LOCK_TTL_SECONDS", str(4 * 3600)))
 
-_dynamodb = None
 
-
+@functools.cache
 def _table():
-    """Returns the lock table resource, via a lazily-created, module-cached DynamoDB resource."""
-    global _dynamodb
-    if _dynamodb is None:
-        _dynamodb = boto3.resource("dynamodb")
-    return _dynamodb.Table(LOCK_TABLE_NAME)
+    """Returns the lock table resource, via a lazily-created, cached DynamoDB resource."""
+    return boto3.resource("dynamodb").Table(LOCK_TABLE_NAME)
 
 
 def handler(event, _context):
@@ -48,7 +45,7 @@ def handler(event, _context):
     except ClientError as exc:
         if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
             raise RuntimeError(
-                f"lock already held for trial_org_id={trial_org_id}"
+                f"lock already held for trial_org_id={trial_org_id}",
             ) from exc
         raise
 
