@@ -130,3 +130,23 @@ class TestTrialOrgLogWebhook(HttpCase):
             ('channel', '=', json.dumps(
                 [self.env.cr.dbname, trial_org_log_bus_channel(self.trial_org.id)], separators=(',', ':'))),
         ]))
+
+    def test_top_level_json_array_is_a_silent_no_op(self):
+        # json.loads() accepts any JSON value, not just objects - a validly-signed top-level
+        # array must be dropped rather than raising AttributeError on payload.get().
+        body = json.dumps([1, 2, 3]).encode('utf-8')
+        with mute_logger('odoo.addons.hosting_admin.controllers.log_webhook'):
+            response = self._post(body, self._sign(body))
+        self.assertEqual(response.status_code, 200)
+
+    def test_non_list_events_is_a_silent_no_op(self):
+        # A truthy non-list `events` value (e.g. a bare integer) must be dropped rather than
+        # raising TypeError when iterated.
+        body = self._body(events=1)
+        with mute_logger('odoo.addons.hosting_admin.controllers.log_webhook'):
+            response = self._post(body, self._sign(body))
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(self.env['bus.bus'].sudo().search([
+            ('channel', '=', json.dumps(
+                [self.env.cr.dbname, trial_org_log_bus_channel(self.trial_org.id)], separators=(',', ':'))),
+        ]))

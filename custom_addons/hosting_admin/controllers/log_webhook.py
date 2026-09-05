@@ -59,7 +59,15 @@ class HostingLogWebhookController(http.Controller):
         events at all (e.g. a stray retry) is silently dropped rather than erroring - the Lambda
         has no Trial-Org-level context to act on a rejection with, and a transient gap here is
         harmless since the log viewer has no history to catch up on regardless."""
-        events = payload.get('events') or []
+        if not isinstance(payload, dict):
+            _logger.warning("Log webhook payload must be a JSON object.")
+            return
+        events = payload.get('events')
+        if events is None:
+            return
+        if not isinstance(events, list):
+            _logger.warning("Log webhook payload carries malformed events: %r", events)
+            return
         if not events:
             return
         try:
