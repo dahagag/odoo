@@ -3,7 +3,7 @@ import uuid
 from datetime import timedelta, timezone
 
 from odoo import _, api, fields, models
-from odoo.exceptions import AccessError, ValidationError
+from odoo.exceptions import AccessError, UserError, ValidationError
 
 from .provisioner import AwsProvisioner, StubProvisioner
 
@@ -101,6 +101,14 @@ class HostingTrialOrg(models.Model):
         help="Number of Seats available on this Trial Org, set at issuance. "
              f"Capped system-wide at {SYSTEM_WIDE_SEAT_CAP}.",
     )
+    # Which of the two invitation paths (docs/adr/0026) this Trial Org was issued through. Both
+    # lock the same prospect_domain at issuance; only 'open' ever accepts a join through
+    # action_join_open_invite() below - a 'targeted' invite's Seat is confirmed by construction
+    # (the rep already named the specific email), so it has no first-login domain prompt to gate.
+    invite_type = fields.Selection([
+        ('targeted', "Targeted Invite"),
+        ('open', "Open Invite Link"),
+    ], default='targeted', required=True)
     state = fields.Selection([
         ('issued', "Issued"),
         ('active', "Active"),
@@ -329,6 +337,30 @@ class HostingTrialOrg(models.Model):
     def action_destroy(self):
         """Auto-Destroy (or manually tear down) this Trial Org: active/suspended -> destroyed."""
         self._apply_transition('destroy')
+
+    def action_join_open_invite(self, email):
+        """Join this Trial Org through its Open Invite Link (ADR-0026, ticket #120): the person
+        who just completed login supplies their company ``email``, creating their (accepted)
+        Seat if it matches this Trial Org's prospect domain - already locked at issuance, the
+        same as a Targeted Invite's - or raising and creating nothing if it doesn't.
+
+        Only ever called for an 'open' Trial Org: a Targeted Invite's Seat is confirmed by
+        construction and never goes through this prompt. Domain-match and seat-cap enforcement
+        both live on hosting.trial.org.seat's own constraints
+        (_check_email_matches_prospect_domain, _check_seat_cap), so this call is unconditionally
+        safe to repeat: the very first use is what confirms the domain the ticket describes, and
+        every next person who follows the same link makes the identical call, which is exactly
+        the self-service invite behaviour ticket #110 already established (same fixed domain,
+        subject to the same seat cap) - there is no separate "already confirmed" state to track."""
+        self.ensure_one()
+        if self.invite_type != 'open':
+            raise UserError(_(
+                "%(name)s was not issued via an Open Invite Link.", name=self.name))
+        return self.env['hosting.trial.org.seat'].create({
+            'trial_org_id': self.id,
+            'email': email,
+            'state': 'accepted',
+        })
 
     def _new_job_id(self):
         """Return (job_id, started_at) for a lifecycle action about to start on this record

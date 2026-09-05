@@ -8,6 +8,7 @@
             <list string="Trial Orgs">
                 <field name="name"/>
                 <field name="prospect_domain"/>
+                <field name="invite_type"/>
                 <field name="state"/>
                 <field name="seat_cap"/>
                 <field name="expiry_date"/>
@@ -32,6 +33,7 @@
                         <group>
                             <field name="name"/>
                             <field name="prospect_domain"/>
+                            <field name="invite_type"/>
                             <field name="seat_cap"/>
                             <field name="expiry_date"/>
                         </group>

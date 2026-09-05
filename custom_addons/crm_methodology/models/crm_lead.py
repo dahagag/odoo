@@ -306,6 +306,7 @@ class CrmLead(models.Model):
             'name': self.partner_id.name or self.name,
             'prospect_domain': prospect_domain,
             'seat_cap': seat_cap,
+            'invite_type': invite_type,
             'expiry_date': fields.Date.context_today(self) + timedelta(days=TRIAL_INITIAL_EXPIRY_DAYS),
         })
         trial_org.action_issue()
