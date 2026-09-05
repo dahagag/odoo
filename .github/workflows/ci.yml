@@ -188,6 +188,24 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts/docs_build/tests -t .
 
+  ci-required:
+    name: CI required checks
+    needs: [lint, docs-build-tests]
+    # if: always() so this still runs (and can fail) even when lint or
+    # docs-build-tests was skipped — e.g. because the upstream `changes` job
+    # itself errored. GitHub branch protection treats a skipped required
+    # check as passing, so without this a `changes` failure would let a PR
+    # merge without lint or docs-build-tests ever having run.
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require lint and docs-build-tests to have succeeded
+        if: needs.lint.result != 'success' || needs.docs-build-tests.result != 'success'
+        run: |
+          echo "lint: ${{ needs.lint.result }}"
+          echo "docs-build-tests: ${{ needs.docs-build-tests.result }}"
+          exit 1
+
   test:
     name: Test (${{ matrix.module }})
     needs: [changes, build-image]

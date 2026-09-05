@@ -108,8 +108,15 @@ check instead of no check at all.
 | Job | Trigger scope | Gate |
 |---|---|---|
 | `changes` | every PR | Not a check anyone gates on — feeds `relevant` to the other two jobs |
-| `lint` | every PR; steps run only when `relevant` | **Required** status check — must pass, no override |
+| `lint` | every PR; steps run only when `relevant` | Feeds `ci-required`; not itself required by branch protection |
+| `docs-build-tests` | every PR; steps run only when `relevant` | Feeds `ci-required`; not itself required by branch protection |
+| `ci-required` | every PR; `if: always()` | **Required** status check — fails unless both `lint` and `docs-build-tests` succeeded, even if either was `skipped` (e.g. because the upstream `changes` job errored) |
 | `test` | every PR; whole job skipped when not `relevant` | Visible, **non-blocking** for now — the full `custom_addons/` suite via the `compose.yaml` stack; revisit once the suite has proven itself over time |
+
+`ci-required` exists because GitHub branch protection treats a `skipped` required check the
+same as a passing one for merge purposes. Without a trailing gate, a `changes` job failure would
+let `lint` and `docs-build-tests` turn `skipped` and still allow the PR to merge with neither
+having actually run.
 
 Lint blocks because it's cheap and deterministic (`ruff`, no services
 needed). Tests don't block yet because they're the newer, less-proven gate
