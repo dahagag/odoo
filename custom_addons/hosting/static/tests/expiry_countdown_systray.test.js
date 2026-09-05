@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from "@odoo/hoot";
 import { animationFrame, mockDate } from "@odoo/hoot-mock";
 import { routerBus } from "@web/core/browser/router";
-import { defineModels, fields, models, mountWithCleanup } from "@web/../tests/web_test_helpers";
+import { defineModels, fields, models, mountWithCleanup, onRpc } from "@web/../tests/web_test_helpers";
 import { ExpiryCountdownSystray } from "@hosting/js/expiry_countdown_systray";
 
 class HostingOrgRegistration extends models.Model {
@@ -57,6 +57,14 @@ test("expired registration renders the red tier", async () => {
 
 test("no Org Registration record renders nothing", async () => {
     await mountSystrayWithExpiry(null);
+    expect(".o_hosting_expiry_countdown_systray").toHaveCount(0);
+});
+
+test("a failed lookup hides the chip instead of raising", async () => {
+    onRpc("hosting.org.registration", "search_read", () => {
+        throw new Error("boom");
+    });
+    await mountWithCleanup(ExpiryCountdownSystray);
     expect(".o_hosting_expiry_countdown_systray").toHaveCount(0);
 });
 

@@ -58,12 +58,21 @@ export class ExpiryCountdownSystray extends Component {
     }
 
     async _fetchDaysLeft() {
-        const [registration] = await this.orm.searchRead(
-            "hosting.org.registration",
-            [],
-            ["expiry_date"],
-            { limit: 1 },
-        );
+        // A failed lookup (offline, RPC error) hides the chip rather than raising: neither
+        // onWillStart nor the unawaited useBus callback has an error boundary above it here,
+        // so an uncaught rejection would otherwise surface as a webclient-level error dialog.
+        let registration;
+        try {
+            [registration] = await this.orm.searchRead(
+                "hosting.org.registration",
+                [],
+                ["expiry_date"],
+                { limit: 1 },
+            );
+        } catch {
+            this.state.daysLeft = null;
+            return;
+        }
         this.state.daysLeft =
             registration && registration.expiry_date
                 ? Math.round(deserializeDate(registration.expiry_date).diff(today(), "days").days)
