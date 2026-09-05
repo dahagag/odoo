@@ -1,4 +1,7 @@
 from . import (
+    test_cost_dashboard_figures,
+    test_cost_dashboard_snapshot,
+    test_cost_explorer_client,
     test_trial_org_audit_trail,
     test_trial_org_aws_provisioner,
     test_trial_org_log_channel_authorization,

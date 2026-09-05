@@ -41,5 +41,19 @@
             <field name="active">True</field>
         </record>
 
+        <!-- Cost Dashboard daily refresh (docs/adr/0030): pulls AWS's own cost-and-usage data
+             grouped by the TrialOrgId cost-allocation tag and upserts today's snapshot. Once
+             daily, not on every dashboard open - see action_open_dashboard/docs/adr/0030 for
+             why. -->
+        <record id="ir_cron_hosting_cost_dashboard_refresh_snapshot" model="ir.cron">
+            <field name="name">Hosting: Refresh Cost Dashboard snapshot</field>
+            <field name="model_id" ref="model_hosting_cost_dashboard_snapshot"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_refresh_snapshot()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="active">True</field>
+        </record>
+
     </data>
 </odoo>

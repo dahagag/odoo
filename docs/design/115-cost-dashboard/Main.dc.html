@@ -1,0 +1,137 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+        sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+      font-size: 14px;
+      color: #212529;
+      background: #ffffff;
+    }
+    a { color: #63578a; text-decoration: none; }
+    a:hover { color: #4d4370; text-decoration: underline; }
+    .breadcrumb-item + .breadcrumb-item::before {
+      content: "/";
+      margin: 0 8px;
+      color: #adb5bd;
+    }
+    table { border-collapse: collapse; width: 100%; }
+    th { font-weight: 500; }
+    .spend-row:hover { background: #f8f9fa; }
+  </style>
+</helmet>
+
+<div style="display:flex; flex-direction:column; min-height:100%; background:#ffffff;">
+
+  <!-- Odoo backend control panel bar -->
+  <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 24px; border-bottom:1px solid #dee2e6;">
+    <div style="display:flex; align-items:center; gap:6px; font-size:13px; color:#6c757d;">
+      <span class="breadcrumb-item">Hosting</span>
+      <span class="breadcrumb-item" style="color:#212529; font-weight:500;">Cost Dashboard</span>
+    </div>
+    <div style="font-size:12px; color:#adb5bd;">Refreshed daily</div>
+  </div>
+
+  <div style="padding:24px; display:flex; flex-direction:column; gap:24px; max-width:1040px; width:100%; box-sizing:border-box;">
+
+    <h1 style="margin:0; font-size:20px; font-weight:500; color:#212529;">AWS Cost Dashboard</h1>
+
+    <!-- 24h lag banner - ticket's own explicit acceptance criterion -->
+    <div style="display:flex; gap:10px; align-items:flex-start; padding:12px 16px; background:#fff8e1; border:1px solid #ffe69c; border-radius:4px; color:#664d03; font-size:13px; line-height:1.5;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0; margin-top:2px;">
+        <circle cx="12" cy="12" r="9" stroke="#664d03" stroke-width="2"/>
+        <path d="M12 8v5" stroke="#664d03" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="12" cy="16" r="1" fill="#664d03"/>
+      </svg>
+      <div>
+        <strong>Figures may lag up to 24 hours behind actual AWS spend.</strong> AWS cost
+        allocation tags take up to a day to become queryable in Cost Explorer once activated, so
+        today's numbers reflect spend AWS has indexed as of the last daily refresh, not
+        real-time usage.
+      </div>
+    </div>
+
+    <!-- KPI row -->
+    <div style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:16px;">
+
+      <div style="border:1px solid #dee2e6; border-radius:4px; padding:20px;">
+        <div style="font-size:12px; color:#6c757d; text-transform:uppercase; letter-spacing:.03em;">Total Spend (Month to Date)</div>
+        <div style="font-size:28px; font-weight:500; color:#212529; margin-top:6px;">$67.40</div>
+        <div style="font-size:12px; color:#6c757d; margin-top:4px;">across 6 Trial Orgs</div>
+      </div>
+
+      <div style="border:1px solid #dee2e6; border-radius:4px; padding:20px;">
+        <div style="font-size:12px; color:#6c757d; text-transform:uppercase; letter-spacing:.03em;">Burn Rate</div>
+        <div style="font-size:28px; font-weight:500; color:#212529; margin-top:6px;">$4.82<span style="font-size:14px; font-weight:400; color:#6c757d;">/day</span></div>
+        <div style="font-size:12px; color:#6c757d; margin-top:4px;">avg. of last 7 days</div>
+      </div>
+
+      <div style="border:1px solid #71639e; border-radius:4px; padding:20px; background:#f6f4fa;">
+        <div style="font-size:12px; color:#63578a; text-transform:uppercase; letter-spacing:.03em;">Days Remaining on Credit</div>
+        <div style="font-size:28px; font-weight:500; color:#4d4370; margin-top:6px;">27</div>
+        <div style="font-size:12px; color:#63578a; margin-top:4px;">$130.20 left of $200.00</div>
+      </div>
+
+    </div>
+
+    <!-- Spend by Trial Org -->
+    <div style="border:1px solid #dee2e6; border-radius:4px;">
+      <div style="padding:14px 20px; border-bottom:1px solid #dee2e6; font-size:14px; font-weight:500; color:#212529;">
+        Spend by Trial Org
+      </div>
+      <table>
+        <thead>
+          <tr style="border-bottom:1px solid #dee2e6; color:#6c757d; font-size:12px; text-transform:uppercase; letter-spacing:.03em;">
+            <th style="text-align:left; padding:10px 20px;">Trial Org</th>
+            <th style="text-align:left; padding:10px 20px; width:45%;">Share of Spend</th>
+            <th style="text-align:right; padding:10px 20px;">Spend (MTD)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <sc-for list="{{orgs}}" as="org" hint-placeholder-count="6">
+            <tr class="spend-row" style="border-bottom:1px solid #f1f1f1;">
+              <td style="padding:12px 20px; font-weight:500;">{{org.name}}</td>
+              <td style="padding:12px 20px;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <div style="flex-grow:1; height:8px; background:#e9ecef; border-radius:4px; overflow:hidden;">
+                    <div style="height:100%; background:#71639e; border-radius:4px; width:{{org.pct}}%;"></div>
+                  </div>
+                  <span style="font-size:12px; color:#6c757d; width:34px; text-align:right;">{{org.pct}}%</span>
+                </div>
+              </td>
+              <td style="padding:12px 20px; text-align:right; font-variant-numeric:tabular-nums;">${{org.spend}}</td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      orgs: [
+        { name: 'Acme Corp', pct: 34, spend: '22.90' },
+        { name: 'Globex Trial', pct: 22, spend: '14.85' },
+        { name: 'Initech Demo', pct: 18, spend: '12.10' },
+        { name: 'Umbrella Eval', pct: 14, spend: '9.44' },
+        { name: 'Soylent Pilot', pct: 8, spend: '5.38' },
+        { name: 'Hooli Sandbox', pct: 4, spend: '2.73' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>
