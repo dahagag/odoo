@@ -54,3 +54,8 @@ package.json
 /man/
 /share/
 /src/
+
+# expose .claude/skills (symlinked to .agents/skills) to Claude Code
+!.claude
+.claude/*
+!.claude/skills
