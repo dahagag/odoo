@@ -8,6 +8,8 @@ from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tools.misc import babel_locale_parse, format_date, get_lang
 
+from odoo.addons.hosting_admin.models.trial_org import INVITE_TYPES
+
 # docs/contexts/hosting/CONTEXT.md: "An isolated Odoo instance ... running for a fixed window
 # (default 14 days) before Auto-Destroy." hosting_admin's own Trial Org model never sets
 # expiry_date itself (it only tracks the issued/active/suspended/destroyed state machine), so
@@ -275,7 +277,7 @@ class CrmLead(models.Model):
         if not self.env.user.has_group('sales_team.group_sale_salesman'):
             raise AccessError(_("Only Salespeople can issue a Trial Org."))
         self.check_access('write')
-        if invite_type not in ('targeted', 'open'):
+        if invite_type not in dict(INVITE_TYPES):
             raise ValidationError(_(
                 "Invite type must be either a Targeted Invite or an Open Invite Link."))
         if invite_type == 'targeted' and not invite_email:
@@ -306,6 +308,7 @@ class CrmLead(models.Model):
             'name': self.partner_id.name or self.name,
             'prospect_domain': prospect_domain,
             'seat_cap': seat_cap,
+            'invite_type': invite_type,
             'expiry_date': fields.Date.context_today(self) + timedelta(days=TRIAL_INITIAL_EXPIRY_DAYS),
         })
         trial_org.action_issue()

@@ -3,7 +3,7 @@ import uuid
 from datetime import timedelta, timezone
 
 from odoo import _, api, fields, models
-from odoo.exceptions import AccessError, ValidationError
+from odoo.exceptions import AccessError, UserError, ValidationError
 
 from .provisioner import AwsProvisioner, StubProvisioner
 
@@ -48,6 +48,13 @@ CONFIG_PARAM_STATE_MACHINE_ARN = 'hosting_admin.aws_state_machine_arn'
 CONFIG_PARAM_AWS_REGION = 'hosting_admin.aws_region'
 CONFIG_PARAM_BASE_AMI_ID = 'hosting_admin.base_ami_id'
 CONFIG_PARAM_TOFU_MODULE_GIT_SHA = 'hosting_admin.tofu_module_git_sha'
+
+# The two invitation paths ADR-0026 describes, shared with crm_methodology's action_issue_trial
+# (the only other place this needs to be validated against) so the two never drift independently.
+INVITE_TYPES = [
+    ('targeted', "Targeted Invite"),
+    ('open', "Open Invite Link"),
+]
 
 # Bus channel prefix for the real-time log viewer (docs/adr/0023): the full channel name is
 # this prefix plus the Trial Org's own id, so it is guessable (unlike bus.bus._sendone()'s own
@@ -101,6 +108,12 @@ class HostingTrialOrg(models.Model):
         help="Number of Seats available on this Trial Org, set at issuance. "
              f"Capped system-wide at {SYSTEM_WIDE_SEAT_CAP}.",
     )
+    # Which of the two invitation paths (docs/adr/0026) this Trial Org was issued through. Both
+    # lock the same prospect_domain at issuance; only 'open' ever accepts a join through
+    # action_join_open_invite() below - a 'targeted' invite's Seat is confirmed by construction
+    # (the rep already named the specific email), so it has no first-login domain prompt to gate.
+    invite_type = fields.Selection(
+        INVITE_TYPES, default='targeted', required=True)
     state = fields.Selection([
         ('issued', "Issued"),
         ('active', "Active"),
@@ -329,6 +342,49 @@ class HostingTrialOrg(models.Model):
     def action_destroy(self):
         """Auto-Destroy (or manually tear down) this Trial Org: active/suspended -> destroyed."""
         self._apply_transition('destroy')
+
+    def action_join_open_invite(self, email):
+        """Join this Trial Org through its Open Invite Link (ADR-0026, ticket #120): the person
+        who just completed login supplies their company ``email``, creating their (accepted)
+        Seat if it matches this Trial Org's prospect domain - already locked at issuance, the
+        same as a Targeted Invite's - or raising and creating nothing if it doesn't.
+
+        Only ever called for an 'open' Trial Org: a Targeted Invite's Seat is confirmed by
+        construction and never goes through this prompt. Domain-match and seat-cap enforcement
+        both live on hosting.trial.org.seat's own constraints
+        (_check_email_matches_prospect_domain, _check_seat_cap), so this call is unconditionally
+        safe to repeat: the very first use is what confirms the domain the ticket describes, and
+        every next person who follows the same link makes the identical call, which is exactly
+        the self-service invite behaviour ticket #110 already established (same fixed domain,
+        subject to the same seat cap) - there is no separate "already confirmed" state to track.
+
+        hosting.trial.org and hosting.trial.org.seat are Platform-only models (docs/adr/0018):
+        neither grants base.group_user any access (security/ir.model.access.csv). The person
+        completing this join is an ordinary user, not a Platform operator, so this method itself
+        is the narrow, post-validation sudo() boundary (same pattern as crm_lead.action_issue_
+        trial()) - it elevates only after ensure_one() and the invite_type check above, and only
+        for the exact record read and Seat create() this call promises. The domain-match and
+        seat-cap constraints on hosting.trial.org.seat still apply on top of that elevation, so a
+        caller who names the wrong Trial Org id or a mismatched email is still rejected; sudo()
+        only lifts the ACL that would otherwise block a legitimate join too."""
+        self.ensure_one()
+        trial_org = self.sudo()
+        if trial_org.invite_type != 'open':
+            raise UserError(_(
+                "%(name)s was not issued via an Open Invite Link.", name=trial_org.name))
+        # Lock this Trial Org's own row before the Seat create() below, so two concurrent joins
+        # racing the last remaining seat serialize instead of both reading the same
+        # not-yet-at-cap count and both committing (CodeRabbit, PR #160) - same pattern as
+        # crm_lead.action_issue_trial's own concurrent-issue guard (crm_lead.py, CodeRabbit #131).
+        # The blocked caller resumes only once the first join commits, so _check_seat_cap() on
+        # its create() sees that join's row and correctly rejects if the cap is now reached.
+        self.env.cr.execute(
+            "SELECT id FROM hosting_trial_org WHERE id = %s FOR UPDATE", (trial_org.id,))
+        return self.env['hosting.trial.org.seat'].sudo().create({
+            'trial_org_id': trial_org.id,
+            'email': email,
+            'state': 'accepted',
+        })
 
     def _new_job_id(self):
         """Return (job_id, started_at) for a lifecycle action about to start on this record

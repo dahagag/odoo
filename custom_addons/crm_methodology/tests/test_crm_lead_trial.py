@@ -67,6 +67,21 @@ class TestCrmLeadTrial(TransactionCase):
         self.assertEqual(trial_org.state, 'active')
         self.assertEqual(trial_org.prospect_domain, "prospect.example.com")
 
+    def test_open_invite_link_trial_org_accepts_a_matching_first_login(self):
+        # Regression coverage for #120: the Trial Org action_issue_trial() creates must
+        # actually be the kind of Trial Org that action_join_open_invite() (ticket #120,
+        # docs/adr/0026) accepts - a bare invite_type='open' string on the wizard call is
+        # useless if it never made it onto the created hosting.trial.org record itself.
+        lead = self._create_lead(user_id=self.salesperson.id)
+        trial_org = lead.with_user(self.salesperson).action_issue_trial(
+            prospect_domain="prospect.example.com", seat_cap=5, invite_type='open',
+        )
+
+        seat = trial_org.action_join_open_invite("buyer@prospect.example.com")
+
+        self.assertEqual(seat.state, 'accepted')
+        self.assertEqual(seat.trial_org_id, trial_org)
+
     def test_targeted_invite_requires_an_email(self):
         lead = self._create_lead(user_id=self.salesperson.id)
         with self.assertRaises(UserError):
