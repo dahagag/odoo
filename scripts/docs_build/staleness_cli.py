@@ -23,7 +23,17 @@ from collections.abc import Callable
 from pathlib import Path
 
 MANIFEST_PATH = Path("docs/teach-hosting/images/capture-manifest.json")
-_TRACKED_PATHS = ("custom_addons/hosting", "custom_addons/hosting_admin")
+# Excludes static/docs/ (this pipeline's own build output) from both addon paths: without
+# that exclusion, every docs-build:doc/docs-build:video run that touches its own output
+# would itself count as the "most recent" addon change, making a just-recaptured screenshot
+# report stale immediately - see issue #122 code review.
+_TRACKED_ADDONS = ("custom_addons/hosting", "custom_addons/hosting_admin")
+_TRACKED_PATHS = (
+    "custom_addons/hosting",
+    ":(exclude)custom_addons/hosting/static/docs",
+    "custom_addons/hosting_admin",
+    ":(exclude)custom_addons/hosting_admin/static/docs",
+)
 
 CommandRunner = Callable[[list[str]], "subprocess.CompletedProcess[str]"]
 
@@ -40,7 +50,7 @@ def current_addons_git_sha(*, runner: CommandRunner | None = None) -> str:
         raise DocsBuildError(f"git log failed (exit {result.returncode}):\n{result.stderr}")
     sha = result.stdout.strip()
     if not sha:
-        raise DocsBuildError(f"git log found no commits touching {' or '.join(_TRACKED_PATHS)}")
+        raise DocsBuildError(f"git log found no commits touching {' or '.join(_TRACKED_ADDONS)}")
     return sha
 
 

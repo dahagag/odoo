@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.docs_build.staleness_cli import DocsBuildError, check_staleness
+from scripts.docs_build.staleness_cli import DocsBuildError, check_staleness, current_addons_git_sha
 
 
 def _fake_runner(sha="abc123"):
@@ -12,6 +12,25 @@ def _fake_runner(sha="abc123"):
         return subprocess.CompletedProcess(command, 0, stdout=f"{sha}\n", stderr="")
 
     return runner
+
+
+class CurrentAddonsGitShaTests(unittest.TestCase):
+    def test_excludes_each_addons_own_static_docs_output_from_the_git_log_pathspec(self):
+        # Regression test for issue #122's code review: without excluding static/docs/ (this
+        # pipeline's own build output), a docs-build:doc/docs-build:video run that only
+        # touches its own output would count as the "most recent" addon change, making a
+        # just-recaptured screenshot's own tag immediately stale against itself.
+        captured = []
+
+        def runner(command):
+            captured.append(command)
+            return subprocess.CompletedProcess(command, 0, stdout="abc123\n", stderr="")
+
+        current_addons_git_sha(runner=runner)
+
+        [command] = captured
+        self.assertIn(":(exclude)custom_addons/hosting/static/docs", command)
+        self.assertIn(":(exclude)custom_addons/hosting_admin/static/docs", command)
 
 
 class CheckStalenessTests(unittest.TestCase):

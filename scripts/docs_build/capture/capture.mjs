@@ -112,9 +112,18 @@ function readEnv() {
 }
 
 function currentAddonsGitSha() {
+  // Excludes static/docs/ (this pipeline's own build output) from both addon paths — kept in
+  // sync with scripts/docs_build/staleness_cli.py's identical _TRACKED_PATHS. Without this
+  // exclusion, every docs-build:doc/docs-build:video run that touches its own output would
+  // itself count as the "most recent" addon change, making a just-recaptured screenshot's own
+  // tag immediately stale against itself.
   return execFileSync(
     "git",
-    ["log", "-1", "--format=%H", "--", "custom_addons/hosting", "custom_addons/hosting_admin"],
+    [
+      "log", "-1", "--format=%H", "--",
+      "custom_addons/hosting", ":(exclude)custom_addons/hosting/static/docs",
+      "custom_addons/hosting_admin", ":(exclude)custom_addons/hosting_admin/static/docs",
+    ],
     { cwd: REPO_ROOT, encoding: "utf8" },
   ).trim();
 }
