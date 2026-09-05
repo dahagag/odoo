@@ -49,6 +49,24 @@ CONFIG_PARAM_AWS_REGION = 'hosting_admin.aws_region'
 CONFIG_PARAM_BASE_AMI_ID = 'hosting_admin.base_ami_id'
 CONFIG_PARAM_TOFU_MODULE_GIT_SHA = 'hosting_admin.tofu_module_git_sha'
 
+# Bus channel prefix for the real-time log viewer (docs/adr/0023): the full channel name is
+# this prefix plus the Trial Org's own id, so it is guessable (unlike bus.bus._sendone()'s own
+# docstring recommendation for a bare string channel) - authorization is enforced separately at
+# subscribe time by IrWebsocket._build_bus_channel_list (models/ir_websocket.py) checking the
+# connecting user's own read access to that Trial Org, not by channel secrecy.
+TRIAL_ORG_LOG_BUS_CHANNEL_PREFIX = 'hosting_admin.trial_org_log-'
+
+# bus.bus notification type the log webhook controller (controllers/log_webhook.py) publishes
+# new log lines under, and the frontend log-viewer widget subscribes to.
+TRIAL_ORG_LOG_BUS_NOTIFICATION_TYPE = 'hosting_admin.trial_org_log_lines'
+
+
+def trial_org_log_bus_channel(trial_org_id):
+    """Return the bus.bus channel name (docs/adr/0023) a Trial Org's log-viewer widget
+    subscribes to, and the log webhook controller publishes new lines onto."""
+    return f'{TRIAL_ORG_LOG_BUS_CHANNEL_PREFIX}{trial_org_id}'
+
+
 # Context key ``_apply_transition`` sets to authorize its own ``write({'state': ...})`` call.
 # ``state`` is declared ``readonly=True`` below, but that only hides the field in form views -
 # it does not stop a caller with model access from setting it directly via ORM or RPC

@@ -18,7 +18,7 @@ Auto-Destroy, Deployment Version).
     'category': 'Hosting',
     'version': '19.0.1.0.0',
 
-    'depends': ['base'],
+    'depends': ['base', 'bus'],
 
     'data': [
         'security/hosting_admin_groups.xml',
@@ -27,6 +27,15 @@ Auto-Destroy, Deployment Version).
         'views/hosting_trial_org_views.xml',
         'views/hosting_trial_org_menus.xml',
     ],
+
+    'assets': {
+        'web.assets_backend': [
+            'hosting_admin/static/src/**/*',
+        ],
+        'web.assets_unit_tests': [
+            'hosting_admin/static/tests/**/*',
+        ],
+    },
 
     'license': 'LGPL-3',
 }
