@@ -49,6 +49,13 @@ CONFIG_PARAM_AWS_REGION = 'hosting_admin.aws_region'
 CONFIG_PARAM_BASE_AMI_ID = 'hosting_admin.base_ami_id'
 CONFIG_PARAM_TOFU_MODULE_GIT_SHA = 'hosting_admin.tofu_module_git_sha'
 
+# The two invitation paths ADR-0026 describes, shared with crm_methodology's action_issue_trial
+# (the only other place this needs to be validated against) so the two never drift independently.
+INVITE_TYPES = [
+    ('targeted', "Targeted Invite"),
+    ('open', "Open Invite Link"),
+]
+
 # Bus channel prefix for the real-time log viewer (docs/adr/0023): the full channel name is
 # this prefix plus the Trial Org's own id, so it is guessable (unlike bus.bus._sendone()'s own
 # docstring recommendation for a bare string channel) - authorization is enforced separately at
@@ -105,10 +112,8 @@ class HostingTrialOrg(models.Model):
     # lock the same prospect_domain at issuance; only 'open' ever accepts a join through
     # action_join_open_invite() below - a 'targeted' invite's Seat is confirmed by construction
     # (the rep already named the specific email), so it has no first-login domain prompt to gate.
-    invite_type = fields.Selection([
-        ('targeted', "Targeted Invite"),
-        ('open', "Open Invite Link"),
-    ], default='targeted', required=True)
+    invite_type = fields.Selection(
+        INVITE_TYPES, default='targeted', required=True)
     state = fields.Selection([
         ('issued', "Issued"),
         ('active', "Active"),
@@ -351,13 +356,24 @@ class HostingTrialOrg(models.Model):
         safe to repeat: the very first use is what confirms the domain the ticket describes, and
         every next person who follows the same link makes the identical call, which is exactly
         the self-service invite behaviour ticket #110 already established (same fixed domain,
-        subject to the same seat cap) - there is no separate "already confirmed" state to track."""
+        subject to the same seat cap) - there is no separate "already confirmed" state to track.
+
+        hosting.trial.org and hosting.trial.org.seat are Platform-only models (docs/adr/0018):
+        neither grants base.group_user any access (security/ir.model.access.csv). The person
+        completing this join is an ordinary user, not a Platform operator, so this method itself
+        is the narrow, post-validation sudo() boundary (same pattern as crm_lead.action_issue_
+        trial()) - it elevates only after ensure_one() and the invite_type check above, and only
+        for the exact record read and Seat create() this call promises. The domain-match and
+        seat-cap constraints on hosting.trial.org.seat still apply on top of that elevation, so a
+        caller who names the wrong Trial Org id or a mismatched email is still rejected; sudo()
+        only lifts the ACL that would otherwise block a legitimate join too."""
         self.ensure_one()
-        if self.invite_type != 'open':
+        trial_org = self.sudo()
+        if trial_org.invite_type != 'open':
             raise UserError(_(
-                "%(name)s was not issued via an Open Invite Link.", name=self.name))
-        return self.env['hosting.trial.org.seat'].create({
-            'trial_org_id': self.id,
+                "%(name)s was not issued via an Open Invite Link.", name=trial_org.name))
+        return self.env['hosting.trial.org.seat'].sudo().create({
+            'trial_org_id': trial_org.id,
             'email': email,
             'state': 'accepted',
         })
