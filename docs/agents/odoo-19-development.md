@@ -57,11 +57,23 @@ Runtime behavior and established addon style outrank a style-only rewrite.
 
 ## Localization strings
 
-When work adds or changes translatable strings (Python `_(...)`, JS `_t(...)`, or translatable
-fields/QWeb), run `./scripts/dev.ps1 i18n-export <module> [langs]` (see
-`docs/agents/local-development.md`) once the strings are settled, then fill in the `msgstr`
-entries for the exported `.po` files — the export only picks up the new `msgid`s, it does not
-translate them.
+Translatable strings come from more sources than the obvious ones: Python `_(...)`, JS `_t(...)`,
+translatable model fields and server-side QWeb views, **and plain text nodes in a frontend OWL
+template** (`static/src/xml/*.xml`) — Odoo's extractor (`odoo/tools/translate.py`'s
+`babel_extract_qweb`) picks up ordinary element text there automatically, no `_t()` needed, the
+same as server-side view text. The one gap: an OWL **component prop** (e.g. `<Dialog
+title="'Some text'">`) is a JS expression, not element text, and is only extracted if the attribute
+name ends in `.translate` — don't leave user-facing copy sitting in a plain prop like that; either
+bind it to a `_t()`-wrapped value from the component, or put the text as a plain child element
+instead.
+
+Whenever a change adds or edits any string from the sources above, running
+`./scripts/dev.ps1 i18n-export <module> [langs]` (see `docs/agents/local-development.md`) once the
+strings are settled, and then filling in the resulting empty `msgstr` entries for every language in
+the addon's existing translated set, is part of finishing that change — not a follow-up someone
+else does later. Before treating such a change as done: re-run the export one final time and
+confirm `git diff` shows no newly-empty `msgstr ""` lines left in the addon's `i18n/*.po` files.
+The export only picks up new `msgid`s; it never translates them.
 
 ## One-time, per-user UI state (e.g. a first-login prompt)
 
