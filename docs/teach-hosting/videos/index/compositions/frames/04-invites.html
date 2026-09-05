@@ -1,0 +1,255 @@
+<template>
+<style>
+  #root {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+  }
+
+  .f04inv-bg {
+    position: absolute;
+    inset: 0;
+    background: #F0AD4E;
+  }
+  .f04inv-glow {
+    position: absolute;
+    top: 300px;
+    width: 720px;
+    height: 720px;
+    border-radius: 50%;
+    filter: blur(80px);
+  }
+  .f04inv-glow-l { left: 20px; background: radial-gradient(circle, rgba(113,75,103,0.18), rgba(113,75,103,0) 65%); }
+  .f04inv-glow-r { right: 20px; background: radial-gradient(circle, rgba(113,75,103,0.18), rgba(113,75,103,0) 65%); }
+
+  /* invite node */
+  .f04inv-node {
+    position: absolute;
+    left: 820px;
+    top: 188px;
+    width: 280px;
+    height: 84px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(113,75,103,0.08);
+    border: 1.5px solid rgba(113,75,103,0.2);
+    border-radius: 100px;
+  }
+  .f04inv-node span {
+    font-weight: 700;
+    font-size: 34px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: #714B67;
+  }
+
+  /* paths */
+  .f04inv-paths {
+    position: absolute;
+    inset: 0;
+    width: 1920px;
+    height: 1080px;
+  }
+  .f04inv-path {
+    fill: none;
+    stroke: #714B67;
+    stroke-width: 4;
+    stroke-linecap: round;
+  }
+  .f04inv-fork-dot { fill: #714B67; }
+
+  /* labels drawn along the paths */
+  .f04inv-label {
+    position: absolute;
+    font-weight: 600;
+    font-size: 30px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #714B67;
+  }
+  .f04inv-label-l { left: 592px; top: 400px; width: 260px; }
+  .f04inv-label-r { left: 1068px; top: 400px; width: 260px; text-align: right; }
+
+  /* destination cards */
+  .f04inv-card {
+    position: absolute;
+    width: 380px;
+    height: 260px;
+    background: rgba(113,75,103,0.04);
+    border: 1.5px solid rgba(113,75,103,0.2);
+    border-radius: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+  }
+  .f04inv-card-l { left: 330px; top: 520px; }
+  .f04inv-card-r { left: 1210px; top: 520px; }
+
+  .f04inv-icon-wrap {
+    position: relative;
+    width: 96px;
+    height: 96px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .f04inv-tag {
+    padding: 10px 22px;
+    background: rgba(113,75,103,0.08);
+    border-radius: 100px;
+    font-weight: 500;
+    font-size: 20px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #4F3548;
+    white-space: nowrap;
+  }
+
+  .f04inv-check {
+    position: absolute;
+    right: -18px;
+    bottom: 40px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: #714B67;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+  }
+</style>
+
+<div id="root" data-composition-id="04-invites" data-width="1920" data-height="1080" data-duration="14.004">
+
+  <div class="clip f04inv-bg" data-start="0" data-duration="14.004" data-track-index="0">
+    <div class="f04inv-glow f04inv-glow-l"></div>
+    <div class="f04inv-glow f04inv-glow-r"></div>
+  </div>
+
+  <div class="clip f04inv-node" data-start="0" data-duration="14.004" data-track-index="2">
+    <span>Invite</span>
+  </div>
+
+  <svg class="clip f04inv-paths" data-start="0" data-duration="14.004" data-track-index="1" viewBox="0 0 1920 1080">
+    <circle class="f04inv-fork-dot" cx="960" cy="300" r="0" />
+    <path class="f04inv-path f04inv-path-left" d="M960,310 Q740,380 520,515" pathLength="1" style="stroke-dasharray:1;stroke-dashoffset:1" />
+    <path class="f04inv-path f04inv-path-right" d="M960,310 Q1180,380 1400,515" pathLength="1" style="stroke-dasharray:1;stroke-dashoffset:1" />
+  </svg>
+
+  <div class="clip f04inv-label f04inv-label-l" data-start="3.9" data-duration="10.104" data-track-index="4" style="opacity:0">Targeted</div>
+  <div class="clip f04inv-label f04inv-label-r" data-start="8.7" data-duration="5.304" data-track-index="5" style="opacity:0">Open</div>
+
+  <div class="clip f04inv-card f04inv-card-l" data-start="3.9" data-duration="10.104" data-track-index="6">
+    <div class="f04inv-icon-wrap">
+      <svg width="72" height="54" viewBox="0 0 72 54" fill="none">
+        <rect x="2" y="2" width="68" height="50" rx="8" stroke="#714B67" stroke-width="4" />
+        <path d="M4 6 L36 30 L68 6" stroke="#714B67" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </div>
+    <div class="f04inv-tag">1 Email</div>
+  </div>
+
+  <div class="clip f04inv-card f04inv-card-r" data-start="8.7" data-duration="5.304" data-track-index="7">
+    <div class="f04inv-icon-wrap">
+      <svg width="72" height="54" viewBox="0 0 72 54" fill="none">
+        <rect x="4" y="16" width="30" height="22" rx="11" stroke="#714B67" stroke-width="4" />
+        <rect x="38" y="16" width="30" height="22" rx="11" stroke="#714B67" stroke-width="4" />
+        <line x1="24" y1="27" x2="48" y2="27" stroke="#714B67" stroke-width="4" />
+      </svg>
+      <div class="f04inv-check">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M5 12 L10 17 L19 6" stroke="#F0AD4E" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+    </div>
+    <div class="f04inv-tag">Auto-Confirmed</div>
+  </div>
+
+</div>
+
+<script>
+  window.__timelines = window.__timelines || {};
+  const tl04invites = gsap.timeline({ paused: true });
+
+  // Scene 1 — the shared "Invite" node fades/settles in
+  tl04invites.fromTo(
+    "#root .f04inv-node",
+    { opacity: 0, y: -24, scale: 0.9 },
+    { opacity: 1, y: 0, scale: 1, duration: 0.8, ease: "power3.out" },
+    0
+  );
+
+  // Scene 2 — fork appears, line draws left, "Targeted" lands on the email card
+  tl04invites.fromTo(
+    "#root .f04inv-fork-dot",
+    { attr: { r: 0 } },
+    { attr: { r: 8 }, duration: 0.3, ease: "back.out(2)" },
+    3.9
+  );
+  tl04invites.fromTo(
+    "#root .f04inv-path-left",
+    { strokeDashoffset: 1 },
+    { strokeDashoffset: 0, duration: 0.9, ease: "power2.inOut" },
+    3.9
+  );
+  tl04invites.fromTo(
+    "#root .f04inv-label-l",
+    { opacity: 0, y: 12 },
+    { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" },
+    4.3
+  );
+  tl04invites.fromTo(
+    "#root .f04inv-card-l",
+    { opacity: 0, x: -36, scale: 0.85, rotateY: 26 },
+    { opacity: 1, x: 0, scale: 1, rotateY: 14, duration: 0.7, ease: "power3.out" },
+    4.6
+  );
+  // gentle phase-opposed idle float once landed (subtle, low amplitude)
+  tl04invites.to(
+    "#root .f04inv-card-l",
+    { y: "+=8", duration: 2.2, ease: "sine.inOut", repeat: 6, yoyo: true },
+    5.5
+  );
+
+  // Scene 3 — line draws right, "Open" lands on the link card, confirmation checkmark pops
+  tl04invites.fromTo(
+    "#root .f04inv-path-right",
+    { strokeDashoffset: 1 },
+    { strokeDashoffset: 0, duration: 0.9, ease: "power2.inOut" },
+    8.7
+  );
+  tl04invites.fromTo(
+    "#root .f04inv-label-r",
+    { opacity: 0, y: 12 },
+    { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" },
+    9.1
+  );
+  tl04invites.fromTo(
+    "#root .f04inv-card-r",
+    { opacity: 0, x: 36, scale: 0.85, rotateY: -26 },
+    { opacity: 1, x: 0, scale: 1, rotateY: -14, duration: 0.7, ease: "power3.out" },
+    9.4
+  );
+  tl04invites.fromTo(
+    "#root .f04inv-check",
+    { opacity: 0, scale: 0 },
+    { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(3)" },
+    10.3
+  );
+  // phase-opposed idle float on the right card (offset half-period so it never syncs with the left)
+  tl04invites.to(
+    "#root .f04inv-card-r",
+    { y: "-=8", duration: 2.2, ease: "sine.inOut", repeat: 6, yoyo: true },
+    10.3
+  );
+
+  window.__timelines["04-invites"] = tl04invites;
+</script>
+</template>

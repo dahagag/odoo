@@ -1,0 +1,20 @@
+# Regenerable build output — not source.
+#
+# The committed project is the *authored* half of ADR 0008's split: storyboard,
+# script, design spec, compositions, fonts and narration. Everything below is
+# produced mechanically from that by `docs-build:video` / the HyperFrames CLI,
+# so it is rebuilt rather than tracked.
+#
+# Note: the repo root .gitignore ignores all dot-prefixed paths (`.*`), so this
+# project's `.hyperframes/` working directory — the caption skin and the per-frame
+# sub-agent dispatch packets — is already excluded and needs no rule here.
+
+# Rendered video. The real deliverable lands outside this directory, at
+# custom_addons/hosting/static/docs/index.mp4,
+# written by `docs-build:video` via its --output flag.
+renders/
+
+# Review artifacts from `hyperframes snapshot` (contact sheets + PNG stills).
+snapshots/
+
+node_modules/

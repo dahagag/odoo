@@ -28,7 +28,7 @@ Set-Location -LiteralPath $script:RepoRoot
 
 function Show-Usage {
     param([int]$ExitCode = 2)
-    Write-Host 'Usage: ./scripts/dev.ps1 {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|i18n-export|docs-build|docs-build:doc|docs-build:video|reset} [argument] [extra] [-CleanupOnFailure]'
+    Write-Host 'Usage: ./scripts/dev.ps1 {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|i18n-export|docs-build|docs-build:doc|docs-build:video|docs-build:capture|docs-build:check-staleness|reset} [argument] [extra] [-CleanupOnFailure]'
     exit $ExitCode
 }
 
@@ -173,7 +173,12 @@ function Invoke-DocsBuildDoc {
     param([string]$Argument)
     $cliArguments = @('run', '--rm', '--no-deps', 'odoo', 'python3', '-m', 'scripts.docs_build.cli')
     if ($Argument) {
-        $cliArguments += Assert-RelativePath -Path $Argument -Label 'docs-build:doc'
+        if ($Argument -match '\.md$') {
+            $cliArguments += Assert-RelativePath -Path $Argument -Label 'docs-build:doc'
+        } else {
+            Assert-Identifier -Value $Argument -Label 'docs-build:doc addon name'
+            $cliArguments += $Argument
+        }
     }
     Invoke-Compose -Arguments $cliArguments
 }
@@ -186,17 +191,49 @@ function Invoke-DocsBuildVideo {
     if ($LASTEXITCODE -ne 0) { throw "docs-build:video failed with exit code $LASTEXITCODE." }
 }
 
+function Invoke-DocsBuildCapture {
+    $python = Resolve-HostPython
+    & $python -m scripts.docs_build.capture_cli
+    if ($LASTEXITCODE -ne 0) { throw "docs-build:capture failed with exit code $LASTEXITCODE." }
+}
+
+function Invoke-DocsBuildCheckStaleness {
+    $python = Resolve-HostPython
+    & $python -m scripts.docs_build.staleness_cli
+    if ($LASTEXITCODE -ne 0) { throw "docs-build:check-staleness failed with exit code $LASTEXITCODE." }
+}
+
 function Get-DocsBuildVideoProjects {
-    # Authored HyperFrames projects live at docs/teach/videos/<stem>/ (see
-    # scripts/docs_build/video_cli.py and docs/adr/0008) - one per teach doc that
-    # has a walkthrough video authored for it. Bare `docs-build` re-renders every
-    # one it finds; a teach doc with no authored project simply has no video.
-    $videosDir = Join-Path $script:RepoRoot 'docs\teach\videos'
-    if (-not (Test-Path -LiteralPath $videosDir)) { return @() }
-    Get-ChildItem -LiteralPath $videosDir -Directory |
-        Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'hyperframes.json') } |
-        ForEach-Object { [System.IO.Path]::GetRelativePath($script:RepoRoot, $_.FullName) -replace '\\', '/' } |
-        Sort-Object
+    # Authored HyperFrames projects live at docs/teach/videos/<stem>/ for
+    # crm_methodology, or docs/teach-<addon>/videos/<stem>/ for any other addon
+    # (see scripts/docs_build/video_cli.py, scripts/docs_build/addon_paths.py,
+    # docs/adr/0008 and docs/adr/0025) - one per teach doc that has a
+    # walkthrough video authored for it. Bare `docs-build` re-renders every one
+    # it finds across every addon; a teach doc with no authored project simply
+    # has no video.
+    $teachDirs = @(Join-Path $script:RepoRoot 'docs\teach')
+    $teachDirs += Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'docs') -Directory -Filter 'teach-*' -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.FullName }
+
+    $projects = foreach ($teachDir in $teachDirs) {
+        $videosDir = Join-Path $teachDir 'videos'
+        if (-not (Test-Path -LiteralPath $videosDir)) { continue }
+        Get-ChildItem -LiteralPath $videosDir -Directory |
+            Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'hyperframes.json') } |
+            ForEach-Object { [System.IO.Path]::GetRelativePath($script:RepoRoot, $_.FullName) -replace '\\', '/' }
+    }
+    $projects | Sort-Object
+}
+
+function Get-DocsBuildAddons {
+    # Every addon the docs-build pipeline knows about: crm_methodology (the
+    # pre-existing default, docs/teach/) plus one per docs/teach-<addon>/
+    # directory discovered on disk. Bare `docs-build` loops over this to
+    # rebuild every addon's teach docs, not just crm_methodology's.
+    $addons = @('crm_methodology')
+    $addons += Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'docs') -Directory -Filter 'teach-*' -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.Name -replace '^teach-', '' }
+    $addons | Sort-Object
 }
 
 function Start-Database {
@@ -416,13 +453,17 @@ switch ($Command) {
         if ($LASTEXITCODE -ne 0) { throw "Lint failed with exit code $LASTEXITCODE." }
     }
     'docs-build' {
-        Invoke-DocsBuildDoc -Argument $null
+        foreach ($addon in Get-DocsBuildAddons) {
+            Invoke-DocsBuildDoc -Argument $addon
+        }
         foreach ($project in Get-DocsBuildVideoProjects) {
             Invoke-DocsBuildVideo -ProjectPath $project
         }
     }
     'docs-build:doc' { Invoke-DocsBuildDoc -Argument $Argument }
     'docs-build:video' { Invoke-DocsBuildVideo -ProjectPath $Argument }
+    'docs-build:capture' { Invoke-DocsBuildCapture }
+    'docs-build:check-staleness' { Invoke-DocsBuildCheckStaleness }
     'reset' {
         $project = Get-DevSetting 'COMPOSE_PROJECT_NAME' 'agentic-erp-dev'
         if ($project -notmatch '^[a-z0-9][a-z0-9_-]*$') { throw "Unsafe Compose project name '$project'." }

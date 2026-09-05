@@ -504,5 +504,86 @@ class MainWholeDirectoryTests(unittest.TestCase):
         self.assertIn("Usage", stderr.getvalue())
 
 
+class MainAddonInferenceTests(unittest.TestCase):
+    def test_bare_addon_name_builds_that_addons_whole_teach_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "docs" / "teach-hosting").mkdir(parents=True)
+            (root / "docs" / "teach-hosting" / "index.md").write_text(
+                "# Trial Onboarding Guide\n\nBody.", encoding="utf-8",
+            )
+            (root / "custom_addons" / "hosting" / "static" / "docs").mkdir(parents=True)
+
+            cwd = os.getcwd()
+            os.chdir(root)
+            try:
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout):
+                    exit_code = main(["hosting"])
+            finally:
+                os.chdir(cwd)
+
+            self.assertEqual(exit_code, 0)
+            output_html = root / "custom_addons" / "hosting" / "static" / "docs" / "index.html"
+            self.assertTrue(output_html.is_file())
+
+    def test_a_single_file_argument_infers_its_addon_from_its_teach_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "docs" / "teach-hosting").mkdir(parents=True)
+            source = root / "docs" / "teach-hosting" / "index.md"
+            source.write_text("# Trial Onboarding Guide\n\nBody.", encoding="utf-8")
+            (root / "custom_addons" / "hosting" / "static" / "docs").mkdir(parents=True)
+
+            cwd = os.getcwd()
+            os.chdir(root)
+            try:
+                exit_code = main([str(Path("docs") / "teach-hosting" / "index.md")])
+            finally:
+                os.chdir(cwd)
+
+            self.assertEqual(exit_code, 0)
+            output_html = root / "custom_addons" / "hosting" / "static" / "docs" / "index.html"
+            self.assertTrue(output_html.is_file())
+
+    def test_crm_methodology_source_files_still_build_to_the_original_output_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "docs" / "teach").mkdir(parents=True)
+            source = root / "docs" / "teach" / "alpha.md"
+            source.write_text("# Alpha\n\nBody.", encoding="utf-8")
+            (root / "custom_addons" / "crm_methodology" / "static" / "docs").mkdir(parents=True)
+
+            cwd = os.getcwd()
+            os.chdir(root)
+            try:
+                exit_code = main([str(Path("docs") / "teach" / "alpha.md")])
+            finally:
+                os.chdir(cwd)
+
+            self.assertEqual(exit_code, 0)
+            output_html = root / "custom_addons" / "crm_methodology" / "static" / "docs" / "alpha.html"
+            self.assertTrue(output_html.is_file())
+
+    def test_a_path_outside_any_teach_dir_fails_clearly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "docs" / "adr").mkdir(parents=True)
+            source = root / "docs" / "adr" / "0001-thing.md"
+            source.write_text("# ADR\n\nBody.", encoding="utf-8")
+
+            cwd = os.getcwd()
+            os.chdir(root)
+            try:
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    exit_code = main([str(Path("docs") / "adr" / "0001-thing.md")])
+            finally:
+                os.chdir(cwd)
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn(str(Path("docs") / "adr" / "0001-thing.md"), stderr.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

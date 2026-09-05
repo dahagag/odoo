@@ -1,0 +1,29 @@
+Trial Onboarding Guide
+
+Your Trial Org is a fully working Odoo instance, provisioned just for your prospect domain and
+running for a fixed window before it's automatically torn down. This guide covers the mechanics of
+that trial - seats, expiry and extension, invites, and suspend/Wake - not the CRM product itself.
+
+Seats
+A Seat is a named user account inside your Trial Org. The number of seats available was set when
+your trial was issued (system-wide cap: 25), and every invite you send must resolve to an email
+address on your trial's own prospect domain - an invite to any other domain is rejected rather
+than silently accepted.
+
+Org Registration: seats, expiry, and extension
+Org Registration is your trial's own read-only summary. It shows seats used against your seat cap,
+and your trial's expiry date. Past that date, Auto-Destroy permanently tears down the trial's
+compute and database. If you need more time, ask the sales rep or manager who owns your Opportunity
+for an Extension - they can push the expiry date out before Auto-Destroy fires.
+
+Invites: Open vs. Targeted
+There are two ways a new Seat gets created: a Targeted Invite, sent to a specific known email
+address, confirmed by construction; or an Open Invite Link, a shareable trial-join link not
+addressed to anyone in particular - the first person to complete login through it must confirm a
+company email matching your trial's domain before the Seat is created.
+
+Suspended, Active, and Wake
+A Trial Org is always Active (compute running) or Suspended (compute stopped after an idle
+timeout to save cost - nothing is lost). Visiting a Suspended trial's URL does not restart it - it
+shows a static waiting page instead. Moving from Suspended back to Active is a Wake, an explicit
+action a user takes, not something automatic.

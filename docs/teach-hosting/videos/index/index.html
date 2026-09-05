@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js" integrity="sha384-sG0Hv1tP1lZCk9KQmrIbY/XNwi+OY84GQqhMscbnsoBFqAz8KNCil1kvfL3Hbbk2" crossorigin="anonymous"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #F0AD4E;
+      }
+      .scene {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="53.995"
+      data-width="1920"
+      data-height="1080"
+    >
+      <div
+        id="el-01-orient"
+        class="scene"
+        data-composition-id="01-orient"
+        data-composition-src="compositions/frames/01-orient.html"
+        data-start="0"
+        data-duration="6.559"
+        data-track-index="0"
+      ></div>
+      <audio
+        id="el-01-orient-voice"
+        src="assets/voice/01.wav"
+        data-start="0"
+        data-duration="6.059"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+
+      <div
+        id="el-02-seats"
+        class="scene"
+        data-composition-id="02-seats"
+        data-composition-src="compositions/frames/02-seats.html"
+        data-start="6.059"
+        data-duration="11.081"
+        data-track-index="1"
+      ></div>
+      <audio
+        id="el-02-seats-voice"
+        src="assets/voice/02.wav"
+        data-start="6.059"
+        data-duration="10.581"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+
+      <div
+        id="el-03-expiry"
+        class="scene"
+        data-composition-id="03-expiry"
+        data-composition-src="compositions/frames/03-expiry.html"
+        data-start="16.64"
+        data-duration="13.151"
+        data-track-index="0"
+      ></div>
+      <audio
+        id="el-03-expiry-voice"
+        src="assets/voice/03.wav"
+        data-start="16.64"
+        data-duration="12.651"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+
+      <div
+        id="el-04-invites"
+        class="scene"
+        data-composition-id="04-invites"
+        data-composition-src="compositions/frames/04-invites.html"
+        data-start="29.291"
+        data-duration="14.004"
+        data-track-index="1"
+      ></div>
+      <audio
+        id="el-04-invites-voice"
+        src="assets/voice/04.wav"
+        data-start="29.291"
+        data-duration="13.504"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+
+      <div
+        id="el-05-suspend-wake"
+        class="scene"
+        data-composition-id="05-suspend-wake"
+        data-composition-src="compositions/frames/05-suspend-wake.html"
+        data-start="42.795"
+        data-duration="11.2"
+        data-track-index="0"
+      ></div>
+      <audio
+        id="el-05-suspend-wake-voice"
+        src="assets/voice/05.wav"
+        data-start="42.795"
+        data-duration="11.2"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = gsap.timeline({ paused: true });
+      // ── frame transitions (injected by transitions.mjs) ──
+      (function () { var tl = window.__timelines["main"];
+        tl.to("#el-01-orient", { opacity: 0, duration: 0.5, ease: "power2.inOut" }, 6.059);
+        tl.fromTo("#el-02-seats", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 6.059);
+        tl.to("#el-02-seats", { opacity: 0, duration: 0.5, ease: "power2.inOut" }, 16.64);
+        tl.fromTo("#el-03-expiry", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 16.64);
+        tl.to("#el-03-expiry", { opacity: 0, duration: 0.5, ease: "power2.inOut" }, 29.291);
+        tl.fromTo("#el-04-invites", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 29.291);
+        tl.to("#el-04-invites", { opacity: 0, duration: 0.5, ease: "power2.inOut" }, 42.795);
+        tl.fromTo("#el-05-suspend-wake", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 42.795);
+        tl.to({}, { duration: 53.995 }, 0); // full-span anchor — main.duration() == composition total (Studio master duration)
+      })();
+    </script>
+  </body>
+</html>

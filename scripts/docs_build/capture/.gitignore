@@ -1,0 +1,9 @@
+node_modules/
+
+# The repo-root .gitignore blanket-ignores package.json/package-lock.json (JS
+# tooling scaffold, inherited from upstream Odoo) - but this directory's
+# package.json is the real, load-bearing dependency manifest docs-build:capture
+# needs on a fresh clone (scripts/docs_build/capture_cli.py refuses to run
+# without a `node_modules` an `npm install` here would produce). Un-ignore both.
+!package.json
+!package-lock.json

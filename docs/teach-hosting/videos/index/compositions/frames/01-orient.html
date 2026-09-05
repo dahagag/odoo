@@ -1,0 +1,253 @@
+<template>
+<style>
+  #root {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    container-type: size;
+    font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  }
+
+  #root .clip {
+    position: absolute;
+    inset: 0;
+  }
+
+  /* ---------- background field ---------- */
+
+  .orient-bg {
+    background: #714B67;
+    opacity: 0;
+  }
+
+  .orient-swell {
+    position: absolute;
+    inset: -20%;
+    border-radius: 50%;
+    will-change: transform, opacity;
+  }
+
+  .orient-swell-a {
+    background: radial-gradient(
+      circle at 32% 38%,
+      rgba(255, 255, 255, 0.20) 0%,
+      rgba(255, 255, 255, 0.06) 32%,
+      transparent 60%
+    );
+    opacity: 0;
+    transform: scale(0.82);
+  }
+
+  .orient-swell-b {
+    background: radial-gradient(
+      circle at 68% 66%,
+      rgba(240, 173, 78, 0.28) 0%,
+      rgba(240, 173, 78, 0.08) 30%,
+      transparent 58%
+    );
+    opacity: 0;
+    transform: scale(0.86);
+  }
+
+  /* ---------- title ---------- */
+
+  .orient-title-layer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .orient-title {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    column-gap: 0.42cqw;
+    row-gap: 0;
+    max-width: 78cqw;
+    padding: 0 5cqw;
+  }
+
+  .orient-title-word {
+    font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-weight: 700;
+    font-size: 4.2cqw;
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    color: #FBF6EF;
+    opacity: 0;
+    transform: translateY(28px);
+    white-space: nowrap;
+  }
+
+  /* ---------- icon row ---------- */
+
+  .orient-icon-layer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .orient-icon-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 6.2cqw;
+    width: 100%;
+    padding: 0 5cqw;
+  }
+
+  .orient-icon {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.9cqw;
+    opacity: 0;
+    transform: translateY(22px);
+  }
+
+  .orient-icon-chip {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1.5px solid rgba(255, 255, 255, 0.22);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .orient-icon-chip svg {
+    width: 42px;
+    height: 42px;
+    fill: none;
+    stroke: #F0AD4E;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .orient-icon-label {
+    font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+    font-size: 0.95cqw;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(251, 246, 239, 0.72);
+  }
+</style>
+
+<div id="root" data-composition-id="01-orient" data-width="1920" data-height="1080" data-duration="6.559">
+  <div
+    class="clip orient-bg"
+    data-start="0"
+    data-duration="6.559"
+    data-track-index="0"
+  >
+    <div class="orient-swell orient-swell-a"></div>
+    <div class="orient-swell orient-swell-b"></div>
+  </div>
+
+  <div
+    class="clip orient-title-layer"
+    data-start="0"
+    data-duration="6.559"
+    data-track-index="1"
+    style="top: 0; bottom: 22%;"
+  >
+    <div class="orient-title">
+      <span class="orient-title-word">Welcome</span>
+      <span class="orient-title-word">to</span>
+      <span class="orient-title-word">your</span>
+      <span class="orient-title-word">trial</span>
+    </div>
+  </div>
+
+  <div
+    class="clip orient-icon-layer"
+    data-start="0"
+    data-duration="6.559"
+    data-track-index="2"
+    style="top: 62%; bottom: 0;"
+  >
+    <div class="orient-icon-row">
+      <div class="orient-icon" data-icon="seats">
+        <div class="orient-icon-chip">
+          <svg viewBox="0 0 24 24"><path d="M4 18v-5a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v5"/><path d="M4 18h16"/><path d="M6 18v2"/><path d="M18 18v2"/><path d="M8 10V7a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v3"/></svg>
+        </div>
+        <div class="orient-icon-label">Seats</div>
+      </div>
+      <div class="orient-icon" data-icon="clock">
+        <div class="orient-icon-chip">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+        </div>
+        <div class="orient-icon-label">Clock</div>
+      </div>
+      <div class="orient-icon" data-icon="mail">
+        <div class="orient-icon-chip">
+          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M4 6.5l8 6 8-6"/></svg>
+        </div>
+        <div class="orient-icon-label">Mail</div>
+      </div>
+      <div class="orient-icon" data-icon="wake">
+        <div class="orient-icon-chip">
+          <svg viewBox="0 0 24 24"><path d="M12 21a3 3 0 0 0 3-3H9a3 3 0 0 0 3 3z"/><path d="M5 15V11a7 7 0 0 1 14 0v4l1.5 2.5h-17L5 15z"/><path d="M4 4l2.5 2"/><path d="M20 4l-2.5 2"/></svg>
+        </div>
+        <div class="orient-icon-label">Wake</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script>
+  (function () {
+    window.__timelines = window.__timelines || {};
+    const tl = gsap.timeline({ paused: true });
+
+    // Scene 1 (0.0-2.0s) — purple field fades in, dual-radial ambient swell.
+    tl.fromTo(".orient-bg", { opacity: 0 }, { opacity: 1, duration: 1.1, ease: "power1.out" }, 0);
+    tl.fromTo(
+      ".orient-swell-a",
+      { opacity: 0, scale: 0.82 },
+      { opacity: 0.9, scale: 1.12, duration: 6.059, ease: "sine.out" },
+      0
+    );
+    tl.fromTo(
+      ".orient-swell-b",
+      { opacity: 0, scale: 0.86 },
+      { opacity: 0.85, scale: 1.16, duration: 5.8, ease: "sine.out" },
+      0.35
+    );
+
+    // Scene 2 (2.0-4.0s) — title wordmark fades and settles centered, per-word.
+    tl.fromTo(
+      ".orient-title-word",
+      { opacity: 0, y: 28 },
+      { opacity: 1, y: 0, duration: 0.7, ease: "power3.out", stagger: 0.16 },
+      2.0
+    );
+
+    // Scene 3 (4.0-6.0s) — four mechanic icons fade in left-to-right beneath the title.
+    const icons = [".orient-icon[data-icon='seats']", ".orient-icon[data-icon='clock']", ".orient-icon[data-icon='mail']", ".orient-icon[data-icon='wake']"];
+    icons.forEach((sel, i) => {
+      tl.fromTo(
+        sel,
+        { opacity: 0, y: 22 },
+        { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" },
+        4.0 + i * 0.4
+      );
+    });
+
+    // Hold: barely-perceptible settle on the assembled title+icon group for the last ~1s.
+    tl.fromTo(
+      ".orient-title, .orient-icon-row",
+      { scale: 1 },
+      { scale: 1.006, duration: 0.85, ease: "sine.out" },
+      5.2
+    );
+
+    window.__timelines["01-orient"] = tl;
+  })();
+</script>
+</template>

@@ -1,0 +1,12 @@
+{
+  "name": "docs-build-capture",
+  "private": true,
+  "type": "module",
+  "description": "Puppeteer screenshot capture for the Trial Onboarding Guide (issue #122). See capture.mjs.",
+  "scripts": {
+    "capture": "node capture.mjs"
+  },
+  "dependencies": {
+    "puppeteer": "^25.10.0"
+  }
+}

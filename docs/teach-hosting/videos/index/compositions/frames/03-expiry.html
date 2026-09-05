@@ -1,0 +1,264 @@
+<template>
+  <div id="root" data-composition-id="03-expiry" data-width="1920" data-height="1080" data-duration="13.151">
+
+    <div class="clip bg-ground" data-start="0" data-duration="13.151" data-track-index="0"></div>
+
+    <div class="clip clock-slot" data-start="0" data-duration="13.151" data-track-index="1">
+      <div class="clock-face">
+        <div class="tick" style="transform: rotate(0deg) translateY(-180px)"></div>
+        <div class="tick" style="transform: rotate(30deg) translateY(-180px)"></div>
+        <div class="tick" style="transform: rotate(60deg) translateY(-180px)"></div>
+        <div class="tick tick-major" style="transform: rotate(90deg) translateY(-180px)"></div>
+        <div class="tick" style="transform: rotate(120deg) translateY(-180px)"></div>
+        <div class="tick" style="transform: rotate(150deg) translateY(-180px)"></div>
+        <div class="tick tick-major" style="transform: rotate(180deg) translateY(-180px)"></div>
+        <div class="tick" style="transform: rotate(210deg) translateY(-180px)"></div>
+        <div class="tick" style="transform: rotate(240deg) translateY(-180px)"></div>
+        <div class="tick tick-major" style="transform: rotate(270deg) translateY(-180px)"></div>
+        <div class="tick" style="transform: rotate(300deg) translateY(-180px)"></div>
+        <div class="tick" style="transform: rotate(330deg) translateY(-180px)"></div>
+
+        <div class="hand hand-second"></div>
+        <div class="hand hand-minute"></div>
+        <div class="hub"></div>
+
+        <div class="dim-overlay"></div>
+      </div>
+    </div>
+
+    <div class="clip date-label" data-start="0.3" data-duration="12.851" data-track-index="2">
+      <span class="date-eyebrow">Expiry</span>
+      <span class="date-value">Sep 19</span>
+    </div>
+
+    <div class="clip ext-group" data-start="7.9" data-duration="5.251" data-track-index="3">
+      <svg class="ext-arrow" viewBox="0 0 120 60" xmlns="http://www.w3.org/2000/svg">
+        <path d="M2 30 H88" stroke="#714B67" stroke-width="10" stroke-linecap="round" />
+        <path d="M62 6 L96 30 L62 54" fill="none" stroke="#714B67" stroke-width="10"
+              stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      <span class="ext-label">Extension</span>
+    </div>
+
+  </div>
+
+  <style>
+    #root {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      background: transparent;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    #root .clip {
+      position: absolute;
+    }
+
+    /* ---- full-bleed ground ---- */
+    .bg-ground {
+      inset: 0;
+      background: #F0AD4E;
+    }
+
+    /* ---- clock ---- */
+    .clock-slot {
+      left: 360px;
+      top: 254px;
+      width: 400px;
+      height: 400px;
+      opacity: 0;
+    }
+
+    .clock-face {
+      position: relative;
+      width: 400px;
+      height: 400px;
+      border-radius: 50%;
+      background: rgba(113, 75, 103, 0.04);
+      border: 3px solid #714B67;
+      box-sizing: border-box;
+    }
+
+    .tick {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 4px;
+      height: 16px;
+      margin-left: -2px;
+      margin-top: -8px;
+      background: #714B67;
+      opacity: 0.55;
+      border-radius: 2px;
+      transform-origin: 2px 8px;
+    }
+
+    .tick-major {
+      height: 22px;
+      width: 6px;
+      margin-left: -3px;
+      margin-top: -11px;
+      opacity: 0.85;
+      transform-origin: 3px 11px;
+    }
+
+    .hand {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      border-radius: 6px;
+      transform-origin: 50% 100%;
+      background: #714B67;
+    }
+
+    .hand-minute {
+      width: 10px;
+      height: 168px;
+      margin-left: -5px;
+      margin-top: -168px;
+    }
+
+    .hand-second {
+      width: 5px;
+      height: 128px;
+      margin-left: -2.5px;
+      margin-top: -128px;
+      background: #9A9A9A;
+    }
+
+    .hub {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 24px;
+      height: 24px;
+      margin-left: -12px;
+      margin-top: -12px;
+      border-radius: 50%;
+      background: #714B67;
+    }
+
+    .dim-overlay {
+      position: absolute;
+      inset: -3px;
+      border-radius: 50%;
+      background: #9A9A9A;
+      opacity: 0;
+    }
+
+    /* ---- date label ---- */
+    .date-label {
+      left: 800px;
+      top: 400px;
+      width: 300px;
+      height: 110px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 10px;
+      padding: 0 28px;
+      box-sizing: border-box;
+      background: rgba(113, 75, 103, 0.04);
+      border: 1.5px solid rgba(113, 75, 103, 0.2);
+      border-radius: 14px;
+      opacity: 0;
+    }
+
+    .date-eyebrow {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #714B67;
+    }
+
+    .date-value {
+      font-size: 40px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: #714B67;
+    }
+
+    /* ---- extension group ---- */
+    .ext-group {
+      left: 1550px;
+      top: 397px;
+      width: 280px;
+      height: 130px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      opacity: 0;
+    }
+
+    .ext-arrow {
+      width: 220px;
+      height: 110px;
+      overflow: visible;
+    }
+
+    .ext-label {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: #714B67;
+    }
+  </style>
+
+  <script>
+    (function () {
+      var tl = gsap.timeline({ paused: true });
+
+      /* Scene 1 (0.0-4.0s): clock lands, date label joins it */
+      tl.fromTo(".clock-slot",
+        { opacity: 0 },
+        { opacity: 1, duration: 0.1, ease: "none" }, 0.1);
+      tl.fromTo(".clock-face",
+        { scale: 0.85, opacity: 0 },
+        { scale: 1, opacity: 1, duration: 0.7, ease: "back.out(1.5)", transformOrigin: "50% 50%" }, 0.1);
+
+      tl.fromTo(".date-label",
+        { opacity: 0 },
+        { opacity: 1, duration: 0.1, ease: "none" }, 0.9);
+      tl.fromTo(".date-label",
+        { x: -30, opacity: 0 },
+        { x: 0, opacity: 1, duration: 0.55, ease: "power2.out" }, 0.9);
+
+      /* second hand: discrete ticks reinforcing "ticks down" through the beat */
+      tl.set(".hand-second", { rotation: 0, transformOrigin: "50% 100%" }, 0);
+      tl.to(".hand-second", { rotation: 24, duration: 0.08, ease: "none" }, 1.6);
+      tl.to(".hand-second", { rotation: 48, duration: 0.08, ease: "none" }, 2.3);
+      tl.to(".hand-second", { rotation: 72, duration: 0.08, ease: "none" }, 3.0);
+      tl.to(".hand-second", { rotation: 96, duration: 0.08, ease: "none" }, 3.7);
+
+      /* Scene 2 (4.0-7.9s): countdown sweep to Auto-Destroy, then dim */
+      tl.set(".hand-minute", { rotation: 0, transformOrigin: "50% 100%" }, 0);
+      tl.to(".hand-minute", { rotation: 200, duration: 2.4, ease: "power3.inOut" }, 4.0);
+      tl.fromTo(".dim-overlay",
+        { opacity: 0 },
+        { opacity: 0.72, duration: 0.6, ease: "power2.out" }, 6.4);
+
+      /* Scene 3 (7.9-12.651s): extension arrow pushes date label out, clock re-lights, hold */
+      tl.fromTo(".ext-group",
+        { opacity: 0 },
+        { opacity: 1, duration: 0.1, ease: "none" }, 7.9);
+      tl.fromTo(".ext-group",
+        { x: 380, opacity: 0 },
+        { x: 0, opacity: 1, duration: 0.7, ease: "power2.out" }, 7.9);
+      tl.to(".date-label",
+        { x: 380, duration: 0.6, ease: "power2.out" }, 8.1);
+      tl.to(".dim-overlay",
+        { opacity: 0, duration: 0.6, ease: "power2.out" }, 8.1);
+      tl.to(".hand-minute",
+        { rotation: 0, duration: 0.7, ease: "back.out(1.2)" }, 8.1);
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["03-expiry"] = tl;
+    })();
+  </script>
+</template>

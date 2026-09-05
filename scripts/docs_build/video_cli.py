@@ -15,8 +15,14 @@ committed) — this never runs authoring, only `hyperframes render`.
 The rendered MP4 is written directly to `<output-dir>/<project-dir name>.mp4`
 — the project directory's own basename becomes the output stem, and that stem
 is expected to match the teach doc's filename stem so `docs-build:doc`'s
-sibling-video lookup (see `scripts.docs_build.cli`) finds it. For example, a
-project authored at `docs/teach/videos/methodologies/` renders to
+sibling-video lookup (see `scripts.docs_build.cli`) finds it. `<output-dir>`
+itself is inferred from `<project-dir>`'s own path
+(scripts.docs_build.addon_paths.addon_for_teach_path), the same convention
+`docs-build:doc` uses: a project under `docs/teach/videos/` outputs to
+`custom_addons/crm_methodology/static/docs/`, one under
+`docs/teach-<addon>/videos/` outputs to `custom_addons/<addon>/static/docs/`
+(see docs/adr/0025). For example, a project authored at
+`docs/teach/videos/methodologies/` renders to
 `custom_addons/crm_methodology/static/docs/methodologies.mp4`, sitting next to
 `methodologies.html`.
 """
@@ -29,7 +35,13 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-DEFAULT_OUTPUT_DIR = Path("custom_addons/crm_methodology/static/docs")
+from scripts.docs_build.addon_paths import (
+    DEFAULT_ADDON,
+    addon_for_teach_path,
+    output_dir_for_addon,
+)
+
+DEFAULT_OUTPUT_DIR = output_dir_for_addon(DEFAULT_ADDON)
 
 CommandRunner = Callable[[list[str]], "subprocess.CompletedProcess[str]"]
 
@@ -101,7 +113,13 @@ def main(argv: list[str]) -> int:
 
     project_dir = Path(argv[0])
     try:
-        output_path = render_video(project_dir, DEFAULT_OUTPUT_DIR)
+        addon = addon_for_teach_path(project_dir)
+    except ValueError as exc:
+        sys.stderr.write(f"docs-build:video failed: {exc}\n")
+        return 1
+
+    try:
+        output_path = render_video(project_dir, output_dir_for_addon(addon))
     except DocsBuildError as exc:
         sys.stderr.write(f"docs-build:video failed: {exc}\n")
         return 1

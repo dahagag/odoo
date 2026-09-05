@@ -20,7 +20,7 @@ COMPOSE=()
 DEFAULT_I18N_LANGUAGES="ar,de,es,fr,it,ja,ko,nl,pl,pt,pt_BR,ru,sv,tr,zh_CN,zh_TW"
 
 usage() {
-    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|i18n-export|docs-build|docs-build:doc|docs-build:video|reset} [argument] [extra] [option]" >&2
+    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|i18n-export|docs-build|docs-build:doc|docs-build:video|docs-build:capture|docs-build:check-staleness|reset} [argument] [extra] [option]" >&2
     exit "${1:-2}"
 }
 
@@ -110,7 +110,11 @@ assert_relative_path() {
 docs_build_doc() {
     local argument="$1" docs_build_doc_args=()
     if [[ -n "$argument" ]]; then
-        assert_relative_path "$argument" "docs-build:doc"
+        if [[ "$argument" == *.md ]]; then
+            assert_relative_path "$argument" "docs-build:doc"
+        else
+            assert_identifier "$argument" "docs-build:doc addon name"
+        fi
         docs_build_doc_args=("$argument")
     fi
     compose run --rm --no-deps odoo python3 -m scripts.docs_build.cli "${docs_build_doc_args[@]}"
@@ -128,18 +132,53 @@ docs_build_video() {
     "$host_python" -m scripts.docs_build.video_cli "$project_path"
 }
 
-# Authored HyperFrames projects live at docs/teach/videos/<stem>/ (see
-# scripts/docs_build/video_cli.py and docs/adr/0008) - one per teach doc that has
-# a walkthrough video authored for it. Bare `docs-build` re-renders every one it
-# finds; a teach doc with no authored project simply has no video.
+docs_build_capture() {
+    local host_python
+    if ! host_python="$(resolve_host_python)"; then
+        echo "docs-build:capture needs a working Python interpreter (python3/python/py) on PATH." >&2
+        exit 1
+    fi
+    "$host_python" -m scripts.docs_build.capture_cli
+}
+
+docs_build_check_staleness() {
+    local host_python
+    if ! host_python="$(resolve_host_python)"; then
+        echo "docs-build:check-staleness needs a working Python interpreter (python3/python/py) on PATH." >&2
+        exit 1
+    fi
+    "$host_python" -m scripts.docs_build.staleness_cli
+}
+
+# Authored HyperFrames projects live at docs/teach/videos/<stem>/ for
+# crm_methodology, or docs/teach-<addon>/videos/<stem>/ for any other addon (see
+# scripts/docs_build/video_cli.py, scripts/docs_build/addon_paths.py, and
+# docs/adr/0008 and docs/adr/0025) - one per teach doc that has a walkthrough
+# video authored for it. Bare `docs-build` re-renders every one it finds across
+# every addon; a teach doc with no authored project simply has no video.
 docs_build_video_projects() {
-    local videos_dir="docs/teach/videos"
-    [[ -d "$videos_dir" ]] || return 0
-    find "$videos_dir" -mindepth 2 -maxdepth 2 -name hyperframes.json -print0 |
-        while IFS= read -r -d '' manifest; do
-            dirname "$manifest"
-        done |
-        sort
+    local videos_dir
+    for videos_dir in docs/teach/videos docs/teach-*/videos; do
+        [[ -d "$videos_dir" ]] || continue
+        find "$videos_dir" -mindepth 2 -maxdepth 2 -name hyperframes.json -print0 |
+            while IFS= read -r -d '' manifest; do
+                dirname "$manifest"
+            done
+    done | sort
+}
+
+# Every addon the docs-build pipeline knows about: crm_methodology (the
+# pre-existing default, docs/teach/) plus one per docs/teach-<addon>/
+# directory discovered on disk. Bare `docs-build` loops over this to rebuild
+# every addon's teach docs, not just crm_methodology's.
+docs_build_addons() {
+    local dir
+    printf '%s\n' "crm_methodology"
+    for dir in docs/teach-*/; do
+        [[ -d "$dir" ]] || continue
+        dir="${dir%/}"
+        printf '%s\n' "${dir#docs/teach-}"
+    done | sort
 }
 
 start_database() {
@@ -349,7 +388,10 @@ case "$COMMAND" in
         ruff check --config ruff.toml "${ruff_options[@]}" "$lint_path"
         ;;
     docs-build)
-        docs_build_doc ""
+        while IFS= read -r addon; do
+            [[ -n "$addon" ]] || continue
+            docs_build_doc "$addon"
+        done < <(docs_build_addons)
         while IFS= read -r project; do
             [[ -n "$project" ]] || continue
             docs_build_video "$project"
@@ -357,6 +399,8 @@ case "$COMMAND" in
         ;;
     docs-build:doc) docs_build_doc "$ARGUMENT" ;;
     docs-build:video) docs_build_video "$ARGUMENT" ;;
+    docs-build:capture) docs_build_capture ;;
+    docs-build:check-staleness) docs_build_check_staleness ;;
     reset)
         project="$(setting COMPOSE_PROJECT_NAME agentic-erp-dev)"
         [[ "$project" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo "Unsafe Compose project name '$project'." >&2; exit 1; }

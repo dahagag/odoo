@@ -1,24 +1,34 @@
 """Thin CLI wrapper around the pure Markdown transform for `docs-build:doc`.
 
 Invoked as `./scripts/dev.ps1 docs-build:doc <file>` / `bash scripts/dev.sh
-docs-build:doc <file>`. Reads one docs/teach/*.md entry file, renders it (and
-the closure of every local `.md` file it links to, transitively — an ADR, a
+docs-build:doc <file>`. Reads one teach-doc entry file, renders it (and the
+closure of every local `.md` file it links to, transitively — an ADR, a
 CONTEXT.md, a research doc, another teach doc) through
 scripts.docs_build.markdown_transform, and writes each as self-contained HTML
-under custom_addons/crm_methodology/static/docs/ (see docs/adr/0007 for why
-that directory is the publishing path). Internal links are rewritten to point
-at the generated page; external URLs pass through unchanged. See issue #38.
+under that entry's addon output dir (see docs/adr/0007 for why the addon's
+own static/ dir is the publishing path). Internal links are rewritten to
+point at the generated page; external URLs pass through unchanged. See issue
+#38.
+
+The owning addon is inferred from the file's own path
+(scripts.docs_build.addon_paths.addon_for_teach_path): anything under
+`docs/teach/` is `crm_methodology` (the pre-existing, unparameterized
+default), anything under `docs/teach-<addon>/` is `<addon>` — see docs/adr/0025.
 
 Invoked with no file argument, it instead rebuilds the whole `docs/teach/`
-directory: every `docs/teach/*.md` file (except `_REFERENCE_ONLY_FILENAMES`,
-docs that document themselves as implementation reference rather than
-stakeholder-facing content) becomes an entry point, and the combined link
-closure of all of them is rendered together in one pass — a document linked
-from two different teach docs is still written once. Entries are discovered
-in a fixed sorted order so two runs against unchanged input produce
-byte-identical output; a failure on any entry or any document in the closure
-exits non-zero naming that specific file, exactly as the single-file mode
-does. See issue #41.
+directory (crm_methodology's, unchanged from before addon-parameterization).
+Invoked with a single bare argument that isn't a `.md` path, it treats that
+argument as an addon name and rebuilds that addon's whole teach directory
+instead — e.g. `docs-build:doc hosting` rebuilds `docs/teach-hosting/`. Either
+whole-directory form: every `*.md` file in that addon's teach dir (except
+`_REFERENCE_ONLY_FILENAMES`, docs that document themselves as implementation
+reference rather than stakeholder-facing content) becomes an entry point, and
+the combined link closure of all of them is rendered together in one pass —
+a document linked from two different teach docs is still written once.
+Entries are discovered in a fixed sorted order so two runs against unchanged
+input produce byte-identical output; a failure on any entry or any document
+in the closure exits non-zero naming that specific file, exactly as the
+single-file mode does. See issue #41.
 
 Every local image a rendered document references (a product screenshot, a
 pre-authored diagram — never a pipeline-rendered Mermaid diagram, see issue
@@ -54,6 +64,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from scripts.docs_build.addon_paths import (
+    DEFAULT_ADDON,
+    addon_for_teach_path,
+    output_dir_for_addon,
+    teach_dir_for_addon,
+)
 from scripts.docs_build.markdown_transform import (
     MarkdownSyntaxError,
     extract_local_image_refs,
@@ -61,8 +77,8 @@ from scripts.docs_build.markdown_transform import (
     render_markdown_document,
 )
 
-DEFAULT_OUTPUT_DIR = Path("custom_addons/crm_methodology/static/docs")
-TEACH_DIR = Path("docs/teach")
+DEFAULT_OUTPUT_DIR = output_dir_for_addon(DEFAULT_ADDON)
+TEACH_DIR = teach_dir_for_addon(DEFAULT_ADDON)
 
 # docs/teach/DESIGN-TOKENS.md documents itself as implementation reference for this
 # pipeline's own template, not stakeholder-facing content — "do not treat it as a
@@ -301,14 +317,22 @@ def _title_from_filename(stem: str) -> str:
 
 def main(argv: list[str]) -> int:
     if len(argv) > 1:
-        sys.stderr.write("Usage: docs-build:doc [file.md]\n")
+        sys.stderr.write("Usage: docs-build:doc [file.md|addon-name]\n")
         return 2
 
     try:
-        if argv:
-            output_paths = [build_doc(Path(argv[0]), DEFAULT_OUTPUT_DIR)]
-        else:
+        if not argv:
             output_paths = build_all(TEACH_DIR, DEFAULT_OUTPUT_DIR)
+        elif argv[0].endswith(".md"):
+            source = Path(argv[0])
+            try:
+                addon = addon_for_teach_path(source)
+            except ValueError as exc:
+                raise DocsBuildError(str(exc)) from exc
+            output_paths = [build_doc(source, output_dir_for_addon(addon))]
+        else:
+            addon = argv[0]
+            output_paths = build_all(teach_dir_for_addon(addon), output_dir_for_addon(addon))
     except DocsBuildError as exc:
         sys.stderr.write(f"docs-build:doc failed: {exc}\n")
         return 1
