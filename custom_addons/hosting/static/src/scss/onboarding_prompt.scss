@@ -1,0 +1,36 @@
+// Icon-badge rows for the first-login onboarding prompt (#121), matching the approved
+// design canvas at docs/design/121-onboarding-prompt/Main.dc.html.
+.o_hosting_onboarding_prompt_mechanic {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.o_hosting_onboarding_prompt_icon {
+    flex: 0 0 28px;
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f1effa;
+    color: #71639e;
+
+    &--amber {
+        background: #fdf6e3;
+        color: #a0790f;
+    }
+}
+
+.o_hosting_onboarding_prompt_mechanic_title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #2b2b33;
+}
+
+.o_hosting_onboarding_prompt_mechanic_desc {
+    font-size: 12.5px;
+    color: #74747e;
+    line-height: 1.45;
+}
