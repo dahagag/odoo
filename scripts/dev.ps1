@@ -362,7 +362,9 @@ function Invoke-Doctor {
 if ($Command -in @('--help', '-h')) { Show-Usage -ExitCode 0 }
 if (-not $Command) { Show-Usage }
 
-Require-EnvironmentFile
+# lint is Docker-free (see docs/adr/0028) and doesn't touch the Compose stack,
+# so unlike every other subcommand it doesn't need a configured .env.
+if ($Command -ne 'lint') { Require-EnvironmentFile }
 
 switch ($Command) {
     'doctor' { Invoke-Doctor }
@@ -396,12 +398,22 @@ switch ($Command) {
     'test' { Invoke-ModuleTest $Argument $Extra $CleanupOnFailure.IsPresent }
     'i18n-export' { Invoke-ModuleI18nExport $Argument $Extra }
     'lint' {
+        # Docker-free: `ruff` is self-contained and needs neither the Odoo dev
+        # image nor a running Compose stack (verified in docs/adr/0028), so
+        # this runs directly on the host, unlike every other subcommand here.
         $path = if ($Argument) { $Argument } else { 'custom_addons' }
         $path = Assert-RelativePath -Path $path -Label 'Lint'
-        $ruffArguments = @('run', '--rm', '--no-deps', 'odoo', 'ruff', 'check')
+        if (-not (Get-Command ruff -ErrorAction SilentlyContinue)) {
+            throw "Lint needs 'ruff' on PATH (pip install ruff==0.16.1)."
+        }
+        $ruffArguments = @('check', '--config', 'ruff.toml')
+        # EXE002 (shebang/executable-bit mismatch) misfires on scripts checked
+        # out under Windows, which doesn't preserve the Unix executable bit;
+        # it doesn't apply on the Linux CI runner.
         if ($IsWindows) { $ruffArguments += @('--ignore', 'EXE002') }
-        $ruffArguments += "/workspace/$path"
-        Invoke-Compose -Arguments $ruffArguments
+        $ruffArguments += $path
+        & ruff @ruffArguments
+        if ($LASTEXITCODE -ne 0) { throw "Lint failed with exit code $LASTEXITCODE." }
     }
     'docs-build' {
         Invoke-DocsBuildDoc -Argument $null

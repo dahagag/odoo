@@ -89,11 +89,13 @@ The workflow itself triggers on every PR targeting either `dev/19.0`
 (regular feature work) or `main/19.0` (release PRs promoting `dev/19.0` to
 the demo instance) — no path filter at the trigger level. A preliminary
 `changes` job diffs the PR against its base for `custom_addons/**`,
-`docker/**`, `scripts/**`, `requirements.txt`, `compose.yaml`, `infra/**`, or
-the workflow file itself, and the other jobs read its `image_relevant`,
-`docs_build`, and `infra_relevant` outputs to decide whether to actually do
-anything. There is no separate deploy workflow — Render's native branch
-auto-deploy handles promotion once a release PR merges.
+`docker/**`, `scripts/dev.sh`, `scripts/dev.ps1`, `scripts/docs_build/**`,
+`requirements.txt`, `compose.yaml`, `infra/**`, `ruff.toml`, or the workflow
+file itself, and the other jobs read its
+`image_relevant`, `docs_build`, `infra_relevant`, and `lint_relevant`
+outputs to decide whether to actually do anything. There is no separate
+deploy workflow — Render's native branch auto-deploy handles promotion
+once a release PR merges.
 
 This replaced an earlier design where the whole workflow was gated by a
 `paths:` filter on the trigger itself: docs-only PRs (regular feature PRs
@@ -102,18 +104,30 @@ so they could never satisfy `dev/19.0`'s required status check and stayed
 permanently `BLOCKED` short of an admin bypass (`enforce_admins` is off for
 this repo, so the repo owner can merge past it, but that shouldn't be the
 routine path for an ordinary docs PR). The `lint` job now always completes
-— its steps are individually skipped when `changes.outputs.image_relevant`
+— its steps are individually skipped when `changes.outputs.lint_relevant`
 is `false`, so a docs-only PR gets a fast, real "success" for the required
 check instead of no check at all.
 
 | Job | Trigger scope | Gate |
 |---|---|---|
-| `changes` | every PR | Not a check anyone gates on — feeds `image_relevant`, `docs_build`, and `infra_relevant` to the other jobs |
-| `lint` | every PR; steps run only when `image_relevant` | Feeds `ci-required`; not itself required by branch protection |
+| `changes` | every PR | Not a check anyone gates on — feeds `image_relevant`, `docs_build`, `infra_relevant`, and `lint_relevant` to the other jobs |
+| `lint` | every PR; steps run only when `lint_relevant` (`custom_addons/**`, `ruff.toml`, `scripts/dev.sh`/`dev.ps1`, or the workflow file) | Feeds `ci-required`; not itself required by branch protection — `ruff` against `custom_addons/**`, Docker-free (`actions/setup-python`, no Odoo dev image; see [ADR 0028](../adr/0028-lint-job-decouples-from-odoo-dev-image.md)) |
 | `docs-build-tests` | every PR; steps run only when `docs_build` | Feeds `ci-required`; not itself required by branch protection |
 | `infra-checks` | every PR; steps run only when `infra_relevant` (`infra/**` or the workflow file) | Feeds `ci-required`; not itself required by branch protection — `tofu fmt`/`tofu validate` on all three OpenTofu modules, `ruff`, and `interrogate` docstring coverage, all Docker-free (`actions/setup-python`, no Odoo dev image) |
 | `ci-required` | every PR; `if: always()` | **Required** status check — fails unless `lint`, `docs-build-tests`, and `infra-checks` all succeeded, even if one was `skipped` (e.g. because the upstream `changes` job errored) |
 | `test` | every PR; whole job skipped when not `image_relevant` | Visible, **non-blocking** for now — the full `custom_addons/` suite via the `compose.yaml` stack; revisit once the suite has proven itself over time |
+
+`lint` and `infra-checks` each gate on their own dedicated `*_relevant` filter rather than
+`image_relevant`: neither `ruff` nor `tofu`/`interrogate` needs the Odoo dev image or a running
+Compose stack (verified in [ADR 0027](../adr/0027-infra-ci-checks-ruff-and-interrogate.md) and
+[ADR 0028](../adr/0028-lint-job-decouples-from-odoo-dev-image.md)), so neither job depends on
+`build-image` — a `docker/**`-only or `requirements.txt`-only change reruns `test` without
+rerunning either linter, and vice versa. Adding a further per-language/toolchain linter later
+(e.g. `tsc` for TypeScript) follows the same shape: a new `<name>_relevant` filter scoped to that
+toolchain's own paths plus the workflow file, a new Docker-free job (`actions/setup-python` or
+whatever setup action the toolchain needs) whose steps are individually gated on that output, and
+the job added to `ci-required`'s `needs` — never recoupled to `build-image` or to another
+linter's job.
 
 `ci-required` exists because GitHub branch protection treats a `skipped` required check the
 same as a passing one for merge purposes. Without a trailing gate, a `changes` job failure would
