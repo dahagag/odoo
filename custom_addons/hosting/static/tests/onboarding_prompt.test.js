@@ -41,6 +41,22 @@ test("dismissing marks the flag seen on the current user only, and closes", asyn
     expect(closed).toBe(true);
 });
 
+test("dismissing via Escape (dialogData.dismiss) also marks the flag seen", async () => {
+    let writeArgs;
+    onRpc("res.users", "write", ({ args }) => {
+        writeArgs = args;
+        return true;
+    });
+    const env = await makeDialogMockEnv();
+    await mountWithCleanup(HostingOnboardingPrompt, { env, props: { close: () => {} } });
+
+    // Dialog.js's onEscape() awaits env.dialogData.dismiss() before it closes - simulate
+    // that call directly rather than driving a real Escape keypress through the DOM.
+    await env.dialogData.dismiss();
+
+    expect(writeArgs[1]).toEqual({ hosting_onboarding_seen: true });
+});
+
 test("a failed write still closes the dialog instead of trapping the user", async () => {
     onRpc("res.users", "write", () => {
         throw new Error("boom");

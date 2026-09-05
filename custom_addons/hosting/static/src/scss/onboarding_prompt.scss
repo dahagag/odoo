@@ -1,3 +1,16 @@
+// Narrower than the shared Dialog's default ~500px width, matching the approved design
+// canvas's 480px (docs/design/121-onboarding-prompt/Main.dc.html). Scoped to this dialog
+// alone via :has() on its contentClass, rather than overriding Bootstrap's .modal-md
+// globally.
+.modal-dialog:has(> .modal-content.o_hosting_onboarding_prompt) {
+    max-width: 480px;
+}
+
+.o_hosting_onboarding_prompt_title_icon {
+    flex: 0 0 auto;
+    color: #71639e;
+}
+
 // Icon-badge rows for the first-login onboarding prompt (#121), matching the approved
 // design canvas at docs/design/121-onboarding-prompt/Main.dc.html.
 .o_hosting_onboarding_prompt_mechanic {

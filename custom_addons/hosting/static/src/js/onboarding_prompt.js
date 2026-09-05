@@ -26,18 +26,28 @@ export class HostingOnboardingPrompt extends Component {
     setup() {
         this.orm = useService("orm");
         this.guideUrl = ONBOARDING_GUIDE_URL;
+        // Escape (Dialog.js's onEscape -> dismiss()) awaits env.dialogData.dismiss, then
+        // always calls env.dialogData.close itself - wiring markSeen() here (write only, no
+        // close of our own) makes Escape write the flag too, without double-closing.
+        this.env.dialogData.dismiss = () => this.markSeen();
     }
 
-    async onDismiss() {
+    async markSeen() {
         // hosting_onboarding_seen alone in this write: res.users.write() only self-sudos a
         // user's own record when every key is in SELF_WRITEABLE_FIELDS (docs/agents/
         // odoo-19-development.md's "One-time, per-user UI state" note) - batching it with
         // another field here would silently drop the sudo and fail the ACL check instead.
         try {
             await this.orm.write("res.users", [user.userId], { hosting_onboarding_seen: true });
-        } finally {
-            this.props.close();
+        } catch {
+            // Swallowed: the dialog must still close (below, or via Dialog.js's own
+            // dismiss()) even if the write fails - see the Hoot test covering this path.
         }
+    }
+
+    async onDismiss() {
+        await this.markSeen();
+        this.props.close();
     }
 }
 

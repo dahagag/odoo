@@ -1,7 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
     <t t-name="hosting.HostingOnboardingPrompt">
-        <Dialog title="'Welcome to your trial'" size="'md'">
+        <Dialog title="'Welcome to your trial'" size="'md'" contentClass="'o_hosting_onboarding_prompt'">
+            <t t-set-slot="header">
+                <div class="d-flex align-items-center gap-2">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="o_hosting_onboarding_prompt_title_icon">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 8v4"/>
+                        <path d="M12 16h.01"/>
+                    </svg>
+                    <h4 class="modal-title mb-0">Welcome to your trial</h4>
+                </div>
+                <button type="button" class="btn-close" aria-label="Close" t-on-click="onDismiss"/>
+            </t>
             <p class="text-muted small mb-3">
                 This is a quick orientation to how your trial works - not a product tour.
                 Here's what to know before you dive in.
