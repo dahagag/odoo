@@ -26,10 +26,12 @@ for vocabulary (Trial Org, Seat, Org Registration).
     'assets': {
         'web.assets_backend': [
             'hosting/static/src/js/**/*',
+            'hosting/static/src/xml/**/*',
             'hosting/static/src/scss/**/*',
         ],
         'web.assets_unit_tests': [
             'hosting/static/tests/expiry_countdown_systray.test.js',
+            'hosting/static/tests/onboarding_prompt.test.js',
         ],
         'web.assets_tests': [
             'hosting/static/tests/tours/**/*',

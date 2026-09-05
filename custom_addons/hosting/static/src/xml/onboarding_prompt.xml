@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="hosting.HostingOnboardingPrompt">
+        <Dialog title="'Welcome to your trial'" size="'md'">
+            <p class="text-muted small mb-3">
+                This is a quick orientation to how your trial works - not a product tour.
+                Here's what to know before you dive in.
+            </p>
+            <ul class="list-unstyled d-flex flex-column gap-2 mb-0">
+                <li>
+                    <strong>Seats</strong> - your trial has a fixed seat cap; each teammate
+                    who joins takes one of those seats.
+                </li>
+                <li>
+                    <strong>Expiry &amp; extension</strong> - your trial expires on the date
+                    shown in the systray; ask your sales contact for an extension before it
+                    lapses.
+                </li>
+                <li>
+                    <strong>Inviting teammates</strong> - you can invite teammates yourself,
+                    up to the seat cap, without routing it through factory1.
+                </li>
+                <li>
+                    <strong>Suspend &amp; Wake</strong> - idle instances suspend
+                    automatically to save cost; a "Wake Up" action brings yours back in a
+                    minute or two.
+                </li>
+            </ul>
+            <t t-set-slot="footer">
+                <a t-att-href="guideUrl" target="_blank" class="me-auto">
+                    View the full Getting Started guide
+                </a>
+                <button class="btn btn-primary" t-on-click="onDismiss">Got it</button>
+            </t>
+        </Dialog>
+    </t>
+</templates>

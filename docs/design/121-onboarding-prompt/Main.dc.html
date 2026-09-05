@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #eeedf1;
+    }
+    a { color: #71639e; text-decoration: none; }
+    a:hover { color: #5a4f80; text-decoration: underline; }
+  </style>
+</helmet>
+
+<div style="min-height: 640px; display: flex; align-items: center; justify-content: center; padding: 32px; box-sizing: border-box;">
+  <div style="width: 480px; max-width: 100%; background: #ffffff; border-radius: 4px; box-shadow: 0 4px 24px rgba(0,0,0,0.16); overflow: hidden;">
+
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid #e3e2e8;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#71639e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 8v4"/>
+          <path d="M12 16h.01"/>
+        </svg>
+        <span style="font-size: 15px; font-weight: 600; color: #2b2b33;">Welcome to your trial</span>
+      </div>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8a8a94" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="cursor: pointer;">
+        <path d="M18 6 6 18"/>
+        <path d="m6 6 12 12"/>
+      </svg>
+    </div>
+
+    <div style="padding: 24px;">
+      <p style="margin: 0 0 16px 0; font-size: 13px; line-height: 1.5; color: #5c5c66;">
+        This is a quick orientation to how your trial works - not a product tour. Here's what
+        to know before you dive in.
+      </p>
+
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: flex; gap: 12px; align-items: flex-start;">
+          <div style="flex: 0 0 28px; width: 28px; height: 28px; border-radius: 4px; background: #f1effa; display: flex; align-items: center; justify-content: center;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#71639e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+          </div>
+          <div>
+            <div style="font-size: 13px; font-weight: 600; color: #2b2b33;">Seats</div>
+            <div style="font-size: 12.5px; color: #74747e; line-height: 1.45;">Your trial has a fixed seat cap. Once a teammate joins, they take one of those seats.</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 12px; align-items: flex-start;">
+          <div style="flex: 0 0 28px; width: 28px; height: 28px; border-radius: 4px; background: #fdf6e3; display: flex; align-items: center; justify-content: center;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a0790f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 6v6l4 2"/>
+            </svg>
+          </div>
+          <div>
+            <div style="font-size: 13px; font-weight: 600; color: #2b2b33;">Expiry &amp; extension</div>
+            <div style="font-size: 12.5px; color: #74747e; line-height: 1.45;">Your trial expires on a set date, shown in the systray up top. Ask your sales contact for an extension before it lapses.</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 12px; align-items: flex-start;">
+          <div style="flex: 0 0 28px; width: 28px; height: 28px; border-radius: 4px; background: #f1effa; display: flex; align-items: center; justify-content: center;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#71639e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 6 12 13 2 6"/>
+              <rect x="2" y="4" width="20" height="16" rx="2"/>
+            </svg>
+          </div>
+          <div>
+            <div style="font-size: 13px; font-weight: 600; color: #2b2b33;">Inviting teammates</div>
+            <div style="font-size: 12.5px; color: #74747e; line-height: 1.45;">You can invite teammates yourself, up to the seat cap - no need to route it through factory1.</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 12px; align-items: flex-start;">
+          <div style="flex: 0 0 28px; width: 28px; height: 28px; border-radius: 4px; background: #f1effa; display: flex; align-items: center; justify-content: center;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#71639e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2v4"/>
+              <path d="m16.2 7.8 2.9-2.9"/>
+              <path d="M18 12h4"/>
+              <path d="m16.2 16.2 2.9 2.9"/>
+              <path d="M12 18v4"/>
+              <path d="m4.9 19.1 2.9-2.9"/>
+              <path d="M2 12h4"/>
+              <path d="m4.9 4.9 2.9 2.9"/>
+            </svg>
+          </div>
+          <div>
+            <div style="font-size: 13px; font-weight: 600; color: #2b2b33;">Suspend &amp; Wake</div>
+            <div style="font-size: 12.5px; color: #74747e; line-height: 1.45;">Idle instances suspend automatically to save cost. A "Wake Up" action brings it back in a minute or two.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; border-top: 1px solid #e3e2e8; background: #fafafb;">
+      <a href="#" style="font-size: 12.5px; font-weight: 500;">View the full Getting Started guide</a>
+      <button style="background: #71639e; color: #ffffff; border: none; border-radius: 4px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer;">Got it</button>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
