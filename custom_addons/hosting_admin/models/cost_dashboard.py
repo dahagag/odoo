@@ -85,10 +85,13 @@ class HostingCostDashboardSnapshot(models.Model):
         any AWS/ORM call so tests can feed it fixture cost data directly (the ticket's own
         "assert on computed figures given fixture cost data" requirement).
 
-        Returns ``(total_spend, burn_rate_per_day, days_remaining_on_credit,
-        per_trial_org_spend)`` where ``per_trial_org_spend`` is a ``{trial_org_id_or_None:
-        spend}`` dict - one entry per distinct tag value seen, ``None`` keying the
-        "Unattributed" bucket (docs/adr/0030)."""
+        Returns a dict - ``total_spend``, ``burn_rate_per_day``, ``days_remaining_on_credit``
+        (``None`` when burn_rate_per_day is 0 - nothing to project from), and
+        ``per_trial_org_spend``, a ``{trial_org_id_or_None: spend}`` dict with one entry per
+        distinct tag value seen, ``None`` keying the "Unattributed" bucket (docs/adr/0030). A
+        dict of named figures rather than a positional tuple, matching how
+        AwsProvisioner.get_audit_trail (models/provisioner.py) already returns its own
+        multi-figure result in this addon."""
         per_trial_org_spend = defaultdict(float)
         for row in daily_rows:
             per_trial_org_spend[row['trial_org_id']] += row['amount']
@@ -112,7 +115,12 @@ class HostingCostDashboardSnapshot(models.Model):
         else:
             days_remaining_on_credit = remaining_credit / burn_rate_per_day
 
-        return total_spend, burn_rate_per_day, days_remaining_on_credit, dict(per_trial_org_spend)
+        return {
+            'total_spend': total_spend,
+            'burn_rate_per_day': burn_rate_per_day,
+            'days_remaining_on_credit': days_remaining_on_credit,
+            'per_trial_org_spend': dict(per_trial_org_spend),
+        }
 
     def _cron_refresh_snapshot(self):
         """Scheduled action (daily, data/ir_cron.xml): pull AWS's own cost-and-usage data
@@ -131,17 +139,16 @@ class HostingCostDashboardSnapshot(models.Model):
         daily_rows = client.get_daily_cost_by_trial_org(
             credit_start_date, today + timedelta(days=1))
 
-        total_spend, burn_rate_per_day, days_remaining_on_credit, per_trial_org_spend = (
-            self._compute_figures(daily_rows, credit_amount, credit_start_date, today))
+        figures = self._compute_figures(daily_rows, credit_amount, credit_start_date, today)
 
         snapshot = self.search([('snapshot_date', '=', today)], limit=1)
         snapshot_vals = {
             'snapshot_date': today,
-            'total_spend': total_spend,
-            'burn_rate_per_day': burn_rate_per_day,
+            'total_spend': figures['total_spend'],
+            'burn_rate_per_day': figures['burn_rate_per_day'],
             'credit_amount': credit_amount,
-            'days_remaining_on_credit_known': days_remaining_on_credit is not None,
-            'days_remaining_on_credit': days_remaining_on_credit or 0.0,
+            'days_remaining_on_credit_known': figures['days_remaining_on_credit'] is not None,
+            'days_remaining_on_credit': figures['days_remaining_on_credit'] or 0.0,
         }
         if snapshot:
             snapshot.line_ids.unlink()
@@ -149,6 +156,7 @@ class HostingCostDashboardSnapshot(models.Model):
         else:
             snapshot = self.create(snapshot_vals)
 
+        per_trial_org_spend = figures['per_trial_org_spend']
         trial_org_ids = [tid for tid in per_trial_org_spend if tid is not None]
         existing_trial_orgs = self.env['hosting.trial.org'].browse(trial_org_ids).exists()
         existing_trial_org_ids = set(existing_trial_orgs.ids)
