@@ -25,24 +25,53 @@
                         refresh, not real-time usage.
                     </div>
                     <h1>
-                        <field name="snapshot_date"/>
+                        AWS Cost Dashboard
+                        <span class="text-muted" style="font-size: 14px; font-weight: 400;">
+                            (<field name="snapshot_date" nolabel="1"/>)
+                        </span>
                     </h1>
-                    <group col="3">
-                        <group string="Total Spend">
-                            <field name="total_spend" nolabel="1"/>
-                        </group>
-                        <group string="Burn Rate">
-                            <field name="burn_rate_per_day" nolabel="1"/>
-                        </group>
-                        <group string="Days Remaining on Credit">
-                            <field name="days_remaining_on_credit" nolabel="1"
-                                   invisible="not days_remaining_on_credit_known"/>
-                            <span invisible="days_remaining_on_credit_known">
+                    <!-- KPI row matching the agreed design-board layout (docs/design/
+                         115-cost-dashboard/README.md): three bordered cards, the credit one
+                         accented to match the addon's brand color. -->
+                    <div class="d-flex" style="gap: 16px; margin-bottom: 16px;">
+                        <div class="flex-grow-1" style="border: 1px solid #dee2e6; border-radius: 4px; padding: 20px;">
+                            <div class="text-muted" style="font-size: 12px; text-transform: uppercase; letter-spacing: .03em;">
+                                Total Spend
+                            </div>
+                            <div style="font-size: 28px; font-weight: 500;">
+                                $<field name="total_spend" nolabel="1"/>
+                            </div>
+                            <div class="text-muted" style="font-size: 12px;">
+                                across <field name="trial_org_count" nolabel="1"/> Trial Org<span invisible="trial_org_count == 1">s</span>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1" style="border: 1px solid #dee2e6; border-radius: 4px; padding: 20px;">
+                            <div class="text-muted" style="font-size: 12px; text-transform: uppercase; letter-spacing: .03em;">
+                                Burn Rate
+                            </div>
+                            <div style="font-size: 28px; font-weight: 500;">
+                                $<field name="burn_rate_per_day" nolabel="1"/><span style="font-size: 14px; font-weight: 400;">/day</span>
+                            </div>
+                            <div class="text-muted" style="font-size: 12px;">
+                                avg. of last 7 days
+                            </div>
+                        </div>
+                        <div class="flex-grow-1" style="border: 1px solid #71639e; border-radius: 4px; padding: 20px; background: #f6f4fa;">
+                            <div style="font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: #63578a;">
+                                Days Remaining on Credit
+                            </div>
+                            <div style="font-size: 28px; font-weight: 500; color: #4d4370;"
+                                 invisible="not days_remaining_on_credit_known">
+                                <field name="days_remaining_on_credit" nolabel="1"/>
+                            </div>
+                            <div style="font-size: 14px; color: #4d4370;" invisible="days_remaining_on_credit_known">
                                 Not yet available (no spend recorded)
-                            </span>
-                            <field name="credit_amount" string="Credit"/>
-                        </group>
-                    </group>
+                            </div>
+                            <div style="font-size: 12px; color: #63578a;">
+                                $<field name="credit_remaining" nolabel="1"/> left of $<field name="credit_amount" nolabel="1"/>
+                            </div>
+                        </div>
+                    </div>
                     <field name="line_ids" string="Spend by Trial Org">
                         <list create="false" delete="false">
                             <field name="org_label" string="Trial Org"/>
