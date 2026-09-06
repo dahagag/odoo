@@ -1,7 +1,8 @@
 .o_hosting_expiry_countdown_systray {
     font-weight: 600;
-    // Replicates Bootstrap's `.badge` line-height/white-space (_badge.scss), now that the
-    // component no longer carries that class - see #164.
+    // Replicates Bootstrap's `.badge` font-size/line-height/white-space (_badge.scss), now
+    // that the component no longer carries that class - see #164.
+    font-size: .75em;
     line-height: 1;
     white-space: nowrap;
     border: 1px solid;
