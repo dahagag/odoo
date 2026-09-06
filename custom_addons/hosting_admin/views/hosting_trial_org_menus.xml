@@ -19,4 +19,11 @@
         action="action_hosting_cost_dashboard"
         sequence="20"
     />
+    <menuitem
+        id="menu_hosting_cost_dashboard_history"
+        name="Cost Dashboard History"
+        parent="menu_hosting_admin_root"
+        action="action_hosting_cost_dashboard_history"
+        sequence="21"
+    />
 </odoo>

@@ -1,6 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
+    <record id="view_hosting_cost_dashboard_snapshot_list" model="ir.ui.view">
+        <field name="name">hosting.cost.dashboard.snapshot.list</field>
+        <field name="model">hosting.cost.dashboard.snapshot</field>
+        <field name="arch" type="xml">
+            <list string="Cost Dashboard History" create="false" delete="false" edit="false">
+                <field name="snapshot_date"/>
+                <field name="total_spend"/>
+                <field name="burn_rate_per_day"/>
+                <field name="days_remaining_on_credit"/>
+                <field name="credit_amount"/>
+                <field name="trial_org_count"/>
+            </list>
+        </field>
+    </record>
+
     <record id="view_hosting_cost_dashboard_snapshot_form" model="ir.ui.view">
         <field name="name">hosting.cost.dashboard.snapshot.form</field>
         <field name="model">hosting.cost.dashboard.snapshot</field>
@@ -89,6 +104,17 @@
         <field name="model_id" ref="model_hosting_cost_dashboard_snapshot"/>
         <field name="state">code</field>
         <field name="code">action = model.action_open_dashboard()</field>
+    </record>
+
+    <!-- Browsable daily history (every snapshot _cron_refresh_snapshot has ever produced, not
+         just today's) - a plain list-first act_window, kept apart from action_hosting_cost_
+         dashboard above per action_open_dashboard's own docstring. Read-only: the model's own
+         fields are all readonly=True and the list/form views both set create="false"
+         delete="false". -->
+    <record id="action_hosting_cost_dashboard_history" model="ir.actions.act_window">
+        <field name="name">Cost Dashboard History</field>
+        <field name="res_model">hosting.cost.dashboard.snapshot</field>
+        <field name="view_mode">list,form</field>
     </record>
 
 </odoo>

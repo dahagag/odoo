@@ -205,7 +205,13 @@ class HostingCostDashboardSnapshot(models.Model):
     def action_open_dashboard(self):
         """Menu entry point: open the latest snapshot, refreshing once first if none exists yet
         (a fresh install with no cron run behind it) - never on every open, which would defeat
-        the whole point of caching a daily-refresh snapshot (docs/adr/0030)."""
+        the whole point of caching a daily-refresh snapshot (docs/adr/0030). The full daily
+        history (every past snapshot, not just this one) is separately browsable from the
+        "Cost Dashboard History" menu (action_hosting_cost_dashboard_history, a plain list
+        action) - kept apart from this one rather than folded into the same action, since a
+        form-first act_window always opens a new/blank record when given no res_id, so a
+        single action can't cleanly serve both "land on today's figures" and "browse every
+        day" at once."""
         snapshot = self.search([], limit=1)
         if not snapshot:
             snapshot = self._cron_refresh_snapshot()
