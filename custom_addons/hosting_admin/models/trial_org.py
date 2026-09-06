@@ -74,16 +74,6 @@ def trial_org_log_bus_channel(trial_org_id):
     return f'{TRIAL_ORG_LOG_BUS_CHANNEL_PREFIX}{trial_org_id}'
 
 
-# Context key ``_apply_transition`` sets to authorize its own ``write({'state': ...})`` call.
-# ``state`` is declared ``readonly=True`` below, but that only hides the field in form views -
-# it does not stop a caller with model access from setting it directly via ORM or RPC
-# create()/write(), bypassing _apply_transition()'s source-state validation and Provisioner
-# call entirely. The create()/write() overrides on this model reject any caller-supplied
-# ``state`` unless this context key is set, so _apply_transition() is the only path that can
-# ever change it.
-ALLOW_STATE_WRITE_KEY = 'hosting_trial_org_allow_state_write'
-
-
 class HostingTrialOrg(models.Model):
     # Named 'hosting.trial.org' per the ticket's own literal suggestion, not
     # 'hosting.admin.trial.org'. docs/adr/0018 describes the addon's conceptual namespace as
@@ -244,10 +234,12 @@ class HostingTrialOrg(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        """Reject a caller-supplied ``state`` on create - ``readonly=True`` only hides the
-        field in form views, so this is the only thing stopping a direct ORM/RPC create() from
-        setting it to something other than the model's own default."""
-        if not self.env.context.get(ALLOW_STATE_WRITE_KEY):
+        """Reject a caller-supplied ``state`` on create unless the call is already elevated via
+        ``sudo()`` - ``readonly=True`` only hides the field in form views, so this is the only
+        thing stopping a direct ORM/RPC create() from setting it to something other than the
+        model's own default. See write() below for why this checks ``self.env.su`` rather than
+        a context flag."""
+        if not self.env.su:
             for vals in vals_list:
                 if 'state' in vals:
                     raise AccessError(_(
@@ -256,10 +248,18 @@ class HostingTrialOrg(models.Model):
         return super().create(vals_list)
 
     def write(self, vals):
-        """Reject a caller-supplied ``state`` on write unless it comes from
-        ``_apply_transition()`` itself (signalled via ``ALLOW_STATE_WRITE_KEY``) - see that
-        key's docstring above for why ``readonly=True`` alone is not enough."""
-        if 'state' in vals and not self.env.context.get(ALLOW_STATE_WRITE_KEY):
+        """Reject a caller-supplied ``state`` on write unless the call is already elevated via
+        ``sudo()`` (as ``_apply_transition()`` itself is, below).
+
+        This checks ``self.env.su`` rather than a context flag deliberately: ``context`` is a
+        plain caller-supplied dict on every ORM/RPC call (``with_context()`` is public API, and
+        RPC's ``execute_kw`` takes a ``context`` kwarg directly from the client), so gating on a
+        context key - as an earlier version of this guard did - can be forged by any caller with
+        ordinary write access to this model and defeats the guard entirely, bypassing
+        _apply_transition()'s source-state validation and Provisioner call. ``env.su`` can only
+        become true via an internal ``.sudo()`` call, which no RPC client can inject (same
+        pattern as crm_lead.py's trial_org_id write guard, CodeRabbit on PR #131)."""
+        if 'state' in vals and not self.env.su:
             raise AccessError(_(
                 "Trial Org state cannot be set directly; it can only change through its "
                 "lifecycle actions (Issue, Suspend, Wake, Auto-Destroy)."))
@@ -441,7 +441,11 @@ class HostingTrialOrg(models.Model):
                     # (expiry sweep or manual teardown) - see the field's own docstring above.
                     values['snapshot_retention_until'] = (
                         fields.Date.context_today(self) + timedelta(days=SNAPSHOT_RETENTION_DAYS))
-                trial_org.with_context(**{ALLOW_STATE_WRITE_KEY: True}).write(values)
+                # Narrow, post-validation sudo() boundary: source state and Provisioner call are
+                # already done above, so this elevates only the exact write() this method
+                # promises - the one path allowed to ever set 'state' (see write()'s own
+                # docstring for why this checks env.su rather than a context flag).
+                trial_org.sudo().write(values)
 
     def _cron_suspend_idle(self):
         """Scheduled action: Suspend every active Trial Org whose last recorded activity is

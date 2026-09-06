@@ -168,7 +168,7 @@ class TestTrialOrgProvisioner(TransactionCase):
         # No reuse-across-calls path (see _new_job_id()'s own docstring for why): every call
         # mints a fresh job id, even immediately after one was just recorded as 'running'.
         first_job_id, _first_started_at = self.trial_org._new_job_id()
-        self.trial_org.with_context(hosting_trial_org_allow_state_write=True).write({
+        self.trial_org.write({
             'last_job_id': first_job_id,
             'last_job_action': 'issue',
             'last_job_status': 'running',
