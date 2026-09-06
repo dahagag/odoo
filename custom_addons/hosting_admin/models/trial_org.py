@@ -441,6 +441,10 @@ class HostingTrialOrg(models.Model):
                     # (expiry sweep or manual teardown) - see the field's own docstring above.
                     values['snapshot_retention_until'] = (
                         fields.Date.context_today(self) + timedelta(days=SNAPSHOT_RETENTION_DAYS))
+                # Narrow, post-validation sudo() boundary: source state and Provisioner call are
+                # already done above, so this elevates only the exact write() this method
+                # promises - the one path allowed to ever set 'state' (see write()'s own
+                # docstring for why this checks env.su rather than a context flag).
                 trial_org.sudo().write(values)
 
     def _cron_suspend_idle(self):

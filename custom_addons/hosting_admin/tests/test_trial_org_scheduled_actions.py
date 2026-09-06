@@ -37,8 +37,7 @@ class TestTrialOrgScheduledActions(TransactionCase):
         trial_org.action_issue()
         # Simulate elapsed time: push the recorded activity into the past rather than waiting.
         stale = fields.Datetime.now() - timedelta(minutes=IDLE_TIMEOUT_MINUTES + 1)
-        trial_org.with_context(hosting_trial_org_allow_state_write=True).write(
-            {'last_activity_at': stale})
+        trial_org.write({'last_activity_at': stale})
 
         self.env['hosting.trial.org']._cron_suspend_idle()
 
@@ -54,8 +53,7 @@ class TestTrialOrgScheduledActions(TransactionCase):
         trial_org = self._create()
         trial_org.action_issue()
         stale = fields.Datetime.now() - timedelta(minutes=IDLE_TIMEOUT_MINUTES + 1)
-        trial_org.with_context(hosting_trial_org_allow_state_write=True).write(
-            {'last_activity_at': stale})
+        trial_org.write({'last_activity_at': stale})
         self.env['hosting.trial.org']._cron_suspend_idle()
         self.assertEqual(trial_org.state, 'suspended')
 

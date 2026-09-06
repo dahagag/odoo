@@ -1,5 +1,5 @@
 from odoo.exceptions import AccessError, ValidationError
-from odoo.tests import TransactionCase, tagged
+from odoo.tests import TransactionCase, new_test_user, tagged
 
 
 @tagged('post_install', '-at_install')
@@ -13,6 +13,13 @@ class TestTrialOrgStateMachine(TransactionCase):
             'prospect_domain': "acme.example.com",
             'seat_cap': 5,
         })
+        # An ordinary member of the group that grants write access to hosting.trial.org -
+        # not the superuser cls.env runs as by default. self.env.su is unconditionally True
+        # for a superuser env (odoo/orm/environments.py), which would make the guard tests
+        # below pass without actually exercising the guard a real caller hits.
+        cls.administrator = new_test_user(
+            cls.env, login='hosting_admin_user',
+            groups='hosting_admin.group_hosting_admin_administrator')
 
     def test_new_trial_org_starts_issued(self):
         self.assertEqual(self.trial_org.state, 'issued')
@@ -88,13 +95,16 @@ class TestTrialOrgStateMachine(TransactionCase):
         # readonly=True on the state field only hides it in form views - it does not stop a
         # direct ORM/RPC write() from a caller with model access. That must be rejected
         # regardless, so _apply_transition() stays the only path that can ever change state.
+        # Exercised as an ordinary administrator, not the superuser cls.env defaults to -
+        # self.env.su is unconditionally True for a superuser env, which would let this write
+        # through without actually testing the guard.
         with self.assertRaises(AccessError):
-            self.trial_org.write({'state': 'active'})
+            self.trial_org.with_user(self.administrator).write({'state': 'active'})
         self.assertEqual(self.trial_org.state, 'issued')
 
     def test_direct_create_with_state_is_rejected(self):
         with self.assertRaises(AccessError):
-            self.env['hosting.trial.org'].create({
+            self.env['hosting.trial.org'].with_user(self.administrator).create({
                 'name': "Sneaky Trial",
                 'prospect_domain': "sneaky.example.com",
                 'seat_cap': 5,
@@ -115,10 +125,14 @@ class TestTrialOrgStateMachine(TransactionCase):
         # client - so any caller with ordinary write access to hosting.trial.org could forge
         # that exact key and defeat the guard entirely, bypassing _apply_transition()'s
         # source-state validation and Provisioner call. Only self.env.su (settable only by an
-        # internal .sudo() call, never by RPC-supplied context) is a genuine server-only signal.
+        # internal .sudo() call, never by RPC-supplied context) is a genuine server-only signal
+        # - exercised as an ordinary administrator, since a superuser env's self.env.su is
+        # already unconditionally True regardless of context, which would make this pass
+        # without proving anything about the forgery.
         forged_context = {'hosting_trial_org_allow_state_write': True}
         with self.assertRaises(AccessError):
-            self.trial_org.with_context(**forged_context).write({'state': 'active'})
+            self.trial_org.with_user(self.administrator).with_context(**forged_context).write(
+                {'state': 'active'})
         self.assertEqual(self.trial_org.state, 'issued')
 
     def test_batch_transition_is_all_or_nothing(self):
