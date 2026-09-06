@@ -85,13 +85,15 @@ which cover issue triage, not PR review.
 
 ## Continuous integration
 
-The workflow itself triggers on every PR targeting either `dev/19.0`
-(regular feature work) or `main/19.0` (release PRs promoting `dev/19.0` to
-the demo instance) — no path filter at the trigger level. A preliminary
-`changes` job diffs the PR against its base for `custom_addons/**`,
-`docker/**`, `scripts/dev.sh`, `scripts/dev.ps1`, `scripts/docs_build/**`,
-`requirements.txt`, `compose.yaml`, `infra/**`, `ruff.toml`, or the workflow
-file itself, and the other jobs read its
+The workflow triggers on every PR targeting either `dev/19.0` (regular
+feature work) or `main/19.0` (release PRs promoting `dev/19.0` to the demo
+instance) — no path filter at the trigger level — and additionally on every
+push to `dev/19.0` (i.e. every merge into the trunk), solely to run
+`publish-image` (see [ADR 0030](../adr/0030-ci-build-image-publish-image-permission-split.md)).
+A preliminary `changes` job diffs the run against its base for
+`custom_addons/**`, `docker/**`, `scripts/dev.sh`, `scripts/dev.ps1`,
+`scripts/docs_build/**`, `requirements.txt`, `compose.yaml`, `infra/**`,
+`ruff.toml`, or the workflow file itself, and the other jobs read its
 `image_relevant`, `docs_build`, `infra_relevant`, and `lint_relevant`
 outputs to decide whether to actually do anything. There is no separate
 deploy workflow — Render's native branch auto-deploy handles promotion
@@ -110,12 +112,14 @@ check instead of no check at all.
 
 | Job | Trigger scope | Gate |
 |---|---|---|
-| `changes` | every PR | Not a check anyone gates on — feeds `image_relevant`, `docs_build`, `infra_relevant`, and `lint_relevant` to the other jobs |
-| `lint` | every PR; steps run only when `lint_relevant` (`custom_addons/**`, `ruff.toml`, `scripts/dev.sh`/`dev.ps1`, or the workflow file) | Feeds `ci-required`; not itself required by branch protection — `ruff` against `custom_addons/**`, Docker-free (`actions/setup-python`, no Odoo dev image; see [ADR 0028](../adr/0028-lint-job-decouples-from-odoo-dev-image.md)) |
-| `docs-build-tests` | every PR; steps run only when `docs_build` | Feeds `ci-required`; not itself required by branch protection |
-| `infra-checks` | every PR; steps run only when `infra_relevant` (`infra/**` or the workflow file) | Feeds `ci-required`; not itself required by branch protection — `tofu fmt`/`tofu validate` on all three OpenTofu modules, `ruff`, and `interrogate` docstring coverage, all Docker-free (`actions/setup-python`, no Odoo dev image) |
-| `ci-required` | every PR; `if: always()` | **Required** status check — fails unless `lint`, `docs-build-tests`, and `infra-checks` all succeeded, even if one was `skipped` (e.g. because the upstream `changes` job errored) |
-| `test` | every PR; whole job skipped when not `image_relevant` | Visible, **non-blocking** for now — the full `custom_addons/` suite via the `compose.yaml` stack; revisit once the suite has proven itself over time |
+| `changes` | every PR and every push to `dev/19.0` | Not a check anyone gates on — feeds `image_relevant`, `docs_build`, `infra_relevant`, and `lint_relevant` to the other jobs |
+| `build-image` | PR-time only; whole job skipped when not `image_relevant` | Builds (never pushes) the dev image for `test` to consume in the same run — `permissions: contents: read` only, no GHCR login (see [ADR 0030](../adr/0030-ci-build-image-publish-image-permission-split.md)) |
+| `lint` | PR-time only; steps run only when `lint_relevant` (`custom_addons/**`, `ruff.toml`, `scripts/dev.sh`/`dev.ps1`, or the workflow file) | Feeds `ci-required`; not itself required by branch protection — `ruff` against `custom_addons/**`, Docker-free (`actions/setup-python`, no Odoo dev image; see [ADR 0028](../adr/0028-lint-job-decouples-from-odoo-dev-image.md)) |
+| `docs-build-tests` | PR-time only; steps run only when `docs_build` | Feeds `ci-required`; not itself required by branch protection |
+| `infra-checks` | PR-time only; steps run only when `infra_relevant` (`infra/**` or the workflow file) | Feeds `ci-required`; not itself required by branch protection — `tofu fmt`/`tofu validate` on all three OpenTofu modules, `ruff`, and `interrogate` docstring coverage, all Docker-free (`actions/setup-python`, no Odoo dev image) |
+| `ci-required` | PR-time only; `if: always() && github.event_name == 'pull_request'` | **Required** status check — fails unless `lint`, `docs-build-tests`, and `infra-checks` all succeeded, even if one was `skipped` (e.g. because the upstream `changes` job errored) |
+| `test` | PR-time only; whole job skipped when not `image_relevant` | Visible, **non-blocking** for now — the full `custom_addons/` suite via the `compose.yaml` stack, against the image `build-image` built for this same run; revisit once the suite has proven itself over time |
+| `publish-image` | push-to-`dev/19.0` only (post-merge); whole job skipped when not `image_relevant` | The only job carrying `packages: write` — pushes the content-hash-tagged image to GHCR, skipping the push if that tag is already published (see [ADR 0030](../adr/0030-ci-build-image-publish-image-permission-split.md)) |
 
 `lint` and `infra-checks` each gate on their own dedicated `*_relevant` filter rather than
 `image_relevant`: neither `ruff` nor `tofu`/`interrogate` needs the Odoo dev image or a running
