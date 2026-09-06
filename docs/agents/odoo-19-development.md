@@ -112,8 +112,9 @@ being asked), so it applies equally to the session that just implemented the cha
 reading this file days later with no memory of that work.
 
 **Always demonstrate something.** A live Odoo backend walkthrough (open the affected screens in a
-browser, drive the actual UI) when the ticket touched a view; a narrated `odoo shell`/ORM-driven
-session exercising the real model and business logic otherwise (call the changed method, show its
+browser, drive the actual UI) when the ticket changed anything browser-visible — not only a view
+record, a widget or flow counts too; a narrated `odoo shell`/ORM-driven session exercising the real
+model and business logic otherwise (call the changed method, show its
 effect) — the same way a scheduled action or a cron-computed model is demonstrated by actually
 running it, not by describing it. Skip only when a ticket is genuinely non-observable (a docs-only
 or ADR-only change), and say so rather than improvising a demo for nothing.
