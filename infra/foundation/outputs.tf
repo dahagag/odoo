@@ -65,7 +65,12 @@ output "log_forwarder_lambda_arn" {
 
 output "ecs_task_role_arn" {
   value       = aws_iam_role.ecs_task.arn
-  description = "ECS task role the tofu-runner container runs as."
+  description = "ECS task role the tofu-runner container's own instance-metadata credential chain resolves to. Carries no inline policy (issue #125) — see trial_org_execution_role_arn for the role RunTofu actually acts as."
+}
+
+output "trial_org_execution_role_arn" {
+  value       = aws_iam_role.trial_org_execution.arn
+  description = "Per-invocation role (issue #125) sfn_execution assumes with a TrialOrgId/DnsRecordName session tag before RunTofu launches the ECS task, scoping that invocation's EC2/DNS mutate permissions to the one Trial Org it targets."
 }
 
 output "trial_org_instance_permissions_boundary_arn" {

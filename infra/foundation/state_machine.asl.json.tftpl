@@ -59,7 +59,39 @@
           "Next": "WakeInstance"
         }
       ],
-      "Default": "RunTofu"
+      "Default": "AssumeTrialOrgExecutionRole"
+    },
+
+    "AssumeTrialOrgExecutionRole": {
+      "Comment": "Issue #125, ADR-0031: ecs:RunTask has no session-tag propagation mechanism equivalent to sts:AssumeRole's, so the shared ECS task role (foundation/iam.tf's now-empty ecs_task) can never itself be scoped to the one Trial Org an invocation targets. Assuming trial_org_execution here instead - tagging the session with this execution's own TrialOrgId and DnsRecordName - and handing RunTofu the resulting temporary credentials as container environment overrides gives `tofu apply` genuinely per-invocation-scoped EC2/DNS mutate permissions (trial_org_execution's own ABAC conditions key off these exact tags), with no change needed to the tofu-runner image itself: the AWS SDK/Terraform AWS provider credential chain prefers explicit AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_SESSION_TOKEN env vars over a container's own ECS task-role credentials.",
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:sts:assumeRole",
+      "Parameters": {
+        "RoleArn": "${trial_org_execution_role_arn}",
+        "RoleSessionName.$": "States.Format('trial-{}-{}', $.trial_org_id, $.job_id)",
+        "Tags": [
+          { "Key": "TrialOrgId", "Value.$": "$.trial_org_id" },
+          { "Key": "DnsRecordName", "Value.$": "$.dns_record_name" }
+        ]
+      },
+      "ResultPath": "$.assumed_role",
+      "TimeoutSeconds": ${sts_assume_role_timeout_seconds},
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "MaxAttempts": ${retry_max_attempts},
+          "BackoffRate": ${retry_backoff_rate},
+          "IntervalSeconds": ${retry_interval_seconds}
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "ReleaseLockOnFailure"
+        }
+      ],
+      "Next": "RunTofu"
     },
 
     "SuspendInstance": {
@@ -147,7 +179,10 @@
                 { "Name": "JOB_ID", "Value.$": "$.job_id" },
                 { "Name": "ACTION", "Value.$": "$.action" },
                 { "Name": "AMI_ID", "Value.$": "$.ami_id" },
-                { "Name": "MODULE_GIT_SHA", "Value.$": "$.module_git_sha" }
+                { "Name": "MODULE_GIT_SHA", "Value.$": "$.module_git_sha" },
+                { "Name": "AWS_ACCESS_KEY_ID", "Value.$": "$.assumed_role.Credentials.AccessKeyId" },
+                { "Name": "AWS_SECRET_ACCESS_KEY", "Value.$": "$.assumed_role.Credentials.SecretAccessKey" },
+                { "Name": "AWS_SESSION_TOKEN", "Value.$": "$.assumed_role.Credentials.SessionToken" }
               ]
             }
           ]

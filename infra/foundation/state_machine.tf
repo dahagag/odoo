@@ -19,10 +19,12 @@ resource "aws_sfn_state_machine" "trial_org_lifecycle" {
     tofu_runner_container_name      = local.tofu_runner_container_name
     tofu_runner_security_group_id   = aws_security_group.tofu_runner.id
     private_subnet_ids_json         = jsonencode(aws_subnet.private[*].id)
+    trial_org_execution_role_arn    = aws_iam_role.trial_org_execution.arn
 
-    task_timeout_seconds          = var.sfn_task_timeout_seconds
-    ec2_power_timeout_seconds     = var.ec2_power_timeout_seconds
-    lambda_invoke_timeout_seconds = var.lambda_invoke_timeout_seconds
+    task_timeout_seconds            = var.sfn_task_timeout_seconds
+    ec2_power_timeout_seconds       = var.ec2_power_timeout_seconds
+    lambda_invoke_timeout_seconds   = var.lambda_invoke_timeout_seconds
+    sts_assume_role_timeout_seconds = var.sts_assume_role_timeout_seconds
 
     retry_max_attempts          = var.sfn_retry_max_attempts
     retry_backoff_rate          = var.sfn_retry_backoff_rate

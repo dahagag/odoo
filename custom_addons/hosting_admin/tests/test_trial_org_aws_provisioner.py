@@ -45,6 +45,7 @@ class TestAwsProvisioner(TransactionCase):
         # explicitly to override.
         kwargs.setdefault('base_ami_id', 'ami-0abc123')
         kwargs.setdefault('tofu_module_git_sha', 'deadbeef')
+        kwargs.setdefault('dns_domain_suffix', 'dev.method.factory1.io')
         return AwsProvisioner(
             state_machine_arn=STATE_MACHINE_ARN,
             client=client or _make_fake_client(),
@@ -54,7 +55,8 @@ class TestAwsProvisioner(TransactionCase):
     def test_issue_starts_execution_with_expected_input_and_name(self):
         client = _make_fake_client()
         provisioner = self._make_provisioner(client=client, base_ami_id='ami-0abc123',
-                                              tofu_module_git_sha='deadbeef')
+                                              tofu_module_git_sha='deadbeef',
+                                              dns_domain_suffix='dev.method.factory1.io')
 
         provisioner.issue(self.trial_org, 'job-1')
 
@@ -70,7 +72,28 @@ class TestAwsProvisioner(TransactionCase):
             'state_key': f"trial-orgs/{self.trial_org.id}/terraform.tfstate",
             'ami_id': 'ami-0abc123',
             'module_git_sha': 'deadbeef',
+            'dns_record_name': f"{self.trial_org.dns_subdomain_label}.dev.method.factory1.io",
         })
+
+    def test_issue_without_dns_domain_suffix_raises_a_clear_error_instead_of_calling_aws(self):
+        client = _make_fake_client()
+        provisioner = self._make_provisioner(client=client, dns_domain_suffix=None)
+
+        with self.assertRaises(UserError):
+            provisioner.issue(self.trial_org, 'job-1')
+        client.start_execution.assert_not_called()
+
+    def test_destroy_includes_the_dns_record_name(self):
+        self.trial_org.write({'ami_id': 'ami-deployed', 'tofu_module_git_sha': 'deployedsha'})
+        client = _make_fake_client()
+        provisioner = self._make_provisioner(client=client, dns_domain_suffix='dev.method.factory1.io')
+
+        provisioner.destroy(self.trial_org, 'job-3')
+
+        execution_input = json.loads(client.start_execution.call_args.kwargs['input'])
+        self.assertEqual(
+            execution_input['dns_record_name'],
+            f"{self.trial_org.dns_subdomain_label}.dev.method.factory1.io")
 
     def test_issue_stages_ami_and_git_sha_as_pending_without_touching_the_audit_fields(self):
         provisioner = self._make_provisioner(base_ami_id='ami-0abc123', tofu_module_git_sha='deadbeef')
@@ -190,7 +213,8 @@ class TestAwsProvisioner(TransactionCase):
         client.start_execution.side_effect = FakeExecutionAlreadyExists()
         provisioner = AwsProvisioner(
             state_machine_arn=f"{STATE_MACHINE_ARN}:PROD",
-            base_ami_id='ami-0abc123', tofu_module_git_sha='deadbeef', client=client,
+            base_ami_id='ami-0abc123', tofu_module_git_sha='deadbeef',
+            dns_domain_suffix='dev.method.factory1.io', client=client,
         )
 
         provisioner.issue(self.trial_org, 'job-1')
