@@ -103,6 +103,53 @@ extra RPC round-trip on webclient boot:
   interact with it. Debounce: reset a short timer on every `ACTION_MANAGER:UPDATE` and only open
   once the events go quiet.
 
+## Post-implementation walkthrough
+
+Once a ticket's PR is open — or whenever asked to demo or walk through any past PR, cold, in a
+fresh session — seed the addon's demo data and walk the human through what actually changed.
+This is a standing practice, not a slash command: nothing gates it besides finishing a ticket (or
+being asked), so it applies equally to the session that just implemented the change and to one
+reading this file days later with no memory of that work.
+
+**Always demonstrate something.** A live Odoo backend walkthrough (open the affected screens in a
+browser, drive the actual UI) when the ticket changed anything browser-visible — not only a view
+record, a widget or flow counts too; a narrated `odoo shell`/ORM-driven session exercising the real
+model and business logic otherwise (call the changed method, show its
+effect) — the same way a scheduled action or a cron-computed model is demonstrated by actually
+running it, not by describing it. Skip only when a ticket is genuinely non-observable (a docs-only
+or ADR-only change), and say so rather than improvising a demo for nothing.
+
+**Seed data is Odoo's own demo-data mechanism, not an ephemeral script.** Add or extend the addon's
+`demo` manifest key and its `demo/*.xml` (`crm_methodology`'s `demo/crm_methodology_demo.xml` is the
+existing precedent) rather than a throwaway shell/Python script written fresh each time — this is
+part of finishing a ticket that adds anything worth seeding, the same way the i18n-export habit
+above is part of finishing a change that adds translatable strings. One cumulative
+`demo/<addon>_demo.xml` per addon, extended by every ticket that touches that addon, not a fresh
+file per ticket: the goal is one continuous, ever-richer story (the same handful of named demo
+records recurring across tickets), not a pile of one-off scenarios. This fits the existing dev
+workflow without further wiring: `scripts/dev.ps1`/`dev.sh`'s `install` and `update` subcommands
+don't pass `--without-demo` (only `init`, which bootstraps `base`/`web`, does), so a ticket's own
+new demo records load the same way `/implement` already syncs schema. For an addon whose own
+architecture already isolates external calls behind an injectable seam (a `Provisioner`-style ABC,
+per `docs/agents/odoo-19-automation.md`'s split control/execution model), the demo scenario drives
+through that seam's stub/fake implementation, the same one the test suite already exercises —
+never a real external call.
+
+Seed **illustrative**, not minimal, data: several records, a plausible edge case or two (an
+unattributed/unassigned line, a suspended or otherwise non-default state), and enough history depth
+where the feature has a time dimension — enough to actually show the feature working, not just
+prove a screen doesn't crash on an empty recordset.
+
+**Live and interactive by default.** Narrate turn by turn in the same conversation, driving the
+browser (or the shell session) and capturing screenshots inline as you go, so the human can
+interject — "go back to that screen," "show me the before state" — mid-walkthrough. For a
+"significant" change — reusing `docs/agents/design-review.md`'s existing major/minor judgment (a
+new screen/flow/widget, or a reshaped layout/interaction, is "major") rather than inventing a
+second threshold — offer a quick screen recording first (Claude-in-Chrome's `gif_creator`, a
+separate surface from the in-app Browser pane the live walkthrough otherwise uses). Either way, the
+live walkthrough always follows; a recording is an additional takeaway artifact, never a
+replacement for it.
+
 ## Autonomy and review
 
 Coding agents may inspect and edit the repository, scaffold owned modules, and create or discard local test databases. They do not receive production credentials or production database access.
