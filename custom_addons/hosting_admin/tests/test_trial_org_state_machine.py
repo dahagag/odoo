@@ -107,6 +107,20 @@ class TestTrialOrgStateMachine(TransactionCase):
         self.trial_org.action_issue()
         self.assertEqual(self.trial_org.state, 'active')
 
+    def test_state_write_guard_cannot_be_forged_via_context(self):
+        # Regression test for #135: an earlier version of this guard checked a context flag
+        # (self.env.context.get('hosting_trial_org_allow_state_write')) rather than self.env.su.
+        # context is a plain caller-supplied dict on every ORM/RPC call - with_context() is
+        # ordinary public API, and RPC's execute_kw takes a context kwarg straight from the
+        # client - so any caller with ordinary write access to hosting.trial.org could forge
+        # that exact key and defeat the guard entirely, bypassing _apply_transition()'s
+        # source-state validation and Provisioner call. Only self.env.su (settable only by an
+        # internal .sudo() call, never by RPC-supplied context) is a genuine server-only signal.
+        forged_context = {'hosting_trial_org_allow_state_write': True}
+        with self.assertRaises(AccessError):
+            self.trial_org.with_context(**forged_context).write({'state': 'active'})
+        self.assertEqual(self.trial_org.state, 'issued')
+
     def test_batch_transition_is_all_or_nothing(self):
         # One org already active, one still issued: neither should transition when the batch
         # as a whole contains an invalid move for the second record.

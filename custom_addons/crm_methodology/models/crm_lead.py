@@ -170,9 +170,9 @@ class CrmLead(models.Model):
         plain caller-supplied dict on every ORM/RPC call (``with_context()`` is public API, and
         RPC's ``execute_kw`` takes a ``context`` kwarg directly from the client), so gating on a
         context key - as an earlier version of this guard did, and as hosting.trial.org's own
-        ALLOW_STATE_WRITE_KEY guard on its 'state' field still does - can be forged by any
-        caller and defeats the guard entirely. ``env.su`` can only become true via an internal
-        ``.sudo()`` call, which no RPC client can inject."""
+        'state' field guard once did too (#135) - can be forged by any caller and defeats the
+        guard entirely. ``env.su`` can only become true via an internal ``.sudo()`` call, which
+        no RPC client can inject."""
         if 'trial_org_id' in vals and not self.env.su:
             raise AccessError(_(
                 "trial_org_id cannot be set directly; it is only assigned by "
