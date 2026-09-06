@@ -29,6 +29,10 @@ Auto-Destroy, Deployment Version).
         'views/hosting_trial_org_menus.xml',
     ],
 
+    'demo': [
+        'demo/hosting_admin_demo.xml',
+    ],
+
     'assets': {
         'web.assets_backend': [
             'hosting_admin/static/src/**/*',
