@@ -8,7 +8,14 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Only cancel in-progress runs for pull_request: two pushes to a PR branch in
+  # quick succession should cancel the stale one. A push straight to dev/19.0
+  # never should — github.ref for a push event is the branch itself
+  # (refs/heads/dev/19.0), shared by every merge, so cancel-in-progress here
+  # would let a fast-following merge cancel a prior merge's publish-image job
+  # mid-push, silently dropping that content-hash tag from GHCR (see
+  # docs/adr/0030).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
@@ -116,42 +123,29 @@ jobs:
     permissions:
       contents: read
     outputs:
-      image: ${{ steps.tag.outputs.image }}
+      image: ${{ steps.compute.outputs.image }}
     steps:
       - uses: actions/checkout@v4
-      - name: Read defaults shared with local dev (.env.example)
-        id: defaults
-        run: |
-          echo "odoo_image=$(sed -n -E 's/^ODOO_IMAGE=(.*)$/\1/p' .env.example)" >> "$GITHUB_OUTPUT"
-          echo "uid=$(id -u)" >> "$GITHUB_OUTPUT"
-          echo "gid=$(id -g)" >> "$GITHUB_OUTPUT"
-      - name: Compute the image tag from its content inputs
-        # Tag by the hash of everything that actually affects the image's contents
-        # (not github.sha), so this stays the same tag publish-image computes for
-        # the equivalent merge, and the same tag a previous PR run may have already
-        # produced. hashFiles() only works inside a step's own expression context,
-        # not in a job-level env: block, so it's computed here and read via step
-        # outputs.
-        id: tag
-        run: echo "image=ghcr.io/${{ github.repository }}/odoo-dev:${{ hashFiles('docker/odoo-dev.Dockerfile', 'docker/*.sh', 'requirements.txt', '.env.example') }}" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/compute-dev-image-tag
+        id: compute
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/odoo-dev.Dockerfile
           build-args: |
-            ODOO_IMAGE=${{ steps.defaults.outputs.odoo_image }}
-            HOST_UID=${{ steps.defaults.outputs.uid }}
-            HOST_GID=${{ steps.defaults.outputs.gid }}
+            ODOO_IMAGE=${{ steps.compute.outputs.odoo_image }}
+            HOST_UID=${{ steps.compute.outputs.uid }}
+            HOST_GID=${{ steps.compute.outputs.gid }}
           load: true
-          tags: ${{ steps.tag.outputs.image }}
+          tags: ${{ steps.compute.outputs.image }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Save the built image for the test job in this run to consume
         # Never pushed to GHCR from here — this job only builds far enough for
         # test to run against it (see docs/adr/0030). The image only needs to
         # exist locally, handed to the test job via a workflow artifact.
-        run: docker save "${{ steps.tag.outputs.image }}" -o /tmp/odoo-dev-image.tar
+        run: docker save "${{ steps.compute.outputs.image }}" -o /tmp/odoo-dev-image.tar
       - uses: actions/upload-artifact@v4
         with:
           name: odoo-dev-image
@@ -305,24 +299,14 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-      - name: Read defaults shared with local dev (.env.example)
-        id: defaults
-        run: |
-          echo "odoo_image=$(sed -n -E 's/^ODOO_IMAGE=(.*)$/\1/p' .env.example)" >> "$GITHUB_OUTPUT"
-          echo "uid=$(id -u)" >> "$GITHUB_OUTPUT"
-          echo "gid=$(id -g)" >> "$GITHUB_OUTPUT"
-      - name: Compute the image tag from its content inputs
-        # Same hashing inputs as build-image, so a merge whose image content
-        # didn't change resolves to the tag a PR run (or an earlier merge)
-        # already published, and the push below is skipped.
-        id: tag
-        run: echo "image=ghcr.io/${{ github.repository }}/odoo-dev:${{ hashFiles('docker/odoo-dev.Dockerfile', 'docker/*.sh', 'requirements.txt', '.env.example') }}" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/compute-dev-image-tag
+        id: compute
       - uses: docker/setup-buildx-action@v3
       - uses: ./.github/actions/ghcr-login
       - name: Check whether this image tag is already published
         id: existing
         env:
-          DEV_IMAGE: ${{ steps.tag.outputs.image }}
+          DEV_IMAGE: ${{ steps.compute.outputs.image }}
         run: |
           if docker buildx imagetools inspect "$DEV_IMAGE" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
@@ -335,10 +319,10 @@ jobs:
           context: .
           file: docker/odoo-dev.Dockerfile
           build-args: |
-            ODOO_IMAGE=${{ steps.defaults.outputs.odoo_image }}
-            HOST_UID=${{ steps.defaults.outputs.uid }}
-            HOST_GID=${{ steps.defaults.outputs.gid }}
+            ODOO_IMAGE=${{ steps.compute.outputs.odoo_image }}
+            HOST_UID=${{ steps.compute.outputs.uid }}
+            HOST_GID=${{ steps.compute.outputs.gid }}
           push: true
-          tags: ${{ steps.tag.outputs.image }}
+          tags: ${{ steps.compute.outputs.image }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

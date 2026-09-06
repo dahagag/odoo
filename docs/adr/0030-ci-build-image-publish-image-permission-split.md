@@ -51,6 +51,23 @@ exposure already existed for any PR touching `docker/**`, `custom_addons/**`, `r
   to `lint`/`docs-build-tests`/`infra-checks`/`test` when they were created, closing zizmor's
   separate "excessive-permissions: default permissions used due to no permissions: block" finding
   for the one job that still had it.
+- The "read `.env.example` defaults" and "compute the content-hash tag" steps used to live
+  duplicated in both `build-image` and (the old, push-capable) `build-image`'s publish path.
+  Splitting into two jobs would have duplicated them a second time, so they're factored into a new
+  composite action, `.github/actions/compute-dev-image-tag`, following the precedent
+  `.github/actions/ghcr-login` already set for shared workflow steps. Both `build-image` and
+  `publish-image` call it and get back the same four outputs (`odoo_image`, `uid`, `gid`, `image`),
+  which is also what keeps the tag scheme provably identical between the two jobs — one
+  implementation of the hash, not two copies that could drift.
+- `concurrency.cancel-in-progress` changed from an unconditional `true` to `${{ github.event_name
+  == 'pull_request' }}`. The workflow's `concurrency.group` is keyed on `github.ref`, which for a
+  `push` event is the branch itself (`refs/heads/dev/19.0`) — the same group for every merge. With
+  `cancel-in-progress` still unconditionally `true`, a second merge landing while the first
+  merge's `publish-image` job is still mid-`docker push` would cancel that push outright, silently
+  (no required check depends on `publish-image`), potentially leaving a content-hash tag never
+  published to GHCR despite nothing having failed. Scoping cancellation to `pull_request` keeps the
+  original behavior there (a new push to a PR branch still cancels its own stale run) while letting
+  every `push`-triggered run on `dev/19.0` finish `publish-image` uninterrupted.
 
 **Why an artifact hand-off instead of, say, restructuring `lint`/`test` into steps of
 `build-image`'s own job.** `lint` is already Docker-free (ADR 0028) and gated on a different
