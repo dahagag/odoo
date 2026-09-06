@@ -68,7 +68,7 @@
                                 $<field name="burn_rate_per_day" nolabel="1"/><span style="font-size: 14px; font-weight: 400;">/day</span>
                             </div>
                             <div class="text-muted" style="font-size: 12px;">
-                                avg. of last 7 days
+                                avg. over up to 7 days
                             </div>
                         </div>
                         <div class="flex-grow-1" style="border: 1px solid #71639e; border-radius: 4px; padding: 20px; background: #f6f4fa;">
