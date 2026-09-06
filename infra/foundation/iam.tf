@@ -165,6 +165,18 @@ data "aws_iam_policy_document" "sfn_execution" {
     resources = [aws_iam_role.ecs_task_execution.arn, aws_iam_role.ecs_task.arn]
   }
 
+  # Issue #125: the AssumeTrialOrgExecutionRole Task state (state_machine.asl.json.tftpl) assumes
+  # trial_org_execution on the ECS task's behalf, tagging the session with this invocation's own
+  # TrialOrgId/DnsRecordName before RunTofu launches it - both sts:AssumeRole (identity-side) and
+  # sts:TagSession are required for a session-tagged assume, on top of trial_org_execution's own
+  # trust policy allowing this role as principal.
+  statement {
+    sid       = "AssumeTrialOrgExecutionRole"
+    effect    = "Allow"
+    actions   = ["sts:AssumeRole", "sts:TagSession"]
+    resources = [aws_iam_role.trial_org_execution.arn]
+  }
+
   statement {
     sid    = "InvokeLifecycleLambdas"
     effect = "Allow"
@@ -241,11 +253,16 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_managed" {
 }
 
 # ---------------------------------------------------------------------------
-# ECS task role: the identity `tofu` itself runs as inside the container. This is the broadest
-# role in the foundation because it's what actually creates/destroys each Trial Org's
-# infrastructure (EC2, security group, log group, DNS record, IAM instance profile) plus reads/
-# writes OpenTofu's own remote state. Scoped with aws:ResourceTag / aws:RequestTag ABAC
-# conditions to the Trial Org each invocation targets, per ADR-0019.
+# ECS task role: the identity the tofu-runner container's own instance-metadata credential
+# chain resolves to. Deliberately carries no inline policy at all (issue #125) - every AWS call
+# `tofu apply` makes during a RunTofu invocation instead runs under trial_org_execution's
+# per-invocation scoped-down credentials, injected as container environment overrides
+# (state_machine.asl.json.tftpl's AssumeTrialOrgExecutionRole state; the AWS SDK/Terraform AWS
+# provider credential chain prefers explicit AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/
+# AWS_SESSION_TOKEN env vars over a container's own ECS task-role credentials). A compromised or
+# buggy tofu-runner image that never assumes trial_org_execution therefore has zero standing AWS
+# access under this role, rather than falling back to the shared task-wide permissions it used to
+# carry directly.
 # ---------------------------------------------------------------------------
 
 resource "aws_iam_role" "ecs_task" {
@@ -278,7 +295,37 @@ resource "aws_iam_policy" "trial_org_instance_boundary" {
   policy      = data.aws_iam_policy_document.trial_org_instance_boundary.json
 }
 
-data "aws_iam_policy_document" "ecs_task" {
+# ---------------------------------------------------------------------------
+# Trial Org execution role (issue #125, ADR-0031): the per-invocation identity RunTofu actually acts as.
+# Assumed by sfn_execution on the ECS task's behalf (the AssumeTrialOrgExecutionRole state,
+# state_machine.asl.json.tftpl), with sts:TagSession carrying this invocation's own TrialOrgId
+# and DnsRecordName - the same session-tag mechanism hosting_admin's own role above uses for
+# ReadTrialOrgLogs, applied here because ecs:RunTask itself has no equivalent to
+# sts:AssumeRole's TagSession for the ECS task role directly. This is what makes
+# ManageTrialOrgEc2Existing/ManageTrialOrgDnsRecords below genuine per-execution ABAC rather
+# than "any tagged Trial Org resource" - every other statement here is otherwise identical to
+# what the (now-empty) ecs_task role used to carry directly.
+# ---------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "trial_org_execution_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole", "sts:TagSession"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.sfn_execution.arn]
+    }
+  }
+}
+
+resource "aws_iam_role" "trial_org_execution" {
+  name                 = "${var.environment}-trial-org-execution"
+  assume_role_policy   = data.aws_iam_policy_document.trial_org_execution_trust.json
+  max_session_duration = 3600
+}
+
+data "aws_iam_policy_document" "trial_org_execution" {
   # OpenTofu's own remote state for the per-trial module: one object per Trial Org under
   # trial-orgs/<trial_org_id>/terraform.tfstate, plus the S3-backend DynamoDB lock table.
   statement {
@@ -394,14 +441,11 @@ data "aws_iam_policy_document" "ecs_task" {
     }
   }
 
-  # Mutations against an *existing* instance/security-group: scoped by aws:ResourceTag, requiring
-  # the resource already carry a TrialOrgId tag (excludes every non-Trial-Org resource in the
-  # account, e.g. anything belonging to the foundation itself). Full per-execution isolation (this
-  # task role touching only the one Trial Org its own invocation targets) would need session tags
-  # ECS RunTask doesn't propagate into the task role's STS session the way AssumeRole does for
-  # hosting_admin above — see the ReadTrialOrgLogs statement's PrincipalTag pattern for where that
-  # ARE available. Tracked as a known gap, not silently accepted: revisit if ECS task role session
-  # tagging becomes available.
+  # Mutations against an *existing* instance/security-group, scoped to the exact Trial Org this
+  # session's TrialOrgId tag names (issue #125) - the resource's own TrialOrgId tag must equal
+  # the assumed session's, not merely be present. One Trial Org's RunTofu invocation can no
+  # longer touch another tagged Trial Org's EC2 resources, closing the gap the previous "any
+  # tagged resource" Null condition here left open (CodeRabbit, PR #124).
   statement {
     sid    = "ManageTrialOrgEc2Existing"
     effect = "Allow"
@@ -417,9 +461,9 @@ data "aws_iam_policy_document" "ecs_task" {
     ]
     resources = ["*"]
     condition {
-      test     = "Null"
+      test     = "StringEquals"
       variable = "aws:ResourceTag/TrialOrgId"
-      values   = ["false"]
+      values   = ["$${aws:PrincipalTag/TrialOrgId}"]
     }
   }
 
@@ -519,14 +563,16 @@ data "aws_iam_policy_document" "ecs_task" {
     }
   }
 
-  # Per-Trial-Org DNS record under the shared zone. The task role is shared across every Trial
-  # Org's provisioning invocation, so this can't be scoped to one exact record name — instead it's
-  # narrowed to only the two hostname patterns modules/trial_org ever writes
-  # (*.<root_domain>/*.<dev_subdomain>), to record type A, and to the UPSERT/DELETE actions the
-  # aws_route53_record resource actually issues (never CREATE). This still lets one Trial Org's
-  # task touch another Trial Org's record under the same pattern — full per-Trial-Org isolation
-  # would need a per-Trial-Org IAM identity or an identity check ahead of the DNS change, which is
-  # out of scope here.
+  # Per-Trial-Org DNS record under the shared zone, scoped to the exact record name this
+  # session's DnsRecordName tag names (issue #125) rather than the *.<root_domain>/
+  # *.<dev_subdomain> hostname patterns previously used - Route53 record sets carry no
+  # aws:ResourceTag of their own to condition on, so the state machine instead computes the one
+  # record this invocation is allowed to touch (hosting_admin's provisioner, from the Trial
+  # Org's own dns_subdomain_label) and passes it in as a session tag, the same way TrialOrgId is
+  # passed for the ABAC statement above. One Trial Org's RunTofu invocation can no longer touch
+  # another Trial Org's record under the same hostname pattern (CodeRabbit, PR #124). Still
+  # narrowed to record type A and the UPSERT/DELETE actions the aws_route53_record resource
+  # actually issues (never CREATE).
   statement {
     sid       = "ManageTrialOrgDnsRecords"
     effect    = "Allow"
@@ -534,9 +580,9 @@ data "aws_iam_policy_document" "ecs_task" {
     resources = [aws_route53_zone.root.arn]
 
     condition {
-      test     = "ForAllValues:StringLike"
+      test     = "ForAllValues:StringEquals"
       variable = "route53:ChangeResourceRecordSetsNormalizedRecordNames"
-      values   = ["*.${var.root_domain}", "*.${var.dev_subdomain}"]
+      values   = ["$${aws:PrincipalTag/DnsRecordName}"]
     }
     condition {
       test     = "Null"
@@ -573,8 +619,8 @@ data "aws_iam_policy_document" "ecs_task" {
   }
 }
 
-resource "aws_iam_role_policy" "ecs_task" {
-  name   = "${var.environment}-tofu-runner-task"
-  role   = aws_iam_role.ecs_task.id
-  policy = data.aws_iam_policy_document.ecs_task.json
+resource "aws_iam_role_policy" "trial_org_execution" {
+  name   = "${var.environment}-trial-org-execution"
+  role   = aws_iam_role.trial_org_execution.id
+  policy = data.aws_iam_policy_document.trial_org_execution.json
 }

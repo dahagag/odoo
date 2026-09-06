@@ -27,6 +27,12 @@ _DOMAIN_RE = re.compile(
     r'^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$',
 )
 
+# Matches infra/modules/trial_org/variables.tf's own trial_org_subdomain_label validation regex
+# exactly, so a value accepted here can never fail tofu's own variable validation, and dns_
+# subdomain_label's derived default (_slugify_dns_label below) can never produce a value this
+# rejects.
+_DNS_LABEL_RE = re.compile(r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$')
+
 # Valid lifecycle actions as (source states, target state) pairs, keyed by action name. Mirrors
 # the ticket's "issued -> active -> suspended -> active -> destroyed" sequence: Issue is one-way
 # from issued, Suspend and Wake move back and forth between active and suspended, and
@@ -48,6 +54,12 @@ CONFIG_PARAM_STATE_MACHINE_ARN = 'hosting_admin.aws_state_machine_arn'
 CONFIG_PARAM_AWS_REGION = 'hosting_admin.aws_region'
 CONFIG_PARAM_BASE_AMI_ID = 'hosting_admin.base_ami_id'
 CONFIG_PARAM_TOFU_MODULE_GIT_SHA = 'hosting_admin.tofu_module_git_sha'
+# The domain suffix (e.g. "method.factory1.io" or "dev.method.factory1.io") this Platform
+# instance's configured foundation deployment issues Trial Orgs under - whichever of
+# infra/foundation's two wildcard domains (var.root_domain / var.dev_subdomain) this environment
+# actually uses. Combined with a Trial Org's own dns_subdomain_label to compute the exact
+# Route53 record name that invocation's IAM session tag scopes DNS mutations to (issue #125).
+CONFIG_PARAM_DNS_DOMAIN_SUFFIX = 'hosting_admin.dns_domain_suffix'
 
 # The two invitation paths ADR-0026 describes, shared with crm_methodology's action_issue_trial
 # (the only other place this needs to be validated against) so the two never drift independently.
@@ -102,6 +114,16 @@ class HostingTrialOrg(models.Model):
         required=True,
         help="The prospect's email domain this Trial Org is provisioned for. Every Seat "
              "invite must match it.",
+    )
+    dns_subdomain_label = fields.Char(
+        string="DNS Label",
+        help="DNS label this Trial Org's instance is reachable under, e.g. \"acme-widgets\" "
+             "for acme-widgets.<domain> (infra/modules/trial_org's own "
+             "trial_org_subdomain_label input). Defaults to a slugified Org Name if left "
+             "blank on create - distinct from the numeric trial_org_id, since the module's "
+             "hostname convention doesn't embed it, which is exactly why the per-execution "
+             "DNS IAM isolation (issue #125) keys off this field's exact value via a session "
+             "tag rather than off trial_org_id.",
     )
     seat_cap = fields.Integer(
         string="Seat Cap", required=True, default=5,
@@ -242,6 +264,16 @@ class HostingTrialOrg(models.Model):
                     domain=trial_org.prospect_domain,
                 ))
 
+    @api.constrains('dns_subdomain_label')
+    def _check_dns_subdomain_label(self):
+        for trial_org in self:
+            if not _DNS_LABEL_RE.fullmatch(trial_org.dns_subdomain_label or ''):
+                raise ValidationError(_(
+                    "%(label)r is not a valid DNS label (lowercase letters, digits and "
+                    "internal hyphens only, at most 63 characters).",
+                    label=trial_org.dns_subdomain_label,
+                ))
+
     @api.model_create_multi
     def create(self, vals_list):
         """Reject a caller-supplied ``state`` on create - ``readonly=True`` only hides the
@@ -253,7 +285,21 @@ class HostingTrialOrg(models.Model):
                     raise AccessError(_(
                         "Trial Org state cannot be set directly; it can only change through "
                         "its lifecycle actions (Issue, Suspend, Wake, Auto-Destroy)."))
+        for vals in vals_list:
+            if not vals.get('dns_subdomain_label'):
+                vals['dns_subdomain_label'] = self._slugify_dns_label(vals.get('name') or '')
         return super().create(vals_list)
+
+    @staticmethod
+    def _slugify_dns_label(name):
+        """Derive a dns_subdomain_label default from ``name`` when it isn't supplied
+        explicitly: lowercase, runs of characters outside [a-z0-9] collapsed to a single
+        hyphen, leading/trailing hyphens stripped, capped at 63 characters
+        (infra/modules/trial_org's own DNS label limit). Never raises - an empty or
+        entirely-non-alphanumeric name just derives an empty string, caught by
+        _check_dns_subdomain_label's own constraint like any other invalid value."""
+        slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+        return slug[:63].rstrip('-')
 
     def write(self, vals):
         """Reject a caller-supplied ``state`` on write unless it comes from
@@ -278,6 +324,7 @@ class HostingTrialOrg(models.Model):
             state_machine_arn=state_machine_arn,
             base_ami_id=ICP.get_param(CONFIG_PARAM_BASE_AMI_ID),
             tofu_module_git_sha=ICP.get_param(CONFIG_PARAM_TOFU_MODULE_GIT_SHA),
+            dns_domain_suffix=ICP.get_param(CONFIG_PARAM_DNS_DOMAIN_SUFFIX),
             region_name=ICP.get_param(CONFIG_PARAM_AWS_REGION),
         )
 

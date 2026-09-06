@@ -156,6 +156,12 @@ variable "lambda_invoke_timeout_seconds" {
   default     = 60
 }
 
+variable "sts_assume_role_timeout_seconds" {
+  type        = number
+  description = "TimeoutSeconds on the AssumeTrialOrgExecutionRole Task state (issue #125) that scopes the ECS tofu-runner task's credentials down to the one Trial Org (and DNS record) its invocation targets, before RunTofu launches it."
+  default     = 30
+}
+
 variable "lock_retry_max_attempts" {
   type        = number
   description = "MaxAttempts for AcquireLock's own Retry entry when the lock is already held (distinct from sfn_retry_max_attempts, which covers unexpected/transient errors on every Task state)."

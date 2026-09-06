@@ -64,3 +64,23 @@ class TestTrialOrgValidation(TransactionCase):
         self.assertEqual(trial_org.state, 'issued')
         self.assertFalse(trial_org.ami_id)
         self.assertFalse(trial_org.tofu_module_git_sha)
+
+    def test_dns_subdomain_label_defaults_to_a_slugified_name(self):
+        trial_org = self._create(name="Acme Widgets, Inc.")
+        self.assertEqual(trial_org.dns_subdomain_label, "acme-widgets-inc")
+
+    def test_dns_subdomain_label_explicit_value_is_kept(self):
+        trial_org = self._create(dns_subdomain_label="acme-custom")
+        self.assertEqual(trial_org.dns_subdomain_label, "acme-custom")
+
+    def test_dns_subdomain_label_with_invalid_characters_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            self._create(dns_subdomain_label="Acme_Corp!")
+
+    def test_dns_subdomain_label_with_leading_hyphen_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            self._create(dns_subdomain_label="-acme")
+
+    def test_dns_subdomain_label_too_long_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            self._create(dns_subdomain_label="a" * 64)

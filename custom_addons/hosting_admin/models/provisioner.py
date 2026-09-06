@@ -90,13 +90,14 @@ class AwsProvisioner(Provisioner):
     """
 
     def __init__(self, state_machine_arn, base_ami_id=None, tofu_module_git_sha=None,
-                 client=None, region_name=None):
+                 dns_domain_suffix=None, client=None, region_name=None):
         if not state_machine_arn:
             error_message = "AwsProvisioner requires a state_machine_arn."
             raise ValueError(error_message)
         self._state_machine_arn = state_machine_arn
         self._base_ami_id = base_ami_id
         self._tofu_module_git_sha = tofu_module_git_sha
+        self._dns_domain_suffix = dns_domain_suffix
         self._client = client
         self._region_name = region_name
 
@@ -115,6 +116,7 @@ class AwsProvisioner(Provisioner):
             'ami_id': self._require_module_config('base_ami_id', self._base_ami_id),
             'module_git_sha': self._require_module_config(
                 'tofu_module_git_sha', self._tofu_module_git_sha),
+            'dns_record_name': self._dns_record_name(trial_org),
         })
         # The AMI id and the module's git SHA are already known here - hosting_admin is telling
         # the per-trial OpenTofu module which of each to use - but the execution can still fail
@@ -152,6 +154,7 @@ class AwsProvisioner(Provisioner):
         self._start_execution(trial_org, job_id, 'destroy', extra_input={
             'ami_id': trial_org.ami_id or trial_org.pending_ami_id,
             'module_git_sha': trial_org.tofu_module_git_sha or trial_org.pending_tofu_module_git_sha,
+            'dns_record_name': self._dns_record_name(trial_org),
         })
 
     def check_status(self, trial_org):
@@ -324,6 +327,17 @@ class AwsProvisioner(Provisioner):
         unqualified_state_machine_arn = ':'.join(self._state_machine_arn.split(':')[:7])
         return (unqualified_state_machine_arn.replace(':stateMachine:', ':execution:')
                 + f":{execution_name}")
+
+    def _dns_record_name(self, trial_org):
+        """The exact Route53 record name (``trial_org.dns_subdomain_label`` + the configured
+        domain suffix) this execution's RunTofu invocation is allowed to mutate - issue #125's
+        per-Trial-Org DNS IAM isolation. Passed as execution input so the state machine's
+        AssumeTrialOrgExecutionRole step (infra/foundation/state_machine.asl.json.tftpl) can
+        carry it as a session tag: Route53 record sets have no aws:ResourceTag of their own to
+        condition on, so the exact expected name is what infra/foundation/iam.tf's
+        ManageTrialOrgDnsRecords statement matches against instead."""
+        domain_suffix = self._require_module_config('dns_domain_suffix', self._dns_domain_suffix)
+        return f"{trial_org.dns_subdomain_label}.{domain_suffix}"
 
     @staticmethod
     def _require_module_config(name, value):
