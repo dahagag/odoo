@@ -37,6 +37,17 @@
         <field name="value" eval="(DateTime.today() - relativedelta(days=5)).strftime('%Y-%m-%d')"/>
     </record>
 
+    <!-- #174: "localhost" so the asleep/Wake-Up page (controllers/asleep.py, models/ir_http.py)
+         is actually explorable in a local walkthrough - real browsers resolve any
+         "*.localhost" host to loopback on their own (RFC 6761), so
+         http://falcon-logistics-trial.localhost:8069/ reaches this same dev stack with no
+         hosts-file edit needed, landing on the asleep page since Falcon Logistics Trial below
+         is suspended. -->
+    <record id="hosting_admin_demo_config_dns_domain_suffix" model="ir.config_parameter">
+        <field name="key">hosting_admin.dns_domain_suffix</field>
+        <field name="value">localhost</field>
+    </record>
+
     <!-- ================= Trial Orgs (issued from crm_methodology's own demo Opportunities) ================= -->
 
     <record id="hosting_admin_demo_trial_org_nimbus" model="hosting.trial.org">

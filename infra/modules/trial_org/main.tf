@@ -162,8 +162,27 @@ resource "aws_eip_association" "trial_org" {
 }
 
 # ---------------------------------------------------------------------------
-# DNS record
+# DNS record + asleep-page failover (ADR-0030, #174)
+#
+# Without asleep_page_failover_ips configured, this is exactly the plain A record it always
+# was. Once it is, the health check below turns "instance stopped" (Suspend, or any other
+# outage) into "Route53 answers this Trial Org's own domain with the Platform instance's IP
+# instead" - hosting_admin's asleep-page controller then takes over by Host header
+# (custom_addons/hosting_admin/controllers/asleep.py, models/ir_http.py).
 # ---------------------------------------------------------------------------
+
+resource "aws_route53_health_check" "trial_org" {
+  count = local.asleep_page_failover_enabled ? 1 : 0
+
+  ip_address        = aws_eip.trial_org.public_ip
+  port              = 443
+  type              = "HTTPS"
+  resource_path     = "/"
+  failure_threshold = var.health_check_failure_threshold
+  request_interval  = var.health_check_request_interval
+
+  tags = merge(local.tags, { Name = "trial-org-${var.trial_org_id}" })
+}
 
 resource "aws_route53_record" "trial_org" {
   zone_id = var.route53_zone_id
@@ -171,4 +190,35 @@ resource "aws_route53_record" "trial_org" {
   type    = "A"
   ttl     = 300
   records = [aws_eip.trial_org.public_ip]
+
+  # set_identifier/health_check_id require a routing policy to accompany them (AWS rejects one
+  # without the other) - all three stay null together when failover isn't configured, which is
+  # exactly what makes this a plain, non-failover record in that case.
+  set_identifier  = local.asleep_page_failover_enabled ? "primary" : null
+  health_check_id = local.asleep_page_failover_enabled ? aws_route53_health_check.trial_org[0].id : null
+
+  dynamic "failover_routing_policy" {
+    for_each = local.asleep_page_failover_enabled ? [1] : []
+    content {
+      type = "PRIMARY"
+    }
+  }
+}
+
+resource "aws_route53_record" "trial_org_asleep_failover" {
+  count = local.asleep_page_failover_enabled ? 1 : 0
+
+  zone_id        = var.route53_zone_id
+  name           = local.domain
+  type           = "A"
+  ttl            = 300
+  records        = var.asleep_page_failover_ips
+  set_identifier = "asleep-failover"
+
+  # No health_check_id here by design (AWS's own documented Active-Passive pattern): with none
+  # attached, Route53 treats the SECONDARY record as always healthy, which is correct here -
+  # this record's target is the Platform instance, not something this module can heath-check.
+  failover_routing_policy {
+    type = "SECONDARY"
+  }
 }

@@ -3,6 +3,7 @@ from . import (
     test_cost_dashboard_snapshot,
     test_cost_dashboard_snapshot_concurrency,
     test_cost_explorer_client,
+    test_trial_org_asleep_page,
     test_trial_org_audit_trail,
     test_trial_org_aws_provisioner,
     test_trial_org_dns_label_transition_concurrency,

@@ -57,6 +57,11 @@
           "Variable": "$.action",
           "StringEquals": "wake",
           "Next": "WakeInstance"
+        },
+        {
+          "Variable": "$.action",
+          "StringEquals": "destroy",
+          "Next": "SnapshotBeforeDestroy"
         }
       ],
       "Default": "AssumeTrialOrgExecutionRole"
@@ -153,6 +158,37 @@
         }
       ],
       "Next": "ReleaseLock"
+    },
+
+    "SnapshotBeforeDestroy": {
+      "Comment": "Auto-Destroy always leaves a short-lived EBS snapshot before RunTofu's `tofu destroy` runs (#174, hosting.trial.org.snapshot_retention_until) - its own Task state, same as SuspendInstance/WakeInstance above, since a snapshot taken at this exact moment is a runtime action tied to one specific destroy, not something a declarative OpenTofu resource in modules/trial_org could express (ADR-0021's 'OpenTofu must never contend with the runtime', applied to a third action). Resolves the instance by its TrialOrgId tag rather than an instance id from Odoo, same reason ec2_power_control's IAM policy is tag-scoped instead of instance-ARN-scoped.",
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${snapshot_manager_lambda_arn}",
+        "Payload": {
+          "trial_org_id.$": "$.trial_org_id",
+          "retention_days.$": "$.snapshot_retention_days"
+        }
+      },
+      "ResultPath": "$.snapshot_result",
+      "TimeoutSeconds": ${lambda_invoke_timeout_seconds},
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "MaxAttempts": ${retry_max_attempts},
+          "BackoffRate": ${retry_backoff_rate},
+          "IntervalSeconds": ${retry_interval_seconds}
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "ReleaseLockOnFailure"
+        }
+      ],
+      "Next": "AssumeTrialOrgExecutionRole"
     },
 
     "RunTofu": {

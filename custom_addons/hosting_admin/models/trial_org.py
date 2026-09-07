@@ -5,7 +5,7 @@ from datetime import timedelta, timezone
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
 
-from .provisioner import AwsProvisioner, StubProvisioner
+from .provisioner import SNAPSHOT_RETENTION_DAYS, AwsProvisioner, StubProvisioner
 
 # The system-wide seat cap from docs/contexts/hosting/CONTEXT.md's Seat entry: "The count is
 # set per-trial at issuance (system-wide max 25)". A single Trial Org's own seat_cap may be
@@ -15,10 +15,6 @@ SYSTEM_WIDE_SEAT_CAP = 25
 # The idle timeout docs/adr/0014 sets for a Trial Org's compute: "stopped after an idle timeout
 # (~30 min)". Checked by a scheduled action (_cron_suspend_idle), never inline on request.
 IDLE_TIMEOUT_MINUTES = 30
-
-# The snapshot retention window docs/contexts/hosting/CONTEXT.md's Auto-Destroy entry sets: "A
-# short-lived (7-day) database snapshot is retained afterward in case of revival."
-SNAPSHOT_RETENTION_DAYS = 7
 
 # A pragmatic hostname/domain check (labels of letters/digits/hyphens, no leading/trailing
 # hyphen, at least one dot) - good enough to reject an obviously-malformed prospect domain
@@ -342,6 +338,27 @@ class HostingTrialOrg(models.Model):
                 raise UserError(_(
                     "The DNS label cannot change once a Trial Org has been issued."))
         return super().write(vals)
+
+    @api.model
+    def _trial_org_for_host(self, host):
+        """Resolve the Trial Org (if any) whose ``dns_subdomain_label`` matches ``host`` under
+        the configured domain suffix (``CONFIG_PARAM_DNS_DOMAIN_SUFFIX``, issue #125) - the
+        single resolution rule shared by the asleep-page controller and ``IrHttp``'s host-based
+        redirect (ADR-0030, ``models/ir_http.py``), so a Host header a customer's browser
+        actually sends is only ever matched one way. Returns an empty recordset (never raises)
+        for a host that doesn't end in the configured suffix, an unknown label, or when the
+        suffix itself isn't configured - a public HTTP handler should 404, not error, on a Host
+        header it doesn't recognize."""
+        if not host:
+            return self.browse()
+        domain_suffix = self.env['ir.config_parameter'].sudo().get_param(
+            CONFIG_PARAM_DNS_DOMAIN_SUFFIX)
+        if not domain_suffix or not host.endswith(f'.{domain_suffix}'):
+            return self.browse()
+        label = host[:-(len(domain_suffix) + 1)]
+        if not label:
+            return self.browse()
+        return self.sudo().search([('dns_subdomain_label', '=', label)], limit=1)
 
     def _get_provisioner(self):
         """Return the ``Provisioner`` implementation to call at each lifecycle transition:

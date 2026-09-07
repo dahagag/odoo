@@ -5,6 +5,12 @@ IAM instance profile, its own CloudWatch log group + subscription filter (target
 log-forwarding Lambda declared once in `../../foundation`), its security group, and its DNS
 record. See ADR-0016, ADR-0021, ADR-0023.
 
+The DNS record optionally becomes a Route53 failover pair once `asleep_page_failover_ips` is set
+(ADR-0030, #174): a health check on the Trial Org's own EIP, and a SECONDARY record pointing at
+the Platform instance's own ingress, so a suspended (or otherwise unhealthy) Trial Org's domain
+serves `hosting_admin`'s asleep/Wake-Up page instead of timing out. Left unset by default, since
+that Platform ingress doesn't exist yet (ADR-0015) - a Trial Org gets today's plain record.
+
 This module has no backend or provider block of its own — it is not a root module. Nothing in
 this repository invokes it yet; per ticket #113 it is authored so a later ticket (tracked under
 #106) can add the thin root-module wrapper the ECS `tofu`-runner task (declared in

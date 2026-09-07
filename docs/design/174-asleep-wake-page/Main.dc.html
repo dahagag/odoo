@@ -1,0 +1,411 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    :root {
+      --o-brand: #71639e;
+      --o-brand-hover: #5a4e80;
+      --o-brand-active-bg: #cbc4e0;
+      --o-success: #28a745;
+      --o-success-hover: #1f7a35;
+      --o-success-bg: #e3f5e8;
+      --o-gray-100: #f8f9fa;
+      --o-gray-300: #dee2e6;
+      --o-gray-600: #6c757d;
+      --o-gray-900: #212529;
+      --o-card-bg: #ffffff;
+      --o-radius: 4px;
+      --o-radius-lg: 6px;
+      --o-spacer: 16px;
+      --o-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Ubuntu, "Noto Sans", Arial, sans-serif;
+    }
+    /* Approximate Odoo's dark webclient palette (compiled at build time from
+       $o-webclient-color-scheme: dark, not a fixed set of published hex tokens - these values
+       are a close reading of that theme's overall navy/gray feel, not lifted verbatim from a
+       compiled stylesheet). Brand/success hues stay the same; only surface/text tokens shift. */
+    .o_asleep_page[data-theme="dark"] {
+      --o-brand-active-bg: #3f3a55;
+      /* The light theme's saturated #28a745 read as a neon accent against a dark surface -
+         desaturated and slightly muted for dark mode, same hue family. */
+      --o-success: #4caf7a;
+      --o-success-hover: #3d9163;
+      --o-success-bg: #203028;
+      --o-gray-100: #1b1b26;
+      --o-gray-300: #383846;
+      --o-gray-600: #a7a7b8;
+      --o-gray-900: #f0f0f3;
+      --o-card-bg: #24242f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--o-font);
+      font-size: 14px;
+      color: var(--o-gray-900);
+      background: var(--o-gray-100);
+    }
+    a { color: var(--o-brand); }
+    a:hover { color: var(--o-brand-hover); }
+
+    .o_asleep_page {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: calc(var(--o-spacer) * 2);
+      background:
+        radial-gradient(circle at 18% 20%, rgba(113, 99, 158, 0.10) 0%, rgba(113, 99, 158, 0) 45%),
+        radial-gradient(circle at 82% 78%, rgba(113, 99, 158, 0.08) 0%, rgba(113, 99, 158, 0) 45%),
+        var(--o-gray-100);
+      transition: background-color .2s ease;
+    }
+
+    .o_asleep_theme_toggle {
+      position: absolute;
+      top: var(--o-spacer);
+      right: var(--o-spacer);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--o-card-bg);
+      border: 1px solid var(--o-gray-300);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: var(--o-gray-600);
+      cursor: pointer;
+      font-family: var(--o-font);
+    }
+    .o_asleep_theme_toggle svg { width: 14px; height: 14px; }
+
+    .o_asleep_card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--o-card-bg);
+      border: 1px solid var(--o-gray-300);
+      border-radius: var(--o-radius-lg);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      padding: calc(var(--o-spacer) * 2) calc(var(--o-spacer) * 1.75);
+      text-align: center;
+      transition: background-color .2s ease, border-color .2s ease;
+    }
+
+    .o_asleep_icon_ring {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto var(--o-spacer);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color .2s ease;
+    }
+    .o_asleep_icon_ring svg { width: 36px; height: 36px; transition: color .2s ease; }
+
+    .o_asleep_org_name {
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--o-gray-600);
+      margin: 0 0 6px;
+    }
+
+    .o_asleep_headline {
+      font-size: 20px;
+      font-weight: 500;
+      line-height: 1.3;
+      margin: 0 0 10px;
+      color: var(--o-gray-900);
+    }
+
+    .o_asleep_copy {
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--o-gray-600);
+      margin: 0 0 calc(var(--o-spacer) * 1.5);
+    }
+
+    .o_asleep_btn {
+      appearance: none;
+      border: 1px solid var(--o-brand);
+      border-radius: var(--o-radius);
+      background: var(--o-brand);
+      color: #ffffff;
+      font-family: var(--o-font);
+      font-size: 14px;
+      font-weight: 500;
+      padding: 10px calc(var(--o-spacer) * 1.5);
+      width: 100%;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background-color .15s ease, border-color .15s ease;
+    }
+    .o_asleep_btn:hover { background: var(--o-brand-hover); border-color: var(--o-brand-hover); }
+    .o_asleep_btn:disabled {
+      background: var(--o-brand);
+      opacity: .85;
+      cursor: default;
+    }
+
+    .o_asleep_btn_success,
+    .o_asleep_btn_success:link,
+    .o_asleep_btn_success:visited {
+      border-color: var(--o-success);
+      background: var(--o-success);
+      color: #ffffff;
+    }
+    .o_asleep_btn_success:hover {
+      background: var(--o-success-hover);
+      border-color: var(--o-success-hover);
+      color: #ffffff;
+    }
+
+    .o_asleep_progress {
+      text-align: left;
+    }
+
+    .o_asleep_progress_labels {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+      font-size: 13px;
+      color: var(--o-gray-900);
+    }
+    .o_asleep_progress_pct {
+      font-weight: 500;
+      color: var(--o-brand);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .o_asleep_progress_track {
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--o-gray-300);
+      overflow: hidden;
+    }
+    .o_asleep_progress_fill {
+      height: 100%;
+      border-radius: 999px;
+      background: var(--o-brand);
+      transition: width 0.25s linear;
+    }
+
+    .o_asleep_step_note {
+      margin: 10px 0 0;
+      font-size: 13px;
+      color: var(--o-gray-900);
+    }
+
+    .o_asleep_waking_note {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--o-gray-600);
+    }
+
+    .o_asleep_restart_demo {
+      display: block;
+      margin-top: calc(var(--o-spacer) * 1.25);
+      font-size: 12px;
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      text-decoration: underline;
+      color: var(--o-gray-600);
+      font-family: var(--o-font);
+    }
+    .o_asleep_restart_demo:hover { color: var(--o-brand); }
+
+    .o_asleep_footer {
+      margin-top: calc(var(--o-spacer) * 1.5);
+      font-size: 12px;
+      color: var(--o-gray-600);
+    }
+  </style>
+</helmet>
+
+<div class="o_asleep_page" data-theme="{{themeAttr}}">
+  <button type="button" class="o_asleep_theme_toggle" onClick="{{onToggleTheme}}">
+    <svg style="{{sunIconStyle}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="4"></circle>
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
+    </svg>
+    <svg style="{{moonIconStyle}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 14.5A8 8 0 1 1 9.5 4a6 6 0 0 0 10.5 10.5Z"></path>
+    </svg>
+    <span>{{themeToggleLabel}}</span>
+  </button>
+
+  <div class="o_asleep_card">
+    <div class="o_asleep_icon_ring" style="{{iconRingStyle}}">
+      <svg style="{{sleepIconStyle}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"></path>
+        <path d="M16.5 3.5 18 5"></path>
+        <path d="M18.5 6.5 20 8"></path>
+        <path d="M19.8 2.7 21 4"></path>
+      </svg>
+      <svg style="{{awakeIconStyle}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 6 9 17l-5-5"></path>
+      </svg>
+    </div>
+
+    <p class="o_asleep_org_name">{{orgName}}</p>
+    <h1 class="o_asleep_headline">{{headline}}</h1>
+    <p class="o_asleep_copy">{{copy}}</p>
+
+    <button type="button" class="o_asleep_btn" style="{{idleDisplay}}" onClick="{{onWake}}">
+      <span>Wake Up</span>
+    </button>
+
+    <div class="o_asleep_progress" style="{{wakingDisplay}}">
+      <div class="o_asleep_progress_labels">
+        <span>{{stepLabel}}</span>
+        <span class="o_asleep_progress_pct">{{progressLabel}}</span>
+      </div>
+      <div class="o_asleep_progress_track">
+        <div class="o_asleep_progress_fill" style="{{progressFillStyle}}"></div>
+      </div>
+      <p class="o_asleep_step_note">{{stepNote}}</p>
+      <p class="o_asleep_waking_note">This can take a minute or two &mdash; feel free to check back.</p>
+    </div>
+
+    <a class="o_asleep_btn o_asleep_btn_success" style="{{awakeDisplay}}" href="{{instanceUrl}}">
+      <span>Go to your instance &rarr;</span>
+    </a>
+
+    <p class="o_asleep_footer">Idle trials suspend automatically to save cost &mdash; nothing was lost.</p>
+
+    <button type="button" class="o_asleep_restart_demo" style="{{awakeDisplay}}" onClick="{{onRestartDemo}}">Restart demo</button>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "orgName": {"editor": "text", "default": "Acme Widgets Trial"},
+  "instanceUrl": {"editor": "text", "default": "https://acme-widgets.dev.method.factory1.io"}
+}'>
+// Milestone model standing in for AwsProvisioner.get_audit_trail()'s existing per-step
+// Step Functions execution history (docs/adr/0022) - a real Wake Up has no smooth,
+// continuously-reported percentage to poll, only these discrete state transitions,
+// so the honest progress bar advances step-by-step rather than on a fake linear timer.
+// endsAt is the cumulative % at which that step completes, roughly matching each infra
+// phase's typical share of a wake (lock/release negligible, EC2 start dominates,
+// then OS/app boot, then the final health-check confirmation).
+const WAKE_STEPS = [
+  { endsAt: 5, label: 'Preparing to wake your trial…', note: 'Getting everything ready to bring your instance back online.' },
+  { endsAt: 55, label: "Starting your trial's server…", note: 'Powering your instance back on.' },
+  { endsAt: 88, label: 'Getting your workspace ready…', note: 'Your server is booting up and starting your apps.' },
+  { endsAt: 100, label: 'Almost there…', note: "Just confirming your trial is responding." },
+];
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { phase: 'idle', progress: 0, dark: false };
+    this._interval = null;
+  }
+
+  static _stepForProgress(progress) {
+    return WAKE_STEPS.find((step) => progress < step.endsAt) || WAKE_STEPS[WAKE_STEPS.length - 1];
+  }
+
+  componentWillUnmount() {
+    this._stopProgress();
+  }
+
+  _stopProgress() {
+    if (this._interval) {
+      clearInterval(this._interval);
+      this._interval = null;
+    }
+  }
+
+  _wake() {
+    this._stopProgress();
+    this.setState({ phase: 'waking', progress: 0 });
+    // Sample-data timer standing in for polling the real Wake Up job's status from AWS
+    // (Step Functions execution progress) - uneven increments so it doesn't read as a fake
+    // linear fill, and it always reaches 100 before flipping to 'awake'. Slow enough (~25s
+    // full run) that each of the four WAKE_STEPS milestones is actually readable for review,
+    // not just a flash.
+    this._interval = setInterval(() => {
+      const next = Math.min(100, this.state.progress + (0.6 + Math.random() * 1.2));
+      if (next >= 100) {
+        this._stopProgress();
+        this.setState({ phase: 'awake', progress: 100 });
+      } else {
+        this.setState({ progress: next });
+      }
+    }, 300);
+  }
+
+  _restartDemo() {
+    this._stopProgress();
+    this.setState({ phase: 'idle', progress: 0 });
+  }
+
+  _toggleTheme() {
+    this.setState({ dark: !this.state.dark });
+  }
+
+  renderVals() {
+    const phase = this.state.phase;
+    const progress = Math.round(this.state.progress);
+    const isIdle = phase === 'idle';
+    const isWaking = phase === 'waking';
+    const isAwake = phase === 'awake';
+
+    const copyByPhase = {
+      idle: "It suspended itself after a while idle, to save cost. Click Wake Up and it will be back in about a minute or two.",
+      waking: "Bringing your trial's instance back online. Hang tight.",
+      awake: 'Your trial is back up and running — right where you left it.',
+    };
+    const headlineByPhase = {
+      idle: 'This trial is taking a nap',
+      waking: 'Waking up your trial',
+      awake: "You're all set!",
+    };
+    const step = Component._stepForProgress(progress);
+
+    return {
+      orgName: this.props.orgName,
+      instanceUrl: this.props.instanceUrl,
+      headline: headlineByPhase[phase],
+      copy: copyByPhase[phase],
+      progressLabel: `${progress}%`,
+      progressFillStyle: `width:${progress}%`,
+      stepLabel: step.label,
+      stepNote: step.note,
+      idleDisplay: isIdle ? '' : 'display:none',
+      wakingDisplay: isWaking ? '' : 'display:none',
+      awakeDisplay: isAwake ? '' : 'display:none',
+      sleepIconStyle: isAwake ? 'display:none' : '',
+      awakeIconStyle: isAwake ? '' : 'display:none',
+      iconRingStyle: isAwake
+        ? 'background:var(--o-success-bg);color:var(--o-success)'
+        : 'background:var(--o-brand-active-bg);color:var(--o-brand)',
+      themeAttr: this.state.dark ? 'dark' : 'light',
+      themeToggleLabel: this.state.dark ? 'Light' : 'Dark',
+      sunIconStyle: this.state.dark ? 'display:none' : '',
+      moonIconStyle: this.state.dark ? '' : 'display:none',
+      onWake: () => this._wake(),
+      onRestartDemo: () => this._restartDemo(),
+      onToggleTheme: () => this._toggleTheme(),
+    };
+  }
+}
+</script>
+</body>
+</html>

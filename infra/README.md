@@ -18,7 +18,8 @@ infra/
 │                       AMI reference, ECS cluster, Route53 zone, ACM wildcard cert, IAM roles,
 │                       the Trial Org lifecycle Step Functions state machine, its DynamoDB lock
 │                       table, the ECS task definition that runs `tofu`, the EventBridge
-│                       stale-lock cleanup rule, and the one shared log-forwarding Lambda.
+│                       stale-lock and snapshot-cleanup rules, and the shared log-forwarding,
+│                       auto-destroy-snapshot, and snapshot-cleanup Lambdas.
 │                       Applied once (and on foundation changes), not per Trial Org.
 └── modules/
     └── trial_org/       Reusable module (not a root module — nothing here runs `tofu` against it
