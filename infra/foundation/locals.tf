@@ -31,7 +31,7 @@ locals {
   # dividing by zero.
   run_tofu_retry_wait_seconds = var.sfn_retry_backoff_rate == 1 ? (
     var.sfn_retry_interval_seconds * var.sfn_retry_max_attempts
-  ) : (
+    ) : (
     var.sfn_retry_interval_seconds * (pow(var.sfn_retry_backoff_rate, var.sfn_retry_max_attempts) - 1) / (var.sfn_retry_backoff_rate - 1)
   )
 
