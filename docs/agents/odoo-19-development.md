@@ -55,6 +55,21 @@ Runtime behavior and established addon style outrank a style-only rewrite.
 - Use Hoot for isolated frontend logic and an `HttpCase` tour when Python and browser behavior must work together.
 - Run focused tests through `scripts/dev.ps1 test <module>` or `scripts/dev.sh test <module>` before broader selections.
 
+## Infra changes (OpenTofu)
+
+A ticket that touches `infra/` (a `.tf`/`.tftpl` file, or a `lambda_src/*/handler.py`) is not done
+until the same checks CI's `infra-checks` job runs have been run locally first — don't rely on
+pushing to a PR to discover a formatting or validation failure:
+
+- `tofu fmt -check -recursive infra/` and, per directory (`infra/bootstrap`, `infra/foundation`,
+  `infra/modules/trial_org`, `infra/modules/trial_org/examples/validate`), `tofu init
+  -backend=false -input=false && tofu validate` (see `infra/README.md`'s "Running locally"
+  section). If the `tofu` CLI isn't installed in the current environment, say so explicitly
+  rather than skipping the check silently — CI's own `infra-checks` job is then the first real
+  syntax/type check this change gets, which is worth flagging in the PR description.
+- `ruff check --config ruff.toml infra/` and `interrogate --fail-under 80 infra/` — no such
+  caveat; both run anywhere Python/pip are available and have no AWS/tofu dependency.
+
 ## Localization strings
 
 Translatable strings come from more sources than the obvious ones: Python `_(...)`, JS `_t(...)`,
