@@ -6,6 +6,8 @@ from odoo.tests import tagged
 from odoo.tests.common import BaseCase, get_db_name
 from odoo.tools import mute_logger
 
+from odoo.addons.hosting_admin.models.provisioner import StubProvisioner
+
 
 @tagged('post_install', '-at_install')
 class TestTrialOrgDnsLabelTransitionConcurrency(BaseCase):
@@ -84,6 +86,12 @@ class TestTrialOrgDnsLabelTransitionConcurrency(BaseCase):
         # reproduction of the full race is impractical here (see class docstring / issue #134),
         # so this isolates the guarantee the fix actually depends on: locking then re-reading
         # state always observes whichever transition got there first, once it has committed.
+        # _get_provisioner() returns AwsProvisioner instead of StubProvisioner whenever
+        # hosting_admin.aws_state_machine_arn happens to be configured on this database
+        # (CodeRabbit) - pin it to a deterministic stub so this test's own action_issue() call
+        # can never depend on, or attempt to reach, real AWS infrastructure.
+        self.patch(
+            self.registry['hosting.trial.org'], '_get_provisioner', lambda self: StubProvisioner())
         with self.registry.cursor() as cr0:
             env0 = api.Environment(cr0, api.SUPERUSER_ID, {})
             env0['hosting.trial.org'].browse(self.trial_org_id).action_issue()
