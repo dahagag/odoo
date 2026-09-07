@@ -19,10 +19,13 @@ resource "aws_sfn_state_machine" "trial_org_lifecycle" {
     tofu_runner_container_name      = local.tofu_runner_container_name
     tofu_runner_security_group_id   = aws_security_group.tofu_runner.id
     private_subnet_ids_json         = jsonencode(aws_subnet.private[*].id)
+    trial_org_execution_role_arn    = aws_iam_role.trial_org_execution.arn
 
-    task_timeout_seconds          = var.sfn_task_timeout_seconds
-    ec2_power_timeout_seconds     = var.ec2_power_timeout_seconds
-    lambda_invoke_timeout_seconds = var.lambda_invoke_timeout_seconds
+    task_timeout_seconds                         = var.sfn_task_timeout_seconds
+    ec2_power_timeout_seconds                    = var.ec2_power_timeout_seconds
+    lambda_invoke_timeout_seconds                = var.lambda_invoke_timeout_seconds
+    sts_assume_role_timeout_seconds              = var.sts_assume_role_timeout_seconds
+    trial_org_execution_session_duration_seconds = var.trial_org_execution_session_duration_seconds
 
     retry_max_attempts          = var.sfn_retry_max_attempts
     retry_backoff_rate          = var.sfn_retry_backoff_rate
@@ -39,6 +42,20 @@ resource "aws_sfn_state_machine" "trial_org_lifecycle" {
     # logging itself (level = "ALL") is unaffected.
     include_execution_data = false
     level                  = "ALL"
+  }
+
+  lifecycle {
+    # Blocks `tofu apply` if a future change to RunTofu's own timeout/retry variables reopens the
+    # expired-credentials gap trial_org_execution_session_duration_seconds's description warns
+    # about (CodeRabbit, PR #171). A `precondition` rather than a `check` block: a failed `check`
+    # assertion only emits a warning and never blocks plan/apply, which would make this guard
+    # cosmetic. A `variable` `validation` block was ruled out separately - cross-variable
+    # references there need Terraform >= 1.9, and this module's required_version (versions.tf)
+    # is >= 1.8.0.
+    precondition {
+      condition     = var.trial_org_execution_session_duration_seconds >= local.run_tofu_worst_case_seconds
+      error_message = "trial_org_execution_session_duration_seconds must cover RunTofu's worst-case total duration (sfn_task_timeout_seconds * (sfn_retry_max_attempts + 1), plus the BackoffRate-compounded IntervalSeconds waits between attempts) or a retried tofu apply can run with expired STS credentials."
+    }
   }
 }
 
