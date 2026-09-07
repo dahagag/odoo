@@ -322,12 +322,14 @@ data "aws_iam_policy_document" "trial_org_execution_trust" {
 resource "aws_iam_role" "trial_org_execution" {
   name                 = "${var.environment}-trial-org-execution"
   assume_role_policy   = data.aws_iam_policy_document.trial_org_execution_trust.json
-  max_session_duration = 3600
+  max_session_duration = var.trial_org_execution_session_duration_seconds
 }
 
 data "aws_iam_policy_document" "trial_org_execution" {
   # OpenTofu's own remote state for the per-trial module: one object per Trial Org under
-  # trial-orgs/<trial_org_id>/terraform.tfstate, plus the S3-backend DynamoDB lock table.
+  # trial-orgs/<trial_org_id>/terraform.tfstate, plus the S3-backend DynamoDB lock table. Scoped
+  # to this session's own TrialOrgId tag (CodeRabbit, PR #171): a bare "trial-orgs/*" wildcard
+  # would let a compromised Trial Org A execution read, overwrite, or delete Trial Org B's state.
   statement {
     sid    = "TofuStateBackend"
     effect = "Allow"
@@ -336,7 +338,7 @@ data "aws_iam_policy_document" "trial_org_execution" {
       "s3:PutObject",
       "s3:DeleteObject",
     ]
-    resources = ["arn:aws:s3:::${var.tofu_state_bucket}/trial-orgs/*"]
+    resources = ["arn:aws:s3:::${var.tofu_state_bucket}/trial-orgs/$${aws:PrincipalTag/TrialOrgId}/*"]
   }
 
   statement {
@@ -347,7 +349,7 @@ data "aws_iam_policy_document" "trial_org_execution" {
     condition {
       test     = "StringLike"
       variable = "s3:prefix"
-      values   = ["trial-orgs/*"]
+      values   = ["trial-orgs/$${aws:PrincipalTag/TrialOrgId}/*"]
     }
   }
 
@@ -384,11 +386,11 @@ data "aws_iam_policy_document" "trial_org_execution" {
     ]
   }
 
-  # Require TrialOrgId to be present (any value) on the instance/volume RunInstances actually
-  # creates. aws:RequestTag can't be pinned to one specific Trial Org id here since the same
-  # shared ECS task role launches every trial's instance — "Null: false" (any value present)
-  # is the tightest condition expressible without per-invocation session tags, which RunInstances
-  # itself doesn't consult the way the ABAC statements below do for reads.
+  # Require the instance/volume RunInstances actually creates to carry *this* session's own
+  # TrialOrgId, not merely any TrialOrgId (CodeRabbit, PR #171): trial_org_execution is assumed
+  # per-invocation (issue #125) and its session already carries a TrialOrgId principal tag, so
+  # aws:RequestTag can - and must - be pinned to it directly, the same ABAC pattern
+  # ManageTrialOrgEc2Existing below already uses for mutations against existing resources.
   statement {
     sid    = "RunInstancesTaggedResources"
     effect = "Allow"
@@ -400,9 +402,9 @@ data "aws_iam_policy_document" "trial_org_execution" {
       "arn:aws:ec2:${var.aws_region}:${local.account_id}:volume/*",
     ]
     condition {
-      test     = "Null"
+      test     = "StringEquals"
       variable = "aws:RequestTag/TrialOrgId"
-      values   = ["false"]
+      values   = ["$${aws:PrincipalTag/TrialOrgId}"]
     }
   }
 
@@ -414,9 +416,9 @@ data "aws_iam_policy_document" "trial_org_execution" {
     ]
     resources = ["arn:aws:ec2:${var.aws_region}:${local.account_id}:security-group/*"]
     condition {
-      test     = "Null"
+      test     = "StringEquals"
       variable = "aws:RequestTag/TrialOrgId"
-      values   = ["false"]
+      values   = ["$${aws:PrincipalTag/TrialOrgId}"]
     }
   }
 
@@ -438,6 +440,11 @@ data "aws_iam_policy_document" "trial_org_execution" {
       test     = "StringEquals"
       variable = "ec2:CreateAction"
       values   = ["RunInstances", "CreateSecurityGroup"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/TrialOrgId"
+      values   = ["$${aws:PrincipalTag/TrialOrgId}"]
     }
   }
 

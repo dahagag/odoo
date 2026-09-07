@@ -69,6 +69,7 @@
       "Parameters": {
         "RoleArn": "${trial_org_execution_role_arn}",
         "RoleSessionName.$": "States.Format('trial-{}-{}', $.trial_org_id, $.job_id)",
+        "DurationSeconds": ${trial_org_execution_session_duration_seconds},
         "Tags": [
           { "Key": "TrialOrgId", "Value.$": "$.trial_org_id" },
           { "Key": "DnsRecordName", "Value.$": "$.dns_record_name" }

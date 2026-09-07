@@ -162,6 +162,12 @@ variable "sts_assume_role_timeout_seconds" {
   default     = 30
 }
 
+variable "trial_org_execution_session_duration_seconds" {
+  type        = number
+  description = "DurationSeconds on the AssumeTrialOrgExecutionRole Task state and trial_org_execution's own max_session_duration (CodeRabbit, PR #171): RunTofu reuses the one set of STS credentials from that single AssumeRole call across every Step Functions Retry of the RunTofu Task state itself, since Task Parameters are resolved once on state entry, not re-resolved per retry. Must therefore comfortably exceed RunTofu's own worst-case duration - sfn_task_timeout_seconds * (sfn_retry_max_attempts + 1) plus the BackoffRate-compounded IntervalSeconds waits between attempts - or a later retry's AWS calls fail with an expired-token error instead of the real underlying one. The default (7200s) covers the current defaults' worst case of roughly 5,415s (3 * 1800s + 5s + 10s) with margin; recompute and raise this if any of those four variables changes."
+  default     = 7200
+}
+
 variable "lock_retry_max_attempts" {
   type        = number
   description = "MaxAttempts for AcquireLock's own Retry entry when the lock is already held (distinct from sfn_retry_max_attempts, which covers unexpected/transient errors on every Task state)."

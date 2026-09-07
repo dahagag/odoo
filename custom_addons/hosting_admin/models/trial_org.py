@@ -244,6 +244,13 @@ class HostingTrialOrg(models.Model):
         'CHECK(seat_cap > 0)',
         "Seat cap must be a positive number.",
     )
+    # One DNS label must map to exactly one Trial Org (CodeRabbit, PR #171): duplicate labels
+    # would produce the same DnsRecordName session tag (issue #125's per-Trial-Org DNS IAM
+    # isolation), letting one Trial Org's execution match and mutate another's DNS record.
+    _dns_subdomain_label_unique = models.Constraint(
+        'unique(dns_subdomain_label)',
+        "This DNS label is already in use by another Trial Org.",
+    )
 
     @api.constrains('seat_cap')
     def _check_seat_cap_within_system_wide_max(self):
@@ -304,11 +311,19 @@ class HostingTrialOrg(models.Model):
     def write(self, vals):
         """Reject a caller-supplied ``state`` on write unless it comes from
         ``_apply_transition()`` itself (signalled via ``ALLOW_STATE_WRITE_KEY``) - see that
-        key's docstring above for why ``readonly=True`` alone is not enough."""
+        key's docstring above for why ``readonly=True`` alone is not enough. Also reject a
+        ``dns_subdomain_label`` change once any record has left 'issued' (CodeRabbit, PR #171):
+        Issue's execution binds the DNS record and the assumed-role session tag (issue #125) to
+        whatever label is on the record at that moment, so changing it afterward would leave
+        Destroy targeting a record name that no longer matches what Issue actually created."""
         if 'state' in vals and not self.env.context.get(ALLOW_STATE_WRITE_KEY):
             raise AccessError(_(
                 "Trial Org state cannot be set directly; it can only change through its "
                 "lifecycle actions (Issue, Suspend, Wake, Auto-Destroy)."))
+        if 'dns_subdomain_label' in vals and any(
+                trial_org.state != 'issued' for trial_org in self):
+            raise UserError(_(
+                "The DNS label cannot change once a Trial Org has been issued."))
         return super().write(vals)
 
     def _get_provisioner(self):
