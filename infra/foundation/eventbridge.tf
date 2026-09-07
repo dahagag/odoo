@@ -29,3 +29,26 @@ resource "aws_lambda_permission" "lock_cleanup_from_eventbridge" {
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.trial_org_lifecycle_failure.arn
 }
+
+# Snapshot-retention cleanup (#174): AWS has no native TTL for ad-hoc EBS snapshots, so this
+# schedule is the only thing that ever deletes a snapshot snapshot_manager created once its
+# DeleteAfter tag has passed.
+resource "aws_cloudwatch_event_rule" "snapshot_cleanup" {
+  name                = "${var.environment}-trial-org-snapshot-cleanup"
+  description         = "Daily sweep deleting Trial Org auto-destroy EBS snapshots past their DeleteAfter tag."
+  schedule_expression = var.snapshot_cleanup_schedule_expression
+}
+
+resource "aws_cloudwatch_event_target" "snapshot_cleanup" {
+  rule      = aws_cloudwatch_event_rule.snapshot_cleanup.name
+  target_id = "snapshot-cleanup-lambda"
+  arn       = aws_lambda_function.snapshot_cleanup.arn
+}
+
+resource "aws_lambda_permission" "snapshot_cleanup_from_eventbridge" {
+  statement_id  = "AllowEventBridgeInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.snapshot_cleanup.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.snapshot_cleanup.arn
+}

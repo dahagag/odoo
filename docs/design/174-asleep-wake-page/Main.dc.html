@@ -1,0 +1,202 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    :root {
+      --o-brand: #71639e;
+      --o-brand-hover: #5a4e80;
+      --o-brand-active-bg: #cbc4e0;
+      --o-gray-100: #f8f9fa;
+      --o-gray-300: #dee2e6;
+      --o-gray-600: #6c757d;
+      --o-gray-900: #212529;
+      --o-radius: 4px;
+      --o-radius-lg: 6px;
+      --o-spacer: 16px;
+      --o-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Ubuntu, "Noto Sans", Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--o-font);
+      font-size: 14px;
+      color: var(--o-gray-900);
+      background: var(--o-gray-100);
+    }
+    a { color: var(--o-brand); }
+    a:hover { color: var(--o-brand-hover); }
+
+    .o_asleep_page {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: calc(var(--o-spacer) * 2);
+      background:
+        radial-gradient(circle at 18% 20%, rgba(113, 99, 158, 0.10) 0%, rgba(113, 99, 158, 0) 45%),
+        radial-gradient(circle at 82% 78%, rgba(113, 99, 158, 0.08) 0%, rgba(113, 99, 158, 0) 45%),
+        var(--o-gray-100);
+    }
+
+    .o_asleep_card {
+      width: 100%;
+      max-width: 420px;
+      background: #ffffff;
+      border: 1px solid var(--o-gray-300);
+      border-radius: var(--o-radius-lg);
+      box-shadow: 0 2px 8px rgba(33, 37, 41, 0.06);
+      padding: calc(var(--o-spacer) * 2) calc(var(--o-spacer) * 1.75);
+      text-align: center;
+    }
+
+    .o_asleep_icon_ring {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto var(--o-spacer);
+      border-radius: 50%;
+      background: var(--o-brand-active-bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .o_asleep_icon_ring svg { width: 36px; height: 36px; color: var(--o-brand); }
+
+    .o_asleep_org_name {
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--o-gray-600);
+      margin: 0 0 6px;
+    }
+
+    .o_asleep_headline {
+      font-size: 20px;
+      font-weight: 500;
+      line-height: 1.3;
+      margin: 0 0 10px;
+      color: var(--o-gray-900);
+    }
+
+    .o_asleep_copy {
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--o-gray-600);
+      margin: 0 0 calc(var(--o-spacer) * 1.5);
+    }
+
+    .o_asleep_btn {
+      appearance: none;
+      border: 1px solid var(--o-brand);
+      border-radius: var(--o-radius);
+      background: var(--o-brand);
+      color: #ffffff;
+      font-family: var(--o-font);
+      font-size: 14px;
+      font-weight: 500;
+      padding: 10px calc(var(--o-spacer) * 1.5);
+      width: 100%;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background-color .15s ease, border-color .15s ease;
+    }
+    .o_asleep_btn:hover { background: var(--o-brand-hover); border-color: var(--o-brand-hover); }
+    .o_asleep_btn:disabled {
+      background: var(--o-brand);
+      opacity: .85;
+      cursor: default;
+    }
+
+    .o_asleep_spinner {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.45);
+      border-top-color: #ffffff;
+      animation: o_asleep_spin 0.8s linear infinite;
+      flex: none;
+    }
+    @keyframes o_asleep_spin { to { transform: rotate(360deg); } }
+
+    .o_asleep_waking_note {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--o-gray-600);
+    }
+
+    .o_asleep_footer {
+      margin-top: calc(var(--o-spacer) * 1.5);
+      font-size: 12px;
+      color: var(--o-gray-600);
+    }
+  </style>
+</helmet>
+
+<div class="o_asleep_page">
+  <div class="o_asleep_card">
+    <div class="o_asleep_icon_ring">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"></path>
+        <path d="M16.5 3.5 18 5"></path>
+        <path d="M18.5 6.5 20 8"></path>
+        <path d="M19.8 2.7 21 4"></path>
+      </svg>
+    </div>
+
+    <p class="o_asleep_org_name">{{orgName}}</p>
+    <h1 class="o_asleep_headline">{{headline}}</h1>
+    <p class="o_asleep_copy">{{copy}}</p>
+
+    <button type="button" class="o_asleep_btn" onClick="{{onWake}}" disabled="{{waking}}">
+      <sc-if value="{{waking}}" hint-placeholder-val="{{false}}">
+        <span class="o_asleep_spinner"></span>
+        <span>Waking up&hellip;</span>
+      </sc-if>
+      <sc-if value="{{notWaking}}" hint-placeholder-val="{{true}}">
+        <span>Wake Up</span>
+      </sc-if>
+    </button>
+
+    <sc-if value="{{waking}}" hint-placeholder-val="{{false}}">
+      <p class="o_asleep_waking_note">This can take a minute or two. This page will refresh on its own once it's ready.</p>
+    </sc-if>
+
+    <p class="o_asleep_footer">Idle trials suspend automatically to save cost &mdash; nothing was lost.</p>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "orgName": {"editor": "text", "default": "Acme Widgets Trial"},
+  "headline": {"editor": "text", "default": "This trial is taking a nap"},
+  "copy": {"editor": "text", "default": "It suspended itself after a while idle, to save cost. Click Wake Up and it will be back in about a minute or two."}
+}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { waking: false };
+  }
+
+  renderVals() {
+    const waking = this.state.waking;
+    return {
+      orgName: this.props.orgName,
+      headline: this.props.headline,
+      copy: this.props.copy,
+      waking,
+      notWaking: !waking,
+      onWake: () => this.setState({ waking: true }),
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -218,6 +218,139 @@ resource "aws_lambda_function" "ec2_power_control" {
 }
 
 # ---------------------------------------------------------------------------
+# Auto-Destroy snapshot Lambda (#174), invoked by the state machine's own SnapshotBeforeDestroy
+# Task state — see state_machine.asl.json.tftpl. Same pattern as ec2_power_control above: a
+# runtime action Suspend/Wake/now-Destroy's snapshot step take outside OpenTofu (ADR-0021).
+# ---------------------------------------------------------------------------
+
+data "archive_file" "snapshot_manager" {
+  type        = "zip"
+  source_dir  = "${path.module}/lambda_src/snapshot_manager"
+  output_path = "${path.module}/.build/snapshot_manager.zip"
+}
+
+resource "aws_iam_role" "snapshot_manager" {
+  name               = "${var.environment}-snapshot-manager"
+  assume_role_policy = data.aws_iam_policy_document.lambda_trust.json
+}
+
+resource "aws_iam_role_policy_attachment" "snapshot_manager_basic" {
+  role       = aws_iam_role.snapshot_manager.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+data "aws_iam_policy_document" "snapshot_manager" {
+  # Same "any Trial Org" tag-scoping rationale as ec2_power_control's own ControlTrialOrgInstancePower
+  # statement above: this Lambda has no execution-scoped identity to condition on beyond the
+  # TrialOrgId tag its own payload names.
+  statement {
+    sid    = "SnapshotTrialOrgVolumes"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateSnapshot",
+      "ec2:CreateTags",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "Null"
+      variable = "aws:ResourceTag/TrialOrgId"
+      values   = ["false"]
+    }
+  }
+
+  # Describe* actions don't support resource-level permissions/tag conditions (AWS EC2 IAM
+  # reference), so this is necessarily an account-wide read-only grant, used only to resolve the
+  # Trial Org's instance/volume ids from its TrialOrgId tag.
+  statement {
+    sid       = "DescribeInstancesToFindVolumes"
+    effect    = "Allow"
+    actions   = ["ec2:DescribeInstances"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "snapshot_manager" {
+  name   = "${var.environment}-snapshot-manager"
+  role   = aws_iam_role.snapshot_manager.id
+  policy = data.aws_iam_policy_document.snapshot_manager.json
+}
+
+resource "aws_lambda_function" "snapshot_manager" {
+  function_name    = "${var.environment}-snapshot-manager"
+  role             = aws_iam_role.snapshot_manager.arn
+  handler          = "handler.handler"
+  runtime          = "python3.12"
+  timeout          = var.lambda_invoke_timeout_seconds
+  filename         = data.archive_file.snapshot_manager.output_path
+  source_code_hash = data.archive_file.snapshot_manager.output_base64sha256
+}
+
+# ---------------------------------------------------------------------------
+# Snapshot-cleanup Lambda (#174), invoked on a daily EventBridge schedule (eventbridge.tf).
+# AWS has no native TTL for ad-hoc EBS snapshots, so this is the retention backstop that deletes
+# snapshot_manager's own snapshots once their DeleteAfter tag has passed.
+# ---------------------------------------------------------------------------
+
+data "archive_file" "snapshot_cleanup" {
+  type        = "zip"
+  source_dir  = "${path.module}/lambda_src/snapshot_cleanup"
+  output_path = "${path.module}/.build/snapshot_cleanup.zip"
+}
+
+resource "aws_iam_role" "snapshot_cleanup" {
+  name               = "${var.environment}-snapshot-cleanup"
+  assume_role_policy = data.aws_iam_policy_document.lambda_trust.json
+}
+
+resource "aws_iam_role_policy_attachment" "snapshot_cleanup_basic" {
+  role       = aws_iam_role.snapshot_cleanup.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+data "aws_iam_policy_document" "snapshot_cleanup" {
+  # DescribeSnapshots doesn't support resource-level permissions (AWS EC2 IAM reference), so
+  # discovery is necessarily account-wide; DeleteSnapshot is scoped to the same TrialOrgId-tag
+  # condition as snapshot_manager's own create grant, so this Lambda can only ever delete
+  # snapshots that mechanism itself created.
+  statement {
+    sid       = "DescribeSnapshotsToFindExpired"
+    effect    = "Allow"
+    actions   = ["ec2:DescribeSnapshots"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "DeleteExpiredTrialOrgSnapshots"
+    effect = "Allow"
+    actions = [
+      "ec2:DeleteSnapshot",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "Null"
+      variable = "aws:ResourceTag/TrialOrgId"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "snapshot_cleanup" {
+  name   = "${var.environment}-snapshot-cleanup"
+  role   = aws_iam_role.snapshot_cleanup.id
+  policy = data.aws_iam_policy_document.snapshot_cleanup.json
+}
+
+resource "aws_lambda_function" "snapshot_cleanup" {
+  function_name    = "${var.environment}-snapshot-cleanup"
+  role             = aws_iam_role.snapshot_cleanup.arn
+  handler          = "handler.handler"
+  runtime          = "python3.12"
+  timeout          = var.lambda_invoke_timeout_seconds
+  filename         = data.archive_file.snapshot_cleanup.output_path
+  source_code_hash = data.archive_file.snapshot_cleanup.output_base64sha256
+}
+
+# ---------------------------------------------------------------------------
 # Lock-acquire Lambda (ADR-0020), invoked only by the state machine's AcquireLock Task state
 # (state_machine.asl.json.tftpl). A conditional PutItem, same as the release path uses a
 # conditional Delete — done via Lambda rather than the native arn:aws:states:::dynamodb:putItem

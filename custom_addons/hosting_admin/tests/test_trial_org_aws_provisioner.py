@@ -4,7 +4,10 @@ from unittest.mock import MagicMock
 from odoo.exceptions import UserError
 from odoo.tests import TransactionCase, tagged
 
-from odoo.addons.hosting_admin.models.provisioner import AwsProvisioner
+from odoo.addons.hosting_admin.models.provisioner import (
+    SNAPSHOT_RETENTION_DAYS,
+    AwsProvisioner,
+)
 
 STATE_MACHINE_ARN = 'arn:aws:states:us-east-1:123456789012:stateMachine:trial-org-lifecycle'
 
@@ -152,6 +155,19 @@ class TestAwsProvisioner(TransactionCase):
         execution_input = json.loads(client.start_execution.call_args.kwargs['input'])
         self.assertEqual(execution_input['ami_id'], 'ami-pending')
         self.assertEqual(execution_input['module_git_sha'], 'pendingsha')
+
+    def test_destroy_includes_a_snapshot_retention_step_in_execution_input(self):
+        # #174: destroy must always leave a short-lived EBS snapshot before OpenTofu tears the
+        # instance down (infra/foundation/state_machine.asl.json.tftpl's SnapshotBeforeDestroy
+        # Task state reads this key) - asserted at this Provisioner/execution-input boundary,
+        # never by proving a real EBS snapshot was created (ticket's own testing decision).
+        client = _make_fake_client()
+        provisioner = self._make_provisioner(client=client)
+
+        provisioner.destroy(self.trial_org, 'job-3')
+
+        execution_input = json.loads(client.start_execution.call_args.kwargs['input'])
+        self.assertEqual(execution_input['snapshot_retention_days'], SNAPSHOT_RETENTION_DAYS)
 
     def test_issue_records_the_execution_arn_returned_by_start_execution(self):
         provisioner = self._make_provisioner()

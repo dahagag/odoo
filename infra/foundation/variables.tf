@@ -181,6 +181,16 @@ variable "lock_retry_interval_seconds" {
 }
 
 # ---------------------------------------------------------------------------
+# Auto-Destroy snapshot retention (#174)
+# ---------------------------------------------------------------------------
+
+variable "snapshot_cleanup_schedule_expression" {
+  type        = string
+  description = "EventBridge schedule expression for the snapshot-cleanup Lambda sweep that deletes Trial Org auto-destroy EBS snapshots past their DeleteAfter tag."
+  default     = "rate(1 day)"
+}
+
+# ---------------------------------------------------------------------------
 # DynamoDB orchestration lock table (ADR-0020)
 # ---------------------------------------------------------------------------
 

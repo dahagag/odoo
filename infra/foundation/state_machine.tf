@@ -1,6 +1,7 @@
 # ---------------------------------------------------------------------------
 # Trial Org lifecycle state machine (ADR-0016, ADR-0019, ADR-0020, ADR-0021).
-# The lock_acquire/ec2_power_control/lock_cleanup Lambdas this state machine invokes are declared
+# The lock_acquire/ec2_power_control/lock_cleanup/snapshot_manager Lambdas this state machine
+# invokes are declared
 # in lambda.tf alongside the shared log-forwarding Lambda, for one consistent
 # file-per-resource-type layout across the module.
 # ---------------------------------------------------------------------------
@@ -14,6 +15,7 @@ resource "aws_sfn_state_machine" "trial_org_lifecycle" {
     lock_table_name                 = aws_dynamodb_table.trial_org_lock.name
     lock_acquire_lambda_arn         = aws_lambda_function.lock_acquire.arn
     ec2_power_control_lambda_arn    = aws_lambda_function.ec2_power_control.arn
+    snapshot_manager_lambda_arn     = aws_lambda_function.snapshot_manager.arn
     ecs_cluster_arn                 = aws_ecs_cluster.hosting.arn
     tofu_runner_task_definition_arn = aws_ecs_task_definition.tofu_runner.arn
     tofu_runner_container_name      = local.tofu_runner_container_name

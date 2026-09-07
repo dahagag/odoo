@@ -7,6 +7,15 @@ from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
+# The snapshot retention window docs/contexts/hosting/CONTEXT.md's Auto-Destroy entry sets: "A
+# short-lived (7-day) database snapshot is retained afterward in case of revival." Lives here
+# rather than on trial_org.py (which imports it back) because AwsProvisioner.destroy() below is
+# what actually forwards it into the Step Functions execution input the SnapshotBeforeDestroy
+# Task state reads (infra/foundation/state_machine.asl.json.tftpl) - one source of truth for the
+# "7 days" figure shared by that Task state's real EBS snapshot expiry and the Odoo-side
+# snapshot_retention_until marker, rather than two copies of the same number drifting apart.
+SNAPSHOT_RETENTION_DAYS = 7
+
 
 class Provisioner(ABC):
     """Injectable seam standing in for the AWS/OpenTofu call surface behind every Trial Org
@@ -155,6 +164,13 @@ class AwsProvisioner(Provisioner):
             'ami_id': trial_org.ami_id or trial_org.pending_ami_id,
             'module_git_sha': trial_org.tofu_module_git_sha or trial_org.pending_tofu_module_git_sha,
             'dns_record_name': self._dns_record_name(trial_org),
+            # Read by the state machine's SnapshotBeforeDestroy Task state (ADR-0021's "own Task
+            # state in the same state machine" pattern, applied here to a third runtime action
+            # alongside Suspend/Wake): it looks the instance up by this Trial Org's own
+            # TrialOrgId tag (infra/modules/trial_org/main.tf), not an instance id from Odoo -
+            # hosting_admin doesn't reliably have one yet (see instance_id's own docstring) -
+            # then tags the EBS snapshot it creates with a DeleteAfter date this many days out.
+            'snapshot_retention_days': SNAPSHOT_RETENTION_DAYS,
         })
 
     def check_status(self, trial_org):
