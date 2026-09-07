@@ -16,6 +16,15 @@ class TestTrialOrgDnsLabelTransitionConcurrency(BaseCase):
     write, and then land its dns_subdomain_label change anyway once unblocked, after the
     Provisioner had already used the pre-change label.
 
+    Also covers the CodeRabbit follow-up on that same fix: _apply_transition()'s per-row lock
+    now invalidates and re-checks ``state`` under the lock too, not just ``dns_subdomain_label``,
+    so a losing concurrent transition is rejected before it ever calls the Provisioner a second
+    time, rather than proceeding on a state value cached before the winning transition committed.
+    docs/adr/0020's DynamoDB per-Trial-Org lock already stops a losing call from provisioning
+    duplicate infrastructure, but only this ORM-level check stops it from starting a doomed
+    Step Functions execution and clobbering last_job_id/last_job_status with that execution's
+    own identifiers.
+
     Same same-thread, nested-cursor technique as
     test_trial_org_open_invite_concurrency.py (itself following
     crm_methodology/tests/test_crm_lead_trial_concurrency.py and, in turn, Odoo core's
@@ -66,6 +75,27 @@ class TestTrialOrgDnsLabelTransitionConcurrency(BaseCase):
                         cr1.execute(
                             "SELECT id FROM hosting_trial_org WHERE id = %s FOR UPDATE NOWAIT",
                             (self.trial_org_id,))
+
+    def test_locked_read_after_commit_sees_the_winning_transitions_state(self):
+        # Prove the other half of the mechanism the state re-check relies on: once the row lock
+        # from a completed transition is released, a fresh FOR UPDATE read in a brand new
+        # connection sees that transition's committed 'state' rather than the 'issued' value a
+        # losing concurrent caller would have validated against earlier. A genuine two-thread
+        # reproduction of the full race is impractical here (see class docstring / issue #134),
+        # so this isolates the guarantee the fix actually depends on: locking then re-reading
+        # state always observes whichever transition got there first, once it has committed.
+        with self.registry.cursor() as cr0:
+            env0 = api.Environment(cr0, api.SUPERUSER_ID, {})
+            env0['hosting.trial.org'].browse(self.trial_org_id).action_issue()
+            # cr0 commits on clean __exit__, making the 'active' state visible to other
+            # connections - see the class docstring.
+
+        with self.registry.cursor() as cr1:
+            cr1.execute(
+                "SELECT state FROM hosting_trial_org WHERE id = %s FOR UPDATE",
+                (self.trial_org_id,))
+            (state,) = cr1.fetchone()
+            self.assertEqual(state, 'active')
 
     def test_dns_label_guard_row_lock_blocks_a_concurrent_transaction(self):
         # write()'s own dns_subdomain_label guard takes the same lock (via

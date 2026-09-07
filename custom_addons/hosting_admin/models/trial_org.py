@@ -480,6 +480,20 @@ class HostingTrialOrg(models.Model):
         self.ensure_one()
         return str(uuid.uuid4()), fields.Datetime.now()
 
+    @staticmethod
+    def _check_source_state(trial_org, allowed_source_states, target_state):
+        """Shared by both the batch-wide pre-check and the per-record post-lock re-check in
+        ``_apply_transition()`` below, so the two can never drift apart into raising different
+        messages for what is otherwise the same rule."""
+        if trial_org.state not in allowed_source_states:
+            raise ValidationError(_(
+                "Trial Org %(name)s cannot move from %(current_state)s to "
+                "%(target_state)s.",
+                name=trial_org.name,
+                current_state=trial_org.state,
+                target_state=target_state,
+            ))
+
     def _apply_transition(self, action_name):
         """Validate every record in ``self`` is in a source state ``action_name`` allows, then
         call the matching ``Provisioner`` method (with a fresh job id from ``_new_job_id``) for
@@ -488,31 +502,41 @@ class HostingTrialOrg(models.Model):
         record rolls every record in the call back - a multi-record call is genuinely
         all-or-nothing, not just pre-validated-then-hopefully-safe."""
         allowed_source_states, target_state = _TRANSITIONS[action_name]
+        # Locked in a fixed, id-ascending order (below) regardless of how the caller assembled
+        # ``self`` - two concurrent batch calls sharing more than one Trial Org could otherwise
+        # each lock one shared record and then block waiting for the other's, a classic
+        # lock-ordering deadlock (CodeRabbit follow-up on PR #168).
+        ordered = self.sorted('id')
         with self.env.cr.savepoint():
-            for trial_org in self:
-                if trial_org.state not in allowed_source_states:
-                    raise ValidationError(_(
-                        "Trial Org %(name)s cannot move from %(current_state)s to "
-                        "%(target_state)s.",
-                        name=trial_org.name,
-                        current_state=trial_org.state,
-                        target_state=target_state,
-                    ))
+            for trial_org in ordered:
+                self._check_source_state(trial_org, allowed_source_states, target_state)
 
             provisioner = self._get_provisioner()
             now = fields.Datetime.now()
-            for trial_org in self:
+            for trial_org in ordered:
                 # Lock this row before the Provisioner reads dns_subdomain_label off it, and
-                # drop any cached value so that read is forced fresh under the lock. Pairs with
-                # write()'s own dns_subdomain_label guard lock (CodeRabbit, PR #168): whichever
-                # of the two gets here first holds the row until its transaction concludes, so a
-                # concurrent label write can no longer land after the Provisioner has already
-                # used the pre-change label - it either finishes first (and this then sees its
-                # committed label) or waits behind this transition's state write and is rejected
-                # by write()'s guard once state is no longer 'issued'.
+                # drop any cached value (state included) so both are forced fresh under the
+                # lock. Pairs with write()'s own dns_subdomain_label guard lock (CodeRabbit, PR
+                # #168): whichever of the two gets here first holds the row until its
+                # transaction concludes, so a concurrent label write can no longer land after
+                # the Provisioner has already used the pre-change label - it either finishes
+                # first (and this then sees its committed label) or waits behind this
+                # transition's state write and is rejected by write()'s guard once state is no
+                # longer 'issued'.
                 self.env.cr.execute(
                     "SELECT id FROM hosting_trial_org WHERE id = %s FOR UPDATE", (trial_org.id,))
-                trial_org.invalidate_recordset(['dns_subdomain_label'])
+                trial_org.invalidate_recordset(['dns_subdomain_label', 'state'])
+                # Re-validate under the lock (CodeRabbit follow-up on PR #168): the batch-wide
+                # check above runs before any row is locked, so two concurrent transitions on
+                # the same Trial Org could both pass it while state was still the old value. The
+                # DynamoDB per-Trial-Org lock (docs/adr/0020) already stops a losing concurrent
+                # call from provisioning duplicate infrastructure, but it can't stop this
+                # write() from recording that call's job id - StartExecution returns, and this
+                # write() commits, before that lock is ever checked inside the state machine.
+                # Rejecting here, before calling the Provisioner at all, is what actually
+                # prevents a losing call from clobbering last_job_id/last_job_status with an
+                # execution that's certain to fail.
+                self._check_source_state(trial_org, allowed_source_states, target_state)
                 job_id, job_started_at = trial_org._new_job_id()
                 getattr(provisioner, action_name)(trial_org, job_id)
                 values = {

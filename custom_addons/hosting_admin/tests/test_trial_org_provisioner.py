@@ -1,3 +1,4 @@
+from odoo.exceptions import ValidationError
 from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.hosting_admin.models.provisioner import (
@@ -154,6 +155,43 @@ class TestTrialOrgProvisioner(TransactionCase):
 
         self.assertEqual(self.trial_org.state, 'issued', "the first record's write must be rolled back too")
         self.assertEqual(other.state, 'issued')
+
+    def test_stale_cached_state_is_rejected_under_the_lock_before_a_second_provisioner_call(self):
+        # Regression test for the CodeRabbit follow-up on PR #168: two concurrent action_issue()
+        # calls could both pass the batch-wide validation while the ORM's cached `state` was
+        # still 'issued', with the losing call then calling the Provisioner a second time and
+        # clobbering last_job_id/last_job_status with a doomed execution's identifiers. A
+        # genuine two-thread reproduction of that is impractical in this test runner (see
+        # test_trial_org_dns_label_transition_concurrency.py's class docstring and issue #134),
+        # so this deterministically simulates the same effect: prime the ORM's cache with
+        # 'issued' by reading it, then commit a state change to 'active' via raw SQL, bypassing
+        # the ORM and its cache invalidation entirely - exactly what a fully-committed
+        # concurrent transaction would leave behind: a stale in-process cache next to a changed
+        # database row. _apply_transition()'s per-row lock must still see the true, committed
+        # state once it re-reads under the lock, and reject the transition instead of calling
+        # the Provisioner a second time.
+        #
+        # This covers the losing call's half of "records one Provisioner call" (zero further
+        # calls once state has moved on); the winning call's half - a normal action_issue()
+        # makes exactly one - is already proven by test_transition_calls_provisioner_with_record_
+        # and_job_id above. A single test asserting both halves together would need the winning
+        # call to be a real ORM action_issue() racing a second, genuinely concurrent transaction,
+        # which is exactly the two-thread reproduction documented as impractical above.
+        self.assertEqual(self.trial_org.state, 'issued')  # primes the ORM cache with 'issued'
+        self.env.cr.execute(
+            "UPDATE hosting_trial_org SET state = 'active' WHERE id = %s", (self.trial_org.id,))
+        # self.trial_org's own cache still holds 'issued' here - raw SQL gives the ORM no
+        # opportunity to invalidate it, unlike an ordinary ORM write() would.
+
+        provisioner = RecordingProvisioner()
+        self._inject_provisioner(provisioner)
+
+        with self.assertRaises(ValidationError):
+            self.trial_org.action_issue()
+
+        self.assertEqual(
+            provisioner.calls, [],
+            "a transition rejected under the lock must never reach the Provisioner")
 
     def test_default_provisioner_falls_back_to_stub_when_unconfigured(self):
         self.env['ir.config_parameter'].sudo().set_param(CONFIG_PARAM_STATE_MACHINE_ARN, '')
