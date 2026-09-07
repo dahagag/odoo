@@ -30,10 +30,16 @@ the target `hosting.trial.org` record from the request's `Host` header, renders 
 Traffic reaches it via **Route53 failover routing**, added to
 `infra/modules/trial_org`'s existing DNS record: the current plain `A` record pointing at the
 Trial Org's Elastic IP becomes the **PRIMARY** record in a failover pair, guarded by a Route53
-health check against that same IP. A new **SECONDARY** record (same name, failover routing policy)
-points at the Platform instance's own public ingress. When the health check fails — which it does
-by design whenever the instance is stopped — Route53 answers the Trial Org's own domain with the
-Platform instance instead, and `hosting_admin`'s controller takes it from there by Host header.
+health check against that same IP. A new **SECONDARY** record (same name, same `A` type, failover
+routing policy) points at the Platform instance's own public ingress — same record type as the
+primary, not a `CNAME`, since Route53 only associates records into one failover group when their
+name *and* type match, and the primary's type is fixed to `A` by needing to hold the Trial Org's
+own IP. `infra/modules/trial_org`'s new `asleep_page_failover_ips` input is therefore an IP list,
+not the Platform's hostname; it's optional and unset by default, since the Platform Account's own
+ingress is still undecided (ADR-0015) — a Trial Org gets today's plain, non-failover record until
+a real value exists. When the health check fails — which it does by design whenever the instance
+is stopped — Route53 answers the Trial Org's own domain with the Platform instance instead, and
+`hosting_admin`'s controller takes it from there by Host header.
 
 The Platform instance's own ingress (compute, load balancer/CDN, and how it terminates TLS for the
 wildcard `*.<root_domain>`/`*.<dev_subdomain>` certificate already issued in

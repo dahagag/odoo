@@ -13,4 +13,8 @@ locals {
   domain = var.dns_environment == "prod" ? "${var.trial_org_subdomain_label}.${var.root_domain}" : "${var.trial_org_subdomain_label}.${var.dev_subdomain}"
 
   log_group_name = "${var.log_group_prefix}${var.trial_org_id}"
+
+  # ADR-0030, #174: failover DNS/health-check resources only get created once a real target is
+  # configured - see asleep_page_failover_ips's own description.
+  asleep_page_failover_enabled = length(coalesce(var.asleep_page_failover_ips, [])) > 0
 }

@@ -99,6 +99,39 @@ variable "dev_subdomain" {
 }
 
 # ---------------------------------------------------------------------------
+# Asleep-page failover (ADR-0030, #174)
+# ---------------------------------------------------------------------------
+
+variable "asleep_page_failover_ips" {
+  type        = list(string)
+  description = <<-EOT
+    IP address(es) of the Platform instance's own ingress (ADR-0030) - the Route53 failover
+    target this Trial Org's domain falls back to once its own health check starts failing
+    (i.e. whenever it's suspended, since the instance is genuinely stopped), so a visitor lands
+    on the hosting_admin-served asleep/Wake-Up page instead of a timeout. Both the primary and
+    this secondary record must share the same record type ("A") for Route53 failover routing to
+    associate them, which is why this is an IP list rather than the Platform's hostname.
+
+    Left unset (default), this Trial Org gets today's plain, non-failover A record instead - the
+    Platform Account's own compute/networking is deliberately still undecided as of ADR-0015/
+    ADR-0030, so there is no real value to put here yet. Set once that ingress exists.
+  EOT
+  default     = null
+}
+
+variable "health_check_failure_threshold" {
+  type        = number
+  description = "Consecutive failed health checks (each health_check_request_interval seconds apart) before Route53 considers the Trial Org's own instance unhealthy and fails over (ADR-0030). Only used when asleep_page_failover_ips is set."
+  default     = 3
+}
+
+variable "health_check_request_interval" {
+  type        = number
+  description = "Seconds between each Route53 health check request against the Trial Org's own instance (30 or 10 - AWS allows no other values). Only used when asleep_page_failover_ips is set."
+  default     = 30
+}
+
+# ---------------------------------------------------------------------------
 # Logging (ADR-0021, ADR-0023)
 # ---------------------------------------------------------------------------
 
