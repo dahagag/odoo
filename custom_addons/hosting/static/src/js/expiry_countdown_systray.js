@@ -38,7 +38,7 @@ export class ExpiryCountdownSystray extends Component {
     static props = {};
     static template = xml`
         <span t-if="state.daysLeft !== null"
-              class="o_hosting_expiry_countdown_systray badge d-flex align-items-center gap-1 me-2"
+              class="o_hosting_expiry_countdown_systray d-flex align-items-center gap-1 me-2"
               t-attf-class="o_hosting_expiry_countdown_systray--{{tier}}">
             <span class="o_hosting_expiry_countdown_systray_dot" role="presentation"/>
             <t t-esc="label"/>

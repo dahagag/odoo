@@ -156,6 +156,18 @@ variable "lambda_invoke_timeout_seconds" {
   default     = 60
 }
 
+variable "sts_assume_role_timeout_seconds" {
+  type        = number
+  description = "TimeoutSeconds on the AssumeTrialOrgExecutionRole Task state (issue #125) that scopes the ECS tofu-runner task's credentials down to the one Trial Org (and DNS record) its invocation targets, before RunTofu launches it."
+  default     = 30
+}
+
+variable "trial_org_execution_session_duration_seconds" {
+  type        = number
+  description = "DurationSeconds on the AssumeTrialOrgExecutionRole Task state and trial_org_execution's own max_session_duration (CodeRabbit, PR #171): RunTofu reuses the one set of STS credentials from that single AssumeRole call across every Step Functions Retry of the RunTofu Task state itself, since Task Parameters are resolved once on state entry, not re-resolved per retry. Must therefore be at least local.run_tofu_worst_case_seconds (locals.tf) - RunTofu's own worst-case total duration - or a later retry's AWS calls fail with an expired-token error instead of the real underlying one; aws_sfn_state_machine.trial_org_lifecycle's own lifecycle.precondition (state_machine.tf) enforces this at plan/apply time, so the default here only needs to be a value that satisfies it, not independently recomputed."
+  default     = 7200
+}
+
 variable "lock_retry_max_attempts" {
   type        = number
   description = "MaxAttempts for AcquireLock's own Retry entry when the lock is already held (distinct from sfn_retry_max_attempts, which covers unexpected/transient errors on every Task state)."

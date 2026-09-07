@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+
+    <!-- ============================================================
+         One cumulative demo story for hosting_admin (docs/agents/odoo-19-development.md's
+         Post-implementation walkthrough section): every ticket touching this addon extends this
+         file rather than adding its own. First populated here (#115, the Cost Dashboard) - three
+         Trial Orgs reusing crm_methodology's own demo companies (Nimbus Robotics, Falcon
+         Logistics, Comet Analytics), so a stakeholder walkthrough can tell one continuous story
+         across both addons: an Opportunity issues a Trial Org, which then accrues AWS spend.
+
+         Trial Org lifecycle actions go through action_issue()/action_suspend() (models/
+         trial_org.py) rather than setting `state` directly - the model itself forbids that -
+         which drives through StubProvisioner (no AWS wiring configured here), the same
+         no-op-but-real seam the test suite exercises. The Cost Dashboard snapshots below are
+         NOT produced the same way: AwsCostExplorerClient's only real implementation talks to
+         AWS, so - like most of crm_methodology's own demo data, which assigns plain field
+         values rather than re-deriving them - the six days of daily-refresh figures are seeded
+         directly as data, illustrating what _cron_refresh_snapshot would have computed from
+         real Cost Explorer data (docs/adr/0030).
+         ============================================================ -->
+
+    <!-- Platform-only data (docs/adr/0018): base.user_admin needs an explicit grant into
+         group_hosting_admin_administrator to see any of this at all, same as any other
+         Platform operator - `Command.link` adds it alongside the admin's existing groups
+         rather than replacing them. -->
+    <record id="base.user_admin" model="res.users">
+        <field name="group_ids" eval="[Command.link(ref('hosting_admin.group_hosting_admin_administrator'))]"/>
+    </record>
+
+    <record id="hosting_admin_demo_config_credit_amount" model="ir.config_parameter">
+        <field name="key">hosting_admin.aws_cost_credit_amount</field>
+        <field name="value">200.0</field>
+    </record>
+    <record id="hosting_admin_demo_config_credit_start_date" model="ir.config_parameter">
+        <field name="key">hosting_admin.aws_cost_credit_start_date</field>
+        <field name="value" eval="(DateTime.today() - relativedelta(days=5)).strftime('%Y-%m-%d')"/>
+    </record>
+
+    <!-- ================= Trial Orgs (issued from crm_methodology's own demo Opportunities) ================= -->
+
+    <record id="hosting_admin_demo_trial_org_nimbus" model="hosting.trial.org">
+        <field name="name">Nimbus Robotics Trial</field>
+        <field name="prospect_domain">nimbus-robotics.example</field>
+        <field name="seat_cap">8</field>
+        <field name="expiry_date" eval="(DateTime.today() + relativedelta(days=9)).strftime('%Y-%m-%d')"/>
+    </record>
+    <function model="hosting.trial.org" name="action_issue"
+              eval="[[ref('hosting_admin_demo_trial_org_nimbus')]]"/>
+
+    <!-- Suspended: the idle-timeout Suspend (docs/adr/0014) has since kicked in - the "non-default
+         state" edge case the walkthrough doc's demo-seeding guidance asks for. -->
+    <record id="hosting_admin_demo_trial_org_falcon" model="hosting.trial.org">
+        <field name="name">Falcon Logistics Trial</field>
+        <field name="prospect_domain">falcon-logistics.example</field>
+        <field name="seat_cap">5</field>
+        <field name="expiry_date" eval="(DateTime.today() + relativedelta(days=9)).strftime('%Y-%m-%d')"/>
+    </record>
+    <function model="hosting.trial.org" name="action_issue"
+              eval="[[ref('hosting_admin_demo_trial_org_falcon')]]"/>
+    <function model="hosting.trial.org" name="action_suspend"
+              eval="[[ref('hosting_admin_demo_trial_org_falcon')]]"/>
+
+    <record id="hosting_admin_demo_trial_org_comet" model="hosting.trial.org">
+        <field name="name">Comet Analytics Trial</field>
+        <field name="prospect_domain">comet-analytics.example</field>
+        <field name="seat_cap">3</field>
+        <field name="expiry_date" eval="(DateTime.today() + relativedelta(days=9)).strftime('%Y-%m-%d')"/>
+    </record>
+    <function model="hosting.trial.org" name="action_issue"
+              eval="[[ref('hosting_admin_demo_trial_org_comet')]]"/>
+
+    <!-- ================= Cost Dashboard: 6 days of daily-refresh history ================= -->
+    <!-- total_spend rises day over day (cumulative since the credit start date above); the
+         per-Trial-Org split stays roughly proportional, plus a small "Unattributed" share each
+         day for the shared foundation/CI infrastructure no single Trial Org's own tag covers
+         (docs/adr/0013, docs/adr/0030) - the other edge case the walkthrough doc asks for. -->
+
+    <record id="hosting_admin_demo_cost_snapshot_day1" model="hosting.cost.dashboard.snapshot">
+        <field name="snapshot_date" eval="(DateTime.today() - relativedelta(days=5)).strftime('%Y-%m-%d')"/>
+        <field name="total_spend">14.00</field>
+        <field name="burn_rate_per_day">2.00</field>
+        <field name="credit_amount">200.0</field>
+        <field name="days_remaining_on_credit_known" eval="True"/>
+        <field name="days_remaining_on_credit">93.0</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day1_nimbus" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day1"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_nimbus"/>
+        <field name="spend">6.30</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day1_falcon" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day1"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_falcon"/>
+        <field name="spend">4.20</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day1_comet" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day1"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_comet"/>
+        <field name="spend">2.80</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day1_unattributed" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day1"/>
+        <field name="spend">0.70</field>
+    </record>
+
+    <record id="hosting_admin_demo_cost_snapshot_day2" model="hosting.cost.dashboard.snapshot">
+        <field name="snapshot_date" eval="(DateTime.today() - relativedelta(days=4)).strftime('%Y-%m-%d')"/>
+        <field name="total_spend">28.00</field>
+        <field name="burn_rate_per_day">2.80</field>
+        <field name="credit_amount">200.0</field>
+        <field name="days_remaining_on_credit_known" eval="True"/>
+        <field name="days_remaining_on_credit">61.4</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day2_nimbus" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day2"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_nimbus"/>
+        <field name="spend">12.60</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day2_falcon" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day2"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_falcon"/>
+        <field name="spend">8.40</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day2_comet" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day2"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_comet"/>
+        <field name="spend">5.60</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day2_unattributed" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day2"/>
+        <field name="spend">1.40</field>
+    </record>
+
+    <record id="hosting_admin_demo_cost_snapshot_day3" model="hosting.cost.dashboard.snapshot">
+        <field name="snapshot_date" eval="(DateTime.today() - relativedelta(days=3)).strftime('%Y-%m-%d')"/>
+        <field name="total_spend">45.50</field>
+        <field name="burn_rate_per_day">3.90</field>
+        <field name="credit_amount">200.0</field>
+        <field name="days_remaining_on_credit_known" eval="True"/>
+        <field name="days_remaining_on_credit">39.6</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day3_nimbus" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day3"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_nimbus"/>
+        <field name="spend">20.50</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day3_falcon" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day3"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_falcon"/>
+        <field name="spend">13.50</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day3_comet" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day3"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_comet"/>
+        <field name="spend">9.00</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day3_unattributed" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day3"/>
+        <field name="spend">2.50</field>
+    </record>
+
+    <record id="hosting_admin_demo_cost_snapshot_day4" model="hosting.cost.dashboard.snapshot">
+        <field name="snapshot_date" eval="(DateTime.today() - relativedelta(days=2)).strftime('%Y-%m-%d')"/>
+        <field name="total_spend">64.00</field>
+        <field name="burn_rate_per_day">4.75</field>
+        <field name="credit_amount">200.0</field>
+        <field name="days_remaining_on_credit_known" eval="True"/>
+        <field name="days_remaining_on_credit">28.6</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day4_nimbus" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day4"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_nimbus"/>
+        <field name="spend">28.50</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day4_falcon" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day4"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_falcon"/>
+        <field name="spend">19.50</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day4_comet" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day4"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_comet"/>
+        <field name="spend">12.50</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day4_unattributed" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day4"/>
+        <field name="spend">3.50</field>
+    </record>
+
+    <record id="hosting_admin_demo_cost_snapshot_day5" model="hosting.cost.dashboard.snapshot">
+        <field name="snapshot_date" eval="(DateTime.today() - relativedelta(days=1)).strftime('%Y-%m-%d')"/>
+        <field name="total_spend">83.50</field>
+        <field name="burn_rate_per_day">5.60</field>
+        <field name="credit_amount">200.0</field>
+        <field name="days_remaining_on_credit_known" eval="True"/>
+        <field name="days_remaining_on_credit">20.8</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day5_nimbus" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day5"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_nimbus"/>
+        <field name="spend">37.50</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day5_falcon" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day5"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_falcon"/>
+        <field name="spend">25.50</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day5_comet" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day5"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_comet"/>
+        <field name="spend">16.50</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day5_unattributed" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day5"/>
+        <field name="spend">4.00</field>
+    </record>
+
+    <record id="hosting_admin_demo_cost_snapshot_day6" model="hosting.cost.dashboard.snapshot">
+        <field name="snapshot_date" eval="DateTime.today().strftime('%Y-%m-%d')"/>
+        <field name="total_spend">104.00</field>
+        <field name="burn_rate_per_day">6.40</field>
+        <field name="credit_amount">200.0</field>
+        <field name="days_remaining_on_credit_known" eval="True"/>
+        <field name="days_remaining_on_credit">15.0</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day6_nimbus" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day6"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_nimbus"/>
+        <field name="spend">46.50</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day6_falcon" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day6"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_falcon"/>
+        <field name="spend">31.50</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day6_comet" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day6"/>
+        <field name="trial_org_id" ref="hosting_admin_demo_trial_org_comet"/>
+        <field name="spend">21.00</field>
+    </record>
+    <record id="hosting_admin_demo_cost_line_day6_unattributed" model="hosting.cost.dashboard.line">
+        <field name="snapshot_id" ref="hosting_admin_demo_cost_snapshot_day6"/>
+        <field name="spend">5.00</field>
+    </record>
+
+</odoo>

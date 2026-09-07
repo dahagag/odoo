@@ -25,7 +25,12 @@ Auto-Destroy, Deployment Version).
         'security/ir.model.access.csv',
         'data/ir_cron.xml',
         'views/hosting_trial_org_views.xml',
+        'views/hosting_cost_dashboard_views.xml',
         'views/hosting_trial_org_menus.xml',
+    ],
+
+    'demo': [
+        'demo/hosting_admin_demo.xml',
     ],
 
     'assets': {
