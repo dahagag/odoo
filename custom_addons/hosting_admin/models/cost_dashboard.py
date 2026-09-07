@@ -160,6 +160,20 @@ class HostingCostDashboardSnapshot(models.Model):
 
         figures = self._compute_figures(daily_rows, credit_amount, credit_start_date, today)
 
+        # Serialize concurrent refreshes (the daily cron and an admin's "Refresh Now" can land in
+        # the same window) by snapshot_date, before the search decides create() vs write(). An
+        # existing snapshot's own row can't be locked with FOR UPDATE the way trial_org.py's
+        # action_join_open_invite locks hosting_trial_org (CodeRabbit, PR #160) - here the race
+        # is over whether the row exists at all, so a transaction-scoped advisory lock keyed by
+        # the date stands in for it instead. Held for the rest of this transaction: a second
+        # caller blocks here until the first commits, then finds the just-written snapshot and
+        # takes the write() branch below rather than racing create() against the UNIQUE
+        # (snapshot_date) constraint, or unlink()'ing line_ids out from under the first caller's
+        # own commit.
+        self.env.cr.execute(
+            "SELECT pg_advisory_xact_lock(hashtext('hosting.cost.dashboard.snapshot'), %s)",
+            (today.toordinal(),))
+
         snapshot = self.search([('snapshot_date', '=', today)], limit=1)
         snapshot_vals = {
             'snapshot_date': today,
