@@ -3,7 +3,10 @@ from datetime import timedelta
 from odoo import fields
 from odoo.tests import HttpCase, tagged
 
-from odoo.addons.hosting_admin.controllers.asleep import WAKING_PHASE_TIMEOUT_MINUTES
+from odoo.addons.hosting_admin.controllers.asleep import (
+    WAKE_EXPECTED_DURATION_SECONDS,
+    WAKING_PHASE_TIMEOUT_MINUTES,
+)
 from odoo.addons.hosting_admin.models.trial_org import CONFIG_PARAM_DNS_DOMAIN_SUFFIX
 
 DOMAIN_SUFFIX = "dev.example.test"
@@ -47,9 +50,26 @@ class TestTrialOrgAsleepPage(HttpCase):
     def test_wake_button_posts_to_the_wake_endpoint_and_calls_action_wake(self):
         response = self._post('/hosting_admin/asleep/wake')
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {'phase': 'waking'})
+        payload = response.json()
+        self.assertEqual(payload['phase'], 'waking')
+        self.assertEqual(payload['expected_seconds'], WAKE_EXPECTED_DURATION_SECONDS)
         self.assertEqual(self.trial_org.state, 'active')
         self.assertEqual(self.trial_org.last_job_action, 'wake')
+
+    def test_status_endpoint_reports_real_elapsed_time_while_waking(self):
+        # The progress bar's percentage rides real elapsed time since last_job_started_at, not
+        # a fabricated timer - assert the server actually reports that, not just the phase.
+        self._post('/hosting_admin/asleep/wake')
+        self.trial_org.write({
+            'last_job_started_at': fields.Datetime.now() - timedelta(seconds=30),
+        })
+
+        response = self._get('/hosting_admin/asleep/status')
+
+        payload = response.json()
+        self.assertEqual(payload['phase'], 'waking')
+        self.assertGreaterEqual(payload['elapsed_seconds'], 30)
+        self.assertLess(payload['elapsed_seconds'], 35)
 
     def test_status_endpoint_reports_awake_once_the_job_has_succeeded(self):
         self._post('/hosting_admin/asleep/wake')
@@ -58,7 +78,7 @@ class TestTrialOrgAsleepPage(HttpCase):
         response = self._get('/hosting_admin/asleep/status')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {'phase': 'awake'})
+        self.assertEqual(response.json()['phase'], 'awake')
 
     def test_status_endpoint_reports_awake_once_the_waking_timeout_elapses_with_no_provisioner(self):
         # A StubProvisioner-backed record (no AWS wiring configured - dev/test/demo, see
@@ -74,7 +94,7 @@ class TestTrialOrgAsleepPage(HttpCase):
         response = self._get('/hosting_admin/asleep/status')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {'phase': 'awake'})
+        self.assertEqual(response.json()['phase'], 'awake')
 
     def test_wake_on_an_already_active_org_is_a_no_op(self):
         self.trial_org.action_wake()
@@ -83,7 +103,7 @@ class TestTrialOrgAsleepPage(HttpCase):
         response = self._post('/hosting_admin/asleep/wake')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {'phase': 'awake'})
+        self.assertEqual(response.json()['phase'], 'awake')
 
     def test_any_route_on_a_suspended_orgs_host_redirects_to_the_asleep_page(self):
         response = self._get('/web/login')

@@ -22,6 +22,15 @@ from odoo.http import request
 # See _phase()'s own docstring for why this bounds "waking" rather than last_job_status alone.
 WAKING_PHASE_TIMEOUT_MINUTES = 5
 
+# Midpoint of ADR-0014's own "~1-2 minutes" Wake Up target. There is no cheap way to read a real
+# percentage back from a Step Functions execution (AwsProvisioner.get_audit_trail(), ADR-0022,
+# exposes discrete state transitions, not a continuous progress figure), so the client estimates
+# progress from real elapsed time since last_job_started_at against this expectation - honest in
+# that it is real elapsed time, not a fabricated animation, while still giving the approved
+# design's four step messages (WAKE_STEPS in the page's own script below) something to advance
+# against instead of a bare spinner.
+WAKE_EXPECTED_DURATION_SECONDS = 90
+
 # string.Template, not str.format(): the page's own CSS/JS is full of literal `{`/`}`, which
 # .format() would force doubling every single one of to escape - Template's $-prefixed
 # placeholders don't collide with braces at all, so the markup below reads as plain HTML/CSS/JS.
@@ -122,6 +131,15 @@ _PAGE_TEMPLATE = Template("""<!doctype html>
   .o_asleep_btn:hover { background: var(--o-brand-hover); border-color: var(--o-brand-hover); }
   .o_asleep_btn_success { border-color: var(--o-success); background: var(--o-success); }
   .o_asleep_btn_success:hover { background: var(--o-success-hover); border-color: var(--o-success-hover); }
+  .o_asleep_progress { text-align: left; }
+  .o_asleep_progress_labels {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+  .o_asleep_progress_pct { font-weight: 500; color: var(--o-brand); font-variant-numeric: tabular-nums; }
   .o_asleep_progress_track {
     width: 100%;
     height: 8px;
@@ -130,17 +148,23 @@ _PAGE_TEMPLATE = Template("""<!doctype html>
     overflow: hidden;
   }
   .o_asleep_progress_fill {
-    width: 40%;
+    width: 0;
     height: 100%;
     border-radius: 999px;
     background: var(--o-brand);
+    transition: width 0.6s ease-out;
+  }
+  .o_asleep_progress_fill.o_asleep_progress_fill_indeterminate {
+    width: 40%;
+    transition: none;
     animation: o_asleep_indeterminate 1.4s ease-in-out infinite;
   }
   @keyframes o_asleep_indeterminate {
     0% { transform: translateX(-100%); }
     100% { transform: translateX(250%); }
   }
-  .o_asleep_waking_note { margin-top: 10px; font-size: 12px; color: var(--o-gray-600); }
+  .o_asleep_step_note { margin: 10px 0 0; font-size: 13px; }
+  .o_asleep_waking_note { margin-top: 4px; font-size: 12px; color: var(--o-gray-600); }
   .o_asleep_footer { margin-top: calc(var(--o-spacer) * 1.5); font-size: 12px; color: var(--o-gray-600); }
 </style>
 </head>
@@ -159,8 +183,13 @@ _PAGE_TEMPLATE = Template("""<!doctype html>
     <h1 class="o_asleep_headline" id="o_asleep_headline"></h1>
     <p class="o_asleep_copy" id="o_asleep_copy"></p>
     <button type="button" class="o_asleep_btn" id="o_asleep_wake_btn">Wake Up</button>
-    <div id="o_asleep_progress" style="display:none">
-      <div class="o_asleep_progress_track"><div class="o_asleep_progress_fill"></div></div>
+    <div id="o_asleep_progress" class="o_asleep_progress" style="display:none">
+      <div class="o_asleep_progress_labels">
+        <span id="o_asleep_step_label"></span>
+        <span class="o_asleep_progress_pct" id="o_asleep_progress_pct"></span>
+      </div>
+      <div class="o_asleep_progress_track"><div class="o_asleep_progress_fill" id="o_asleep_progress_fill"></div></div>
+      <p class="o_asleep_step_note" id="o_asleep_step_note"></p>
       <p class="o_asleep_waking_note">This can take a minute or two &mdash; this page updates on its own.</p>
     </div>
     <a class="o_asleep_btn o_asleep_btn_success" id="o_asleep_awake_link" href="$instance_url" style="display:none">Go to your instance &rarr;</a>
@@ -178,7 +207,25 @@ _PAGE_TEMPLATE = Template("""<!doctype html>
             "Your trial is back up and running \\u2014 right where you left it."]
   };
 
-  function applyPhase(phase) {
+  // Mirrors the approved design's milestones (docs/design/174-asleep-wake-page/) - the
+  // percentage bands are illustrative, not measured (there is no real per-step figure to poll,
+  // see WAKE_EXPECTED_DURATION_SECONDS's own docstring), but the messages themselves are the
+  // actual approved copy, and the percentage they ride is real elapsed time from the server.
+  var WAKE_STEPS = [
+    { endsAt: 5, label: 'Preparing to wake your trial\\u2026', note: 'Getting everything ready to bring your instance back online.' },
+    { endsAt: 55, label: 'Starting your trial\\u2019s server\\u2026', note: 'Powering your instance back on.' },
+    { endsAt: 88, label: 'Getting your workspace ready\\u2026', note: 'Your server is booting up and starting your apps.' },
+    { endsAt: 100, label: 'Almost there\\u2026', note: 'Just confirming your trial is responding.' }
+  ];
+
+  function stepForProgress(progress) {
+    for (var i = 0; i < WAKE_STEPS.length; i++) {
+      if (progress < WAKE_STEPS[i].endsAt) { return WAKE_STEPS[i]; }
+    }
+    return WAKE_STEPS[WAKE_STEPS.length - 1];
+  }
+
+  function applyPhase(phase, elapsedSeconds, expectedSeconds) {
     document.body.dataset.phase = phase;
     document.getElementById('o_asleep_headline').textContent = COPY[phase][0];
     document.getElementById('o_asleep_copy').textContent = COPY[phase][1];
@@ -188,20 +235,61 @@ _PAGE_TEMPLATE = Template("""<!doctype html>
     document.getElementById('o_asleep_icon_ring').classList.toggle('o_asleep_icon_ring_awake', phase === 'awake');
     document.getElementById('o_asleep_icon_sleep').style.display = phase === 'awake' ? 'none' : '';
     document.getElementById('o_asleep_icon_awake').style.display = phase === 'awake' ? '' : 'none';
+    if (phase === 'waking' && typeof elapsedSeconds === 'number') {
+      var fill = document.getElementById('o_asleep_progress_fill');
+      var pctLabel = document.getElementById('o_asleep_progress_pct');
+      if (elapsedSeconds <= expectedSeconds) {
+        // Capped short of 100 while still waking - this page says "done" only once the server
+        // itself reports the awake phase, never based on the elapsed-time estimate alone.
+        var progress = Math.min(99, Math.round((elapsedSeconds / expectedSeconds) * 100));
+        var step = stepForProgress(progress);
+        document.getElementById('o_asleep_step_label').textContent = step.label;
+        document.getElementById('o_asleep_step_note').textContent = step.note;
+        pctLabel.textContent = progress + '%';
+        pctLabel.style.display = '';
+        fill.classList.remove('o_asleep_progress_fill_indeterminate');
+        fill.style.width = progress + '%';
+      } else {
+        // Past the expected-duration estimate: a fixed 99% would just sit frozen for however
+        // much longer WAKING_PHASE_TIMEOUT_MINUTES still allows, reading as broken rather than
+        // slow. An indeterminate animation stays honest (no invented percentage past the point
+        // the estimate means anything) while still showing something is happening.
+        var lastStep = WAKE_STEPS[WAKE_STEPS.length - 1];
+        document.getElementById('o_asleep_step_label').textContent = lastStep.label;
+        document.getElementById('o_asleep_step_note').textContent =
+          'This is taking a little longer than usual, but we\\u2019re still on it.';
+        pctLabel.style.display = 'none';
+        fill.classList.add('o_asleep_progress_fill_indeterminate');
+        fill.style.width = '';
+      }
+    }
   }
 
   function poll() {
-    fetch('/hosting_admin/asleep/status').then(function (response) { return response.json(); }).then(function (data) {
-      applyPhase(data.phase);
-      if (data.phase !== 'awake') {
+    // A transient failure here (a network blip, the Platform instance itself restarting)
+    // must not leave the page stuck showing "waking" forever with no way out - retry instead
+    // of dying silently. The server's own state is always the source of truth for what phase
+    // to show: a wake POST that never actually reached the server (see the click handler
+    // below) surfaces here as the status endpoint still reporting 'idle', which correctly
+    // brings the Wake Up button back instead of pretending a wake is still in progress.
+    fetch('/hosting_admin/asleep/status').then(function (response) {
+      if (!response.ok) { throw new Error('status ' + response.status); }
+      return response.json();
+    }).then(function (data) {
+      applyPhase(data.phase, data.elapsed_seconds, data.expected_seconds);
+      if (data.phase === 'waking') {
         setTimeout(poll, 4000);
       }
+    }).catch(function () {
+      setTimeout(poll, 4000);
     });
   }
 
   document.getElementById('o_asleep_wake_btn').addEventListener('click', function () {
     applyPhase('waking');
-    fetch('/hosting_admin/asleep/wake', { method: 'POST' }).then(poll);
+    // Swallow a failed POST rather than leaving the click handler's own promise rejected with
+    // nothing listening - poll() (always called next) reads the server's real state either way.
+    fetch('/hosting_admin/asleep/wake', { method: 'POST' }).catch(function () {}).then(poll);
   });
 
   applyPhase(document.body.dataset.phase);
@@ -245,14 +333,26 @@ class HostingAsleepController(http.Controller):
             raise NotFound()
         if trial_org.state == 'suspended':
             trial_org.sudo().action_wake()
-        return request.make_json_response({'phase': self._phase(trial_org)})
+        return request.make_json_response(self._status_payload(trial_org))
 
     @http.route('/hosting_admin/asleep/status', type='http', auth='public', methods=['GET'], csrf=False)
     def status(self, **kwargs):
         trial_org = self._trial_org_for_request()
         if not trial_org:
             raise NotFound()
-        return request.make_json_response({'phase': self._phase(trial_org)})
+        return request.make_json_response(self._status_payload(trial_org))
+
+    @classmethod
+    def _status_payload(cls, trial_org):
+        phase = cls._phase(trial_org)
+        elapsed_seconds = 0
+        if phase == 'waking' and trial_org.last_job_started_at:
+            elapsed_seconds = max(0, (fields.Datetime.now() - trial_org.last_job_started_at).total_seconds())
+        return {
+            'phase': phase,
+            'elapsed_seconds': elapsed_seconds,
+            'expected_seconds': WAKE_EXPECTED_DURATION_SECONDS,
+        }
 
     def _trial_org_for_request(self):
         host = (request.httprequest.host or '').split(':')[0]
