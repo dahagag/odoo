@@ -364,14 +364,16 @@ class HostingAsleepController(http.Controller):
         reached AwsProvisioner.check_status()'s SUCCEEDED promotion yet), or 'awake' (anything
         else - active with no running wake job).
 
-        'waking' is bounded by WAKING_PHASE_TIMEOUT_MINUTES, not just last_job_status == 'running'
-        - _cron_poll_pending_jobs is what would normally flip that to 'succeeded', but a
+        A real AwsProvisioner-backed job tracks 'waking' by last_execution_arn (set the moment
+        AwsProvisioner.wake() starts a Step Functions execution, docs/adr/0019) for as long as
+        _cron_poll_pending_jobs hasn't yet observed it finish - the real WakeInstance Task allows
+        up to ec2_power_timeout_seconds plus retries, comfortably past a few minutes under load,
+        so this must never time out while a real execution is still being tracked. Only a
         StubProvisioner-backed record (no AWS wiring configured - dev, tests, or a demo
-        environment per docs/agents/odoo-19-development.md's walkthrough guidance) has no
-        real execution for that cron to ever observe, so last_job_status would otherwise stay
-        'running' forever and this page would show "Waking up" indefinitely. The timeout is
-        generously above ADR-0014's ~1-2 minute real-world target so it never cuts off a
-        genuinely still-running AWS wake early."""
+        environment per docs/agents/odoo-19-development.md's walkthrough guidance, no
+        last_execution_arn ever set) falls back to WAKING_PHASE_TIMEOUT_MINUTES, since it has no
+        real execution for that cron to ever observe and last_job_status would otherwise stay
+        'running' forever, showing "Waking up" indefinitely."""
         if trial_org.state == 'suspended':
             return 'idle'
         started_recently = (
@@ -379,7 +381,12 @@ class HostingAsleepController(http.Controller):
             and fields.Datetime.now() - trial_org.last_job_started_at
             < timedelta(minutes=WAKING_PHASE_TIMEOUT_MINUTES)
         )
-        if trial_org.last_job_action == 'wake' and trial_org.last_job_status == 'running' and started_recently:
+        is_waking = (
+            trial_org.last_job_action == 'wake'
+            and trial_org.last_job_status == 'running'
+            and (trial_org.last_execution_arn or started_recently)
+        )
+        if is_waking:
             return 'waking'
         return 'awake'
 
