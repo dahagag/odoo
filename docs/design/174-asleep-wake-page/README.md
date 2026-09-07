@@ -21,7 +21,10 @@ as the org's state actually changes):
    pointing at the org's own URL.
 
 A "Restart demo" link (awake phase only) replays the sequence for review purposes — cut once the
-real controller replaces the simulated progress timer with an actual status poll.
+real controller replaces the simulated progress timer with an actual status poll. A top-right
+theme toggle (also review-only, not part of the shipped page — Odoo picks light/dark globally)
+switches the card and page background to an approximate reading of Odoo's dark webclient palette;
+brand/success hues stay the same, only surface/text tokens shift.
 
 Awaiting approval via an activated comment thread on the Artifact before writing the real
 `hosting_admin` controller/QWeb template (per `docs/agents/design-review.md`).
