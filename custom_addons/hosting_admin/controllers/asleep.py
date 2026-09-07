@@ -11,20 +11,24 @@ request here once the Trial Org's own health check starts failing; `IrHttp._disp
 suspended Trial Org's Host land here, not just this controller's own routes.
 """
 from html import escape
+from string import Template
 
 from werkzeug.exceptions import NotFound
 
 from odoo import http
 from odoo.http import request
 
-_PAGE_TEMPLATE = """<!doctype html>
+# string.Template, not str.format(): the page's own CSS/JS is full of literal `{`/`}`, which
+# .format() would force doubling every single one of to escape - Template's $-prefixed
+# placeholders don't collide with braces at all, so the markup below reads as plain HTML/CSS/JS.
+_PAGE_TEMPLATE = Template("""<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{org_name} is asleep</title>
+<title>$org_name is asleep</title>
 <style>
-  :root {{
+  :root {
     --o-brand: #71639e;
     --o-brand-hover: #5a4e80;
     --o-brand-active-bg: #cbc4e0;
@@ -39,24 +43,24 @@ _PAGE_TEMPLATE = """<!doctype html>
     --o-spacer: 16px;
     --o-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Ubuntu,
       "Noto Sans", Arial, sans-serif;
-  }}
-  * {{ box-sizing: border-box; }}
-  body {{
+  }
+  * { box-sizing: border-box; }
+  body {
     margin: 0;
     font-family: var(--o-font);
     font-size: 14px;
     color: var(--o-gray-900);
     background: var(--o-gray-100);
-  }}
-  a {{ color: var(--o-brand); }}
-  .o_asleep_page {{
+  }
+  a { color: var(--o-brand); }
+  .o_asleep_page {
     min-height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: calc(var(--o-spacer) * 2);
-  }}
-  .o_asleep_card {{
+  }
+  .o_asleep_card {
     width: 100%;
     max-width: 420px;
     background: #ffffff;
@@ -65,8 +69,8 @@ _PAGE_TEMPLATE = """<!doctype html>
     box-shadow: 0 2px 8px rgba(33, 37, 41, 0.06);
     padding: calc(var(--o-spacer) * 2) calc(var(--o-spacer) * 1.75);
     text-align: center;
-  }}
-  .o_asleep_icon_ring {{
+  }
+  .o_asleep_icon_ring {
     width: 72px;
     height: 72px;
     margin: 0 auto var(--o-spacer);
@@ -75,24 +79,24 @@ _PAGE_TEMPLATE = """<!doctype html>
     display: flex;
     align-items: center;
     justify-content: center;
-  }}
-  .o_asleep_icon_ring svg {{ width: 36px; height: 36px; color: var(--o-brand); }}
-  .o_asleep_org_name {{
+  }
+  .o_asleep_icon_ring svg { width: 36px; height: 36px; color: var(--o-brand); }
+  .o_asleep_org_name {
     font-size: 12px;
     font-weight: 500;
     letter-spacing: 0.02em;
     text-transform: uppercase;
     color: var(--o-gray-600);
     margin: 0 0 6px;
-  }}
-  .o_asleep_headline {{ font-size: 20px; font-weight: 500; line-height: 1.3; margin: 0 0 10px; }}
-  .o_asleep_copy {{
+  }
+  .o_asleep_headline { font-size: 20px; font-weight: 500; line-height: 1.3; margin: 0 0 10px; }
+  .o_asleep_copy {
     font-size: 14px;
     line-height: 1.5;
     color: var(--o-gray-600);
     margin: 0 0 calc(var(--o-spacer) * 1.5);
-  }}
-  .o_asleep_btn {{
+  }
+  .o_asleep_btn {
     appearance: none;
     border: 1px solid var(--o-brand);
     border-radius: var(--o-radius);
@@ -108,33 +112,33 @@ _PAGE_TEMPLATE = """<!doctype html>
     align-items: center;
     justify-content: center;
     text-decoration: none;
-  }}
-  .o_asleep_btn:hover {{ background: var(--o-brand-hover); border-color: var(--o-brand-hover); }}
-  .o_asleep_btn_success {{ border-color: var(--o-success); background: var(--o-success); }}
-  .o_asleep_btn_success:hover {{ background: var(--o-success-hover); border-color: var(--o-success-hover); }}
-  .o_asleep_progress_track {{
+  }
+  .o_asleep_btn:hover { background: var(--o-brand-hover); border-color: var(--o-brand-hover); }
+  .o_asleep_btn_success { border-color: var(--o-success); background: var(--o-success); }
+  .o_asleep_btn_success:hover { background: var(--o-success-hover); border-color: var(--o-success-hover); }
+  .o_asleep_progress_track {
     width: 100%;
     height: 8px;
     border-radius: 999px;
     background: var(--o-gray-300);
     overflow: hidden;
-  }}
-  .o_asleep_progress_fill {{
+  }
+  .o_asleep_progress_fill {
     width: 40%;
     height: 100%;
     border-radius: 999px;
     background: var(--o-brand);
     animation: o_asleep_indeterminate 1.4s ease-in-out infinite;
-  }}
-  @keyframes o_asleep_indeterminate {{
-    0% {{ transform: translateX(-100%); }}
-    100% {{ transform: translateX(250%); }}
-  }}
-  .o_asleep_waking_note {{ margin-top: 10px; font-size: 12px; color: var(--o-gray-600); }}
-  .o_asleep_footer {{ margin-top: calc(var(--o-spacer) * 1.5); font-size: 12px; color: var(--o-gray-600); }}
+  }
+  @keyframes o_asleep_indeterminate {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(250%); }
+  }
+  .o_asleep_waking_note { margin-top: 10px; font-size: 12px; color: var(--o-gray-600); }
+  .o_asleep_footer { margin-top: calc(var(--o-spacer) * 1.5); font-size: 12px; color: var(--o-gray-600); }
 </style>
 </head>
-<body data-phase="{phase}">
+<body data-phase="$phase">
 <div class="o_asleep_page">
   <div class="o_asleep_card">
     <div class="o_asleep_icon_ring">
@@ -142,7 +146,7 @@ _PAGE_TEMPLATE = """<!doctype html>
         <path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"></path>
       </svg>
     </div>
-    <p class="o_asleep_org_name">{org_name}</p>
+    <p class="o_asleep_org_name">$org_name</p>
     <h1 class="o_asleep_headline" id="o_asleep_headline"></h1>
     <p class="o_asleep_copy" id="o_asleep_copy"></p>
     <button type="button" class="o_asleep_btn" id="o_asleep_wake_btn">Wake Up</button>
@@ -150,52 +154,52 @@ _PAGE_TEMPLATE = """<!doctype html>
       <div class="o_asleep_progress_track"><div class="o_asleep_progress_fill"></div></div>
       <p class="o_asleep_waking_note">This can take a minute or two &mdash; this page updates on its own.</p>
     </div>
-    <a class="o_asleep_btn o_asleep_btn_success" id="o_asleep_awake_link" href="{instance_url}" style="display:none">Go to your instance &rarr;</a>
+    <a class="o_asleep_btn o_asleep_btn_success" id="o_asleep_awake_link" href="$instance_url" style="display:none">Go to your instance &rarr;</a>
     <p class="o_asleep_footer">Idle trials suspend automatically to save cost &mdash; nothing was lost.</p>
   </div>
 </div>
 <script>
-(function () {{
-  var COPY = {{
+(function () {
+  var COPY = {
     idle: ["This trial is taking a nap",
            "It suspended itself after a while idle, to save cost. Click Wake Up and it will be back in about a minute or two."],
     waking: ["Waking up your trial",
              "Bringing your trial's instance back online. Hang tight."],
     awake: ["You're all set!",
             "Your trial is back up and running \\u2014 right where you left it."]
-  }};
+  };
 
-  function applyPhase(phase) {{
+  function applyPhase(phase) {
     document.body.dataset.phase = phase;
     document.getElementById('o_asleep_headline').textContent = COPY[phase][0];
     document.getElementById('o_asleep_copy').textContent = COPY[phase][1];
     document.getElementById('o_asleep_wake_btn').style.display = phase === 'idle' ? '' : 'none';
     document.getElementById('o_asleep_progress').style.display = phase === 'waking' ? '' : 'none';
     document.getElementById('o_asleep_awake_link').style.display = phase === 'awake' ? '' : 'none';
-  }}
+  }
 
-  function poll() {{
-    fetch('/hosting_admin/asleep/status').then(function (response) {{ return response.json(); }}).then(function (data) {{
+  function poll() {
+    fetch('/hosting_admin/asleep/status').then(function (response) { return response.json(); }).then(function (data) {
       applyPhase(data.phase);
-      if (data.phase !== 'awake') {{
+      if (data.phase !== 'awake') {
         setTimeout(poll, 4000);
-      }}
-    }});
-  }}
+      }
+    });
+  }
 
-  document.getElementById('o_asleep_wake_btn').addEventListener('click', function () {{
+  document.getElementById('o_asleep_wake_btn').addEventListener('click', function () {
     applyPhase('waking');
-    fetch('/hosting_admin/asleep/wake', {{ method: 'POST' }}).then(poll);
-  }});
+    fetch('/hosting_admin/asleep/wake', { method: 'POST' }).then(poll);
+  });
 
   applyPhase(document.body.dataset.phase);
-  if (document.body.dataset.phase === 'waking') {{
+  if (document.body.dataset.phase === 'waking') {
     poll();
-  }}
-}})();
+  }
+})();
 </script>
 </body>
-</html>"""
+</html>""")
 
 
 class HostingAsleepController(http.Controller):
@@ -214,7 +218,16 @@ class HostingAsleepController(http.Controller):
         """Calls the same `action_wake()` a `hosting_admin` operator's own backend button
         calls - a no-op (not an error) if the org isn't `suspended` any more by the time this
         runs, since a slow double-click or a second open tab racing this one is a completely
-        ordinary way to get here twice."""
+        ordinary way to get here twice.
+
+        `auth='public'`/`csrf=False` is deliberate, not an oversight: this action has no
+        narrower legitimate caller than "any visitor to this Trial Org's own asleep page" -
+        there is no login to require (ADR-0014's whole point is that a suspended Trial Org's
+        own visitor, who may never have an Odoo account here at all, can revive it themselves)
+        and no Odoo session to forge a CSRF token against. The only real risk this action
+        carries is someone waking a Trial Org early, which costs at most one idle-timeout's
+        worth of compute and is exactly the action this page's own Wake Up button offers to
+        literally anyone who can reach this Host - never a privileged or destructive one."""
         trial_org = self._trial_org_for_request()
         if not trial_org:
             raise NotFound()
@@ -249,7 +262,7 @@ class HostingAsleepController(http.Controller):
     def _render_page(self, trial_org):
         phase = self._phase(trial_org)
         host = request.httprequest.host or ''
-        return _PAGE_TEMPLATE.format(
+        return _PAGE_TEMPLATE.substitute(
             org_name=escape(trial_org.name),
             phase=phase,
             instance_url=escape(f'https://{host}'),

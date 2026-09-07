@@ -32,5 +32,10 @@ theme toggle (also review-only, not part of the shipped page — Odoo picks ligh
 switches the card and page background to an approximate reading of Odoo's dark webclient palette;
 brand/success hues stay the same, only surface/text tokens shift.
 
-Awaiting approval via an activated comment thread on the Artifact before writing the real
-`hosting_admin` controller/QWeb template (per `docs/agents/design-review.md`).
+Approved via an activated comment thread on the Artifact (2026-09-07T17:26). The shipped
+`hosting_admin` controller (`controllers/asleep.py`) implements the idle/waking/awake phases and
+the brand/success tokens above; it uses a plain indeterminate progress animation for "waking"
+rather than this mockup's fabricated multi-step milestone timer, since the milestones stood in
+for a future `get_audit_trail()`-backed status endpoint this ticket didn't build — the real page
+polls a small JSON status endpoint instead. The dark-mode toggle was review-only and isn't part
+of the shipped page (Odoo picks light/dark globally).

@@ -225,8 +225,19 @@ resource "aws_lambda_function" "ec2_power_control" {
 
 data "archive_file" "snapshot_manager" {
   type        = "zip"
-  source_dir  = "${path.module}/lambda_src/snapshot_manager"
   output_path = "${path.module}/.build/snapshot_manager.zip"
+
+  # Explicit `source` blocks, not `source_dir`, so this Lambda's own handler.py and the
+  # ec2_client.py helper it shares with snapshot_cleanup (lambda_src/_common/) both land at the
+  # zip root as sibling modules, without duplicating that helper's source into this directory.
+  source {
+    content  = file("${path.module}/lambda_src/snapshot_manager/handler.py")
+    filename = "handler.py"
+  }
+  source {
+    content  = file("${path.module}/lambda_src/_common/ec2_client.py")
+    filename = "ec2_client.py"
+  }
 }
 
 resource "aws_iam_role" "snapshot_manager" {
@@ -293,8 +304,18 @@ resource "aws_lambda_function" "snapshot_manager" {
 
 data "archive_file" "snapshot_cleanup" {
   type        = "zip"
-  source_dir  = "${path.module}/lambda_src/snapshot_cleanup"
   output_path = "${path.module}/.build/snapshot_cleanup.zip"
+
+  # See snapshot_manager's own archive_file above for why this is explicit `source` blocks
+  # rather than `source_dir`.
+  source {
+    content  = file("${path.module}/lambda_src/snapshot_cleanup/handler.py")
+    filename = "handler.py"
+  }
+  source {
+    content  = file("${path.module}/lambda_src/_common/ec2_client.py")
+    filename = "ec2_client.py"
+  }
 }
 
 resource "aws_iam_role" "snapshot_cleanup" {

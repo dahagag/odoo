@@ -12,16 +12,9 @@ doesn't reliably have the EC2 instance id recorded yet (see hosting.trial.org.in
 docstring), the same reason ec2_power_control's IAM policy is scoped by tag rather than a
 specific instance ARN.
 """
-import functools
 from datetime import datetime, timedelta, timezone
 
-import boto3
-
-
-@functools.cache
-def _client():
-    """Returns a lazily-created, cached boto3 EC2 client."""
-    return boto3.client("ec2")
+from ec2_client import get_ec2_client
 
 
 def handler(event, _context):
@@ -29,7 +22,7 @@ def handler(event, _context):
     trial_org_id = str(event["trial_org_id"])
     retention_days = int(event["retention_days"])
 
-    client = _client()
+    client = get_ec2_client()
     reservations = client.describe_instances(Filters=[
         {"Name": "tag:TrialOrgId", "Values": [trial_org_id]},
     ])["Reservations"]

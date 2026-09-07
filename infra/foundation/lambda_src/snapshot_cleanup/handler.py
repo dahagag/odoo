@@ -6,20 +6,13 @@ itself on its own schedule, not one-off snapshots created elsewhere - so this La
 retention backstop: it scans for snapshots carrying the DeleteAfter tag snapshot_manager sets and
 deletes any whose date has passed.
 """
-import functools
 from datetime import date
 
-import boto3
-
-
-@functools.cache
-def _client():
-    """Returns a lazily-created, cached boto3 EC2 client."""
-    return boto3.client("ec2")
+from ec2_client import get_ec2_client
 
 
 def handler(_event, _context):
-    client = _client()
+    client = get_ec2_client()
     today = date.today().isoformat()
 
     deleted_snapshot_ids = []

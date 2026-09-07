@@ -46,10 +46,10 @@ wildcard `*.<root_domain>`/`*.<dev_subdomain>` certificate already issued in
 `infra/foundation/dns.tf`) is **out of scope here** — ADR-0015 explicitly deferred designing the
 Platform Account's own compute and networking, and nothing in this repo's Terraform models it yet.
 This ADR's Hosting-side change is limited to: the failover DNS wiring, and a new
-`var.platform_failover_target` input (a DNS name) threaded through `infra/foundation` into
-`infra/modules/trial_org`, standing in for that ingress until it exists. Wiring that variable to a
-real value is follow-up work tracked against whichever ticket stands up the Platform Account's
-ingress.
+`asleep_page_failover_ips` input declared directly on `infra/modules/trial_org` (not threaded
+through `infra/foundation` — nothing in the foundation module needs to know about it), standing in
+for that ingress until it exists. Wiring that variable to a real value is follow-up work tracked
+against whichever ticket stands up the Platform Account's ingress.
 
 ## Why not a new Lambda/CloudFront fallback (the ticket's other suggested option)
 
