@@ -68,6 +68,16 @@ test("a failed lookup hides the chip instead of raising", async () => {
     expect(".o_hosting_expiry_countdown_systray").toHaveCount(0);
 });
 
+test("does not inherit the systray corner-badge transform", async () => {
+    // Regression test for issue #164: the chip must not carry Bootstrap's `badge` class,
+    // which would make it match `.o_main_navbar .o_menu_systray .badge` and get shifted
+    // by that rule's `transform: translate(-0.6em, -30%)`.
+    await mountSystrayWithExpiry("2026-09-20"); // 10 days left
+    const chip = document.querySelector(".o_hosting_expiry_countdown_systray");
+    expect(chip.classList.contains("badge")).toBe(false);
+    expect(getComputedStyle(chip).transform).toBe("none");
+});
+
 test("re-fetches on in-app navigation instead of staying stale", async () => {
     await mountSystrayWithExpiry("2026-09-20"); // 10 days left
     expect(".o_hosting_expiry_countdown_systray--green").toHaveCount(1);
