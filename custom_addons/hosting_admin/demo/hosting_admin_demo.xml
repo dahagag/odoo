@@ -20,6 +20,14 @@
          real Cost Explorer data (docs/adr/0030).
          ============================================================ -->
 
+    <!-- Platform-only data (docs/adr/0018): base.user_admin needs an explicit grant into
+         group_hosting_admin_administrator to see any of this at all, same as any other
+         Platform operator - `Command.link` adds it alongside the admin's existing groups
+         rather than replacing them. -->
+    <record id="base.user_admin" model="res.users">
+        <field name="group_ids" eval="[Command.link(ref('hosting_admin.group_hosting_admin_administrator'))]"/>
+    </record>
+
     <record id="hosting_admin_demo_config_credit_amount" model="ir.config_parameter">
         <field name="key">hosting_admin.aws_cost_credit_amount</field>
         <field name="value">200.0</field>
