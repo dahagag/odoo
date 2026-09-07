@@ -15,6 +15,7 @@
       --o-success: #28a745;
       --o-success-hover: #1f7a35;
       --o-success-bg: #e3f5e8;
+      --o-success-bg-btn: #eefaf2;
       --o-gray-100: #f8f9fa;
       --o-gray-300: #dee2e6;
       --o-gray-600: #6c757d;
@@ -36,6 +37,7 @@
       --o-success: #4caf7a;
       --o-success-hover: #3d9163;
       --o-success-bg: #203028;
+      --o-success-bg-btn: #2a4034;
       --o-gray-100: #1b1b26;
       --o-gray-300: #383846;
       --o-gray-600: #a7a7b8;
@@ -158,17 +160,20 @@
       cursor: default;
     }
 
+    /* Tonal, not solid-fill: same tint family as the checkmark ring's background (a shade
+       lighter), so the button reads as visually tied to that "you're awake" state while still
+       standing out as actionable against the card. */
     .o_asleep_btn_success,
     .o_asleep_btn_success:link,
     .o_asleep_btn_success:visited {
       border-color: var(--o-success);
-      background: var(--o-success);
-      color: #ffffff;
+      background: var(--o-success-bg-btn);
+      color: var(--o-success);
     }
     .o_asleep_btn_success:hover {
-      background: var(--o-success-hover);
+      background: var(--o-success-bg);
       border-color: var(--o-success-hover);
-      color: #ffffff;
+      color: var(--o-success-hover);
     }
 
     .o_asleep_progress {
