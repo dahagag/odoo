@@ -203,8 +203,14 @@
       transition: width 0.25s linear;
     }
 
+    .o_asleep_step_note {
+      margin: 10px 0 0;
+      font-size: 13px;
+      color: var(--o-gray-900);
+    }
+
     .o_asleep_waking_note {
-      margin-top: 10px;
+      margin-top: 4px;
       font-size: 12px;
       color: var(--o-gray-600);
     }
@@ -266,12 +272,13 @@
 
     <div class="o_asleep_progress" style="{{wakingDisplay}}">
       <div class="o_asleep_progress_labels">
-        <span>Waking up&hellip;</span>
+        <span>{{stepLabel}}</span>
         <span class="o_asleep_progress_pct">{{progressLabel}}</span>
       </div>
       <div class="o_asleep_progress_track">
         <div class="o_asleep_progress_fill" style="{{progressFillStyle}}"></div>
       </div>
+      <p class="o_asleep_step_note">{{stepNote}}</p>
       <p class="o_asleep_waking_note">This can take a minute or two &mdash; feel free to check back.</p>
     </div>
 
@@ -289,11 +296,29 @@
   "orgName": {"editor": "text", "default": "Acme Widgets Trial"},
   "instanceUrl": {"editor": "text", "default": "https://acme-widgets.dev.method.factory1.io"}
 }'>
+// Milestone model standing in for AwsProvisioner.get_audit_trail()'s existing per-step
+// Step Functions execution history (docs/adr/0022) - a real Wake Up has no smooth,
+// continuously-reported percentage to poll, only these discrete state transitions,
+// so the honest progress bar advances step-by-step rather than on a fake linear timer.
+// endsAt is the cumulative % at which that step completes, roughly matching each infra
+// phase's typical share of a wake (lock/release negligible, EC2 start dominates,
+// then OS/app boot, then the final health-check confirmation).
+const WAKE_STEPS = [
+  { endsAt: 5, label: 'Preparing to wake your trial…', note: 'Getting everything ready to bring your instance back online.' },
+  { endsAt: 55, label: "Starting your trial's server…", note: 'Powering your instance back on.' },
+  { endsAt: 88, label: 'Getting your workspace ready…', note: 'Your server is booting up and starting your apps.' },
+  { endsAt: 100, label: 'Almost there…', note: "Just confirming your trial is responding." },
+];
+
 class Component extends DCLogic {
   constructor(props) {
     super(props);
     this.state = { phase: 'idle', progress: 0, dark: false };
     this._interval = null;
+  }
+
+  static _stepForProgress(progress) {
+    return WAKE_STEPS.find((step) => progress < step.endsAt) || WAKE_STEPS[WAKE_STEPS.length - 1];
   }
 
   componentWillUnmount() {
@@ -314,7 +339,7 @@ class Component extends DCLogic {
     // (Step Functions execution progress) - uneven increments so it doesn't read as a fake
     // linear fill, and it always reaches 100 before flipping to 'awake'.
     this._interval = setInterval(() => {
-      const next = Math.min(100, this.state.progress + (6 + Math.random() * 10));
+      const next = Math.min(100, this.state.progress + (2 + Math.random() * 4));
       if (next >= 100) {
         this._stopProgress();
         this.setState({ phase: 'awake', progress: 100 });
@@ -350,6 +375,7 @@ class Component extends DCLogic {
       waking: 'Waking up your trial',
       awake: "You're all set!",
     };
+    const step = Component._stepForProgress(progress);
 
     return {
       orgName: this.props.orgName,
@@ -358,6 +384,8 @@ class Component extends DCLogic {
       copy: copyByPhase[phase],
       progressLabel: `${progress}%`,
       progressFillStyle: `width:${progress}%`,
+      stepLabel: step.label,
+      stepNote: step.note,
       idleDisplay: isIdle ? '' : 'display:none',
       wakingDisplay: isWaking ? '' : 'display:none',
       awakeDisplay: isAwake ? '' : 'display:none',

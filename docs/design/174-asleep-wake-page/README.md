@@ -13,9 +13,15 @@ as the org's state actually changes):
    trial is taking a nap", one line of copy re-using the onboarding prompt's existing "idle
    instances suspend automatically to save cost" wording, and a full-width primary "Wake Up"
    button.
-2. **Waking** — the button is replaced by a determinate progress bar ("Waking up… NN%") standing
-   in for polling the real Wake Up job's status, with a note that it can take a minute or two.
-   Headline/copy switch to "Waking up your trial" for this phase.
+2. **Waking** — the button is replaced by a determinate progress bar with a user-friendly,
+   per-step message rather than a bare "Waking up… NN%": four milestones ("Preparing to wake
+   your trial…" → "Starting your trial's server…" → "Getting your workspace ready…" → "Almost
+   there…"), each with a one-line note on what's actually happening. The milestones and their
+   rough percentage bands stand in for `AwsProvisioner.get_audit_trail()`'s existing per-step
+   Step Functions execution history (ADR-0022) — a real Wake Up has no smooth, continuously
+   reported percentage to poll, only discrete state transitions, so the progress bar should
+   advance step-by-step against that real data rather than a fake linear timer. Headline/copy
+   switch to "Waking up your trial" for the whole phase; the step message is the specific one.
 3. **Awake** — the icon ring switches to a green check on a tinted success background, headline
    becomes "You're all set!", and the button is replaced by a green "Go to your instance →" link
    pointing at the org's own URL.
