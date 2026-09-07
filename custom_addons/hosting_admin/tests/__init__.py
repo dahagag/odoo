@@ -5,6 +5,7 @@ from . import (
     test_cost_explorer_client,
     test_trial_org_audit_trail,
     test_trial_org_aws_provisioner,
+    test_trial_org_dns_label_transition_concurrency,
     test_trial_org_log_channel_authorization,
     test_trial_org_log_webhook,
     test_trial_org_open_invite,

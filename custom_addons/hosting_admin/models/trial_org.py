@@ -317,15 +317,30 @@ class HostingTrialOrg(models.Model):
         (CodeRabbit, PR #171): Issue's execution binds the DNS record and the assumed-role
         session tag (issue #125) to whatever label is on the record at that moment, so changing
         it afterward would leave Destroy targeting a record name that no longer matches what
-        Issue actually created."""
+        Issue actually created.
+
+        This check locks the affected rows and re-reads ``state`` straight from the database
+        rather than trusting ``trial_org.state``'s ORM-cached value (CodeRabbit, PR #168):
+        _apply_transition() reads the label for its Provisioner call while a record is still
+        'issued', and only writes the new state in a final sudo().write() afterward, so a plain
+        cached read here could see 'issued' and let this write proceed, then block on that
+        final write's row lock, then land anyway once unblocked - changing the label to
+        something the Provisioner never saw, after the fact. Locking first forces this write to
+        either finish (and take the lock) before _apply_transition starts, or wait for
+        _apply_transition's transaction to conclude and then see its committed, no-longer-
+        'issued' state - same row-locking pattern as action_join_open_invite's seat-cap guard
+        (CodeRabbit, PR #160)."""
         if 'state' in vals and not self.env.su:
             raise AccessError(_(
                 "Trial Org state cannot be set directly; it can only change through its "
                 "lifecycle actions (Issue, Suspend, Wake, Auto-Destroy)."))
-        if 'dns_subdomain_label' in vals and any(
-                trial_org.state != 'issued' for trial_org in self):
-            raise UserError(_(
-                "The DNS label cannot change once a Trial Org has been issued."))
+        if 'dns_subdomain_label' in vals and self:
+            self.env.cr.execute(
+                "SELECT id, state FROM hosting_trial_org WHERE id = ANY(%s) FOR UPDATE",
+                (self.ids,))
+            if any(state != 'issued' for _id, state in self.env.cr.fetchall()):
+                raise UserError(_(
+                    "The DNS label cannot change once a Trial Org has been issued."))
         return super().write(vals)
 
     def _get_provisioner(self):
@@ -487,6 +502,17 @@ class HostingTrialOrg(models.Model):
             provisioner = self._get_provisioner()
             now = fields.Datetime.now()
             for trial_org in self:
+                # Lock this row before the Provisioner reads dns_subdomain_label off it, and
+                # drop any cached value so that read is forced fresh under the lock. Pairs with
+                # write()'s own dns_subdomain_label guard lock (CodeRabbit, PR #168): whichever
+                # of the two gets here first holds the row until its transaction concludes, so a
+                # concurrent label write can no longer land after the Provisioner has already
+                # used the pre-change label - it either finishes first (and this then sees its
+                # committed label) or waits behind this transition's state write and is rejected
+                # by write()'s guard once state is no longer 'issued'.
+                self.env.cr.execute(
+                    "SELECT id FROM hosting_trial_org WHERE id = %s FOR UPDATE", (trial_org.id,))
+                trial_org.invalidate_recordset(['dns_subdomain_label'])
                 job_id, job_started_at = trial_org._new_job_id()
                 getattr(provisioner, action_name)(trial_org, job_id)
                 values = {

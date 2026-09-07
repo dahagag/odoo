@@ -1,4 +1,4 @@
-from odoo.exceptions import AccessError, ValidationError
+from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests import TransactionCase, new_test_user, tagged
 
 
@@ -134,6 +134,20 @@ class TestTrialOrgStateMachine(TransactionCase):
             self.trial_org.with_user(self.administrator).with_context(**forged_context).write(
                 {'state': 'active'})
         self.assertEqual(self.trial_org.state, 'issued')
+
+    def test_dns_subdomain_label_change_allowed_while_issued(self):
+        self.trial_org.with_user(self.administrator).write({
+            'dns_subdomain_label': "acme-relabeled"})
+        self.assertEqual(self.trial_org.dns_subdomain_label, "acme-relabeled")
+
+    def test_dns_subdomain_label_change_rejected_once_issued(self):
+        # write()'s dns_subdomain_label guard (CodeRabbit, PR #171) - the label is bound to the
+        # DNS record and assumed-role session tag Issue's execution created (issue #125), so it
+        # must not change once a record has left 'issued'.
+        self.trial_org.action_issue()
+        with self.assertRaises(UserError):
+            self.trial_org.with_user(self.administrator).write({
+                'dns_subdomain_label': "acme-relabeled"})
 
     def test_batch_transition_is_all_or_nothing(self):
         # One org already active, one still issued: neither should transition when the batch
