@@ -124,5 +124,15 @@ class TestTrialOrgAsleepPage(HttpCase):
 
     def test_a_host_for_an_active_org_is_not_redirected(self):
         self.trial_org.action_wake()
+        self.trial_org.write({'last_job_status': 'succeeded'})
         response = self._get('/web/login')
         self.assertEqual(response.status_code, 200)
+
+    def test_a_host_with_a_running_wake_job_is_still_redirected(self):
+        # action_wake() flips state to 'active' before the real wake job finishes - a visitor
+        # must keep seeing the asleep/waking page for that whole window, not the real (not yet
+        # ready) instance (ADR-0030).
+        self.trial_org.action_wake()
+        response = self._get('/web/login')
+        self.assertEqual(response.status_code, 303)
+        self.assertTrue(response.headers['Location'].endswith('/hosting_admin/asleep'))

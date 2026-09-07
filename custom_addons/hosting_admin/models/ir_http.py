@@ -29,6 +29,12 @@ class IrHttp(models.AbstractModel):
         if not ASLEEP_PAGE_ROUTES.intersection(routes):
             host = (request.httprequest.host or '').split(':')[0]
             trial_org = request.env['hosting.trial.org']._trial_org_for_host(host)
-            if trial_org and trial_org.state == 'suspended':
+            if trial_org and (
+                trial_org.state == 'suspended'
+                or (
+                    trial_org.last_job_action == 'wake'
+                    and trial_org.last_job_status == 'running'
+                )
+            ):
                 return request.redirect('/hosting_admin/asleep', code=303)
         return super()._dispatch(endpoint)
