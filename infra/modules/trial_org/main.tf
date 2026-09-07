@@ -194,8 +194,8 @@ resource "aws_route53_record" "trial_org" {
   # set_identifier/health_check_id require a routing policy to accompany them (AWS rejects one
   # without the other) - all three stay null together when failover isn't configured, which is
   # exactly what makes this a plain, non-failover record in that case.
-  set_identifier   = local.asleep_page_failover_enabled ? "primary" : null
-  health_check_id  = local.asleep_page_failover_enabled ? aws_route53_health_check.trial_org[0].id : null
+  set_identifier  = local.asleep_page_failover_enabled ? "primary" : null
+  health_check_id = local.asleep_page_failover_enabled ? aws_route53_health_check.trial_org[0].id : null
 
   dynamic "failover_routing_policy" {
     for_each = local.asleep_page_failover_enabled ? [1] : []
