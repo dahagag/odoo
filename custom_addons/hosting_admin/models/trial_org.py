@@ -86,16 +86,6 @@ def trial_org_log_bus_channel(trial_org_id):
     return f'{TRIAL_ORG_LOG_BUS_CHANNEL_PREFIX}{trial_org_id}'
 
 
-# Context key ``_apply_transition`` sets to authorize its own ``write({'state': ...})`` call.
-# ``state`` is declared ``readonly=True`` below, but that only hides the field in form views -
-# it does not stop a caller with model access from setting it directly via ORM or RPC
-# create()/write(), bypassing _apply_transition()'s source-state validation and Provisioner
-# call entirely. The create()/write() overrides on this model reject any caller-supplied
-# ``state`` unless this context key is set, so _apply_transition() is the only path that can
-# ever change it.
-ALLOW_STATE_WRITE_KEY = 'hosting_trial_org_allow_state_write'
-
-
 class HostingTrialOrg(models.Model):
     # Named 'hosting.trial.org' per the ticket's own literal suggestion, not
     # 'hosting.admin.trial.org'. docs/adr/0018 describes the addon's conceptual namespace as
@@ -283,10 +273,12 @@ class HostingTrialOrg(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        """Reject a caller-supplied ``state`` on create - ``readonly=True`` only hides the
-        field in form views, so this is the only thing stopping a direct ORM/RPC create() from
-        setting it to something other than the model's own default."""
-        if not self.env.context.get(ALLOW_STATE_WRITE_KEY):
+        """Reject a caller-supplied ``state`` on create unless the call is already elevated via
+        ``sudo()`` - ``readonly=True`` only hides the field in form views, so this is the only
+        thing stopping a direct ORM/RPC create() from setting it to something other than the
+        model's own default. See write() below for why this checks ``self.env.su`` rather than
+        a context flag."""
+        if not self.env.su:
             for vals in vals_list:
                 if 'state' in vals:
                     raise AccessError(_(
@@ -309,21 +301,46 @@ class HostingTrialOrg(models.Model):
         return slug[:63].rstrip('-')
 
     def write(self, vals):
-        """Reject a caller-supplied ``state`` on write unless it comes from
-        ``_apply_transition()`` itself (signalled via ``ALLOW_STATE_WRITE_KEY``) - see that
-        key's docstring above for why ``readonly=True`` alone is not enough. Also reject a
-        ``dns_subdomain_label`` change once any record has left 'issued' (CodeRabbit, PR #171):
-        Issue's execution binds the DNS record and the assumed-role session tag (issue #125) to
-        whatever label is on the record at that moment, so changing it afterward would leave
-        Destroy targeting a record name that no longer matches what Issue actually created."""
-        if 'state' in vals and not self.env.context.get(ALLOW_STATE_WRITE_KEY):
+        """Reject a caller-supplied ``state`` on write unless the call is already elevated via
+        ``sudo()`` (as ``_apply_transition()`` itself is, below).
+
+        This checks ``self.env.su`` rather than a context flag deliberately: ``context`` is a
+        plain caller-supplied dict on every ORM/RPC call (``with_context()`` is public API, and
+        RPC's ``execute_kw`` takes a ``context`` kwarg directly from the client), so gating on a
+        context key - as an earlier version of this guard did - can be forged by any caller with
+        ordinary write access to this model and defeats the guard entirely, bypassing
+        _apply_transition()'s source-state validation and Provisioner call. ``env.su`` can only
+        become true via an internal ``.sudo()`` call, which no RPC client can inject (same
+        pattern as crm_lead.py's trial_org_id write guard, CodeRabbit on PR #131).
+
+        Also reject a ``dns_subdomain_label`` change once any record has left 'issued'
+        (CodeRabbit, PR #171): Issue's execution binds the DNS record and the assumed-role
+        session tag (issue #125) to whatever label is on the record at that moment, so changing
+        it afterward would leave Destroy targeting a record name that no longer matches what
+        Issue actually created.
+
+        This check locks the affected rows and re-reads ``state`` straight from the database
+        rather than trusting ``trial_org.state``'s ORM-cached value (CodeRabbit, PR #168):
+        _apply_transition() reads the label for its Provisioner call while a record is still
+        'issued', and only writes the new state in a final sudo().write() afterward, so a plain
+        cached read here could see 'issued' and let this write proceed, then block on that
+        final write's row lock, then land anyway once unblocked - changing the label to
+        something the Provisioner never saw, after the fact. Locking first forces this write to
+        either finish (and take the lock) before _apply_transition starts, or wait for
+        _apply_transition's transaction to conclude and then see its committed, no-longer-
+        'issued' state - same row-locking pattern as action_join_open_invite's seat-cap guard
+        (CodeRabbit, PR #160)."""
+        if 'state' in vals and not self.env.su:
             raise AccessError(_(
                 "Trial Org state cannot be set directly; it can only change through its "
                 "lifecycle actions (Issue, Suspend, Wake, Auto-Destroy)."))
-        if 'dns_subdomain_label' in vals and any(
-                trial_org.state != 'issued' for trial_org in self):
-            raise UserError(_(
-                "The DNS label cannot change once a Trial Org has been issued."))
+        if 'dns_subdomain_label' in vals and self:
+            self.env.cr.execute(
+                "SELECT id, state FROM hosting_trial_org WHERE id = ANY(%s) FOR UPDATE",
+                (self.ids,))
+            if any(state != 'issued' for _id, state in self.env.cr.fetchall()):
+                raise UserError(_(
+                    "The DNS label cannot change once a Trial Org has been issued."))
         return super().write(vals)
 
     def _get_provisioner(self):
@@ -463,6 +480,20 @@ class HostingTrialOrg(models.Model):
         self.ensure_one()
         return str(uuid.uuid4()), fields.Datetime.now()
 
+    @staticmethod
+    def _check_source_state(trial_org, allowed_source_states, target_state):
+        """Shared by both the batch-wide pre-check and the per-record post-lock re-check in
+        ``_apply_transition()`` below, so the two can never drift apart into raising different
+        messages for what is otherwise the same rule."""
+        if trial_org.state not in allowed_source_states:
+            raise ValidationError(_(
+                "Trial Org %(name)s cannot move from %(current_state)s to "
+                "%(target_state)s.",
+                name=trial_org.name,
+                current_state=trial_org.state,
+                target_state=target_state,
+            ))
+
     def _apply_transition(self, action_name):
         """Validate every record in ``self`` is in a source state ``action_name`` allows, then
         call the matching ``Provisioner`` method (with a fresh job id from ``_new_job_id``) for
@@ -471,20 +502,41 @@ class HostingTrialOrg(models.Model):
         record rolls every record in the call back - a multi-record call is genuinely
         all-or-nothing, not just pre-validated-then-hopefully-safe."""
         allowed_source_states, target_state = _TRANSITIONS[action_name]
+        # Locked in a fixed, id-ascending order (below) regardless of how the caller assembled
+        # ``self`` - two concurrent batch calls sharing more than one Trial Org could otherwise
+        # each lock one shared record and then block waiting for the other's, a classic
+        # lock-ordering deadlock (CodeRabbit follow-up on PR #168).
+        ordered = self.sorted('id')
         with self.env.cr.savepoint():
-            for trial_org in self:
-                if trial_org.state not in allowed_source_states:
-                    raise ValidationError(_(
-                        "Trial Org %(name)s cannot move from %(current_state)s to "
-                        "%(target_state)s.",
-                        name=trial_org.name,
-                        current_state=trial_org.state,
-                        target_state=target_state,
-                    ))
+            for trial_org in ordered:
+                self._check_source_state(trial_org, allowed_source_states, target_state)
 
             provisioner = self._get_provisioner()
             now = fields.Datetime.now()
-            for trial_org in self:
+            for trial_org in ordered:
+                # Lock this row before the Provisioner reads dns_subdomain_label off it, and
+                # drop any cached value (state included) so both are forced fresh under the
+                # lock. Pairs with write()'s own dns_subdomain_label guard lock (CodeRabbit, PR
+                # #168): whichever of the two gets here first holds the row until its
+                # transaction concludes, so a concurrent label write can no longer land after
+                # the Provisioner has already used the pre-change label - it either finishes
+                # first (and this then sees its committed label) or waits behind this
+                # transition's state write and is rejected by write()'s guard once state is no
+                # longer 'issued'.
+                self.env.cr.execute(
+                    "SELECT id FROM hosting_trial_org WHERE id = %s FOR UPDATE", (trial_org.id,))
+                trial_org.invalidate_recordset(['dns_subdomain_label', 'state'])
+                # Re-validate under the lock (CodeRabbit follow-up on PR #168): the batch-wide
+                # check above runs before any row is locked, so two concurrent transitions on
+                # the same Trial Org could both pass it while state was still the old value. The
+                # DynamoDB per-Trial-Org lock (docs/adr/0020) already stops a losing concurrent
+                # call from provisioning duplicate infrastructure, but it can't stop this
+                # write() from recording that call's job id - StartExecution returns, and this
+                # write() commits, before that lock is ever checked inside the state machine.
+                # Rejecting here, before calling the Provisioner at all, is what actually
+                # prevents a losing call from clobbering last_job_id/last_job_status with an
+                # execution that's certain to fail.
+                self._check_source_state(trial_org, allowed_source_states, target_state)
                 job_id, job_started_at = trial_org._new_job_id()
                 getattr(provisioner, action_name)(trial_org, job_id)
                 values = {
@@ -503,7 +555,11 @@ class HostingTrialOrg(models.Model):
                     # (expiry sweep or manual teardown) - see the field's own docstring above.
                     values['snapshot_retention_until'] = (
                         fields.Date.context_today(self) + timedelta(days=SNAPSHOT_RETENTION_DAYS))
-                trial_org.with_context(**{ALLOW_STATE_WRITE_KEY: True}).write(values)
+                # Narrow, post-validation sudo() boundary: source state and Provisioner call are
+                # already done above, so this elevates only the exact write() this method
+                # promises - the one path allowed to ever set 'state' (see write()'s own
+                # docstring for why this checks env.su rather than a context flag).
+                trial_org.sudo().write(values)
 
     def _cron_suspend_idle(self):
         """Scheduled action: Suspend every active Trial Org whose last recorded activity is
