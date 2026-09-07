@@ -255,16 +255,39 @@ data "aws_iam_policy_document" "snapshot_manager" {
   # statement above: this Lambda has no execution-scoped identity to condition on beyond the
   # TrialOrgId tag its own payload names.
   statement {
-    sid    = "SnapshotTrialOrgVolumes"
-    effect = "Allow"
-    actions = [
-      "ec2:CreateSnapshot",
-      "ec2:CreateTags",
-    ]
+    sid       = "SnapshotTrialOrgVolumes"
+    effect    = "Allow"
+    actions   = ["ec2:CreateSnapshot"]
     resources = ["*"]
     condition {
       test     = "Null"
       variable = "aws:ResourceTag/TrialOrgId"
+      values   = ["false"]
+    }
+  }
+
+  # ec2:CreateTags is evaluated separately from ec2:CreateSnapshot for tag-on-create
+  # (TagSpecifications): the new snapshot has no tags yet, so aws:ResourceTag (which reads an
+  # existing resource's tags) can't authorize it - only aws:RequestTag/aws:TagKeys (the tags
+  # being applied) can, scoped by ec2:CreateAction to this exact call shape.
+  statement {
+    sid       = "TagSnapshotOnCreate"
+    effect    = "Allow"
+    actions   = ["ec2:CreateTags"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:CreateAction"
+      values   = ["CreateSnapshot"]
+    }
+    condition {
+      test     = "Null"
+      variable = "aws:RequestTag/TrialOrgId"
+      values   = ["false"]
+    }
+    condition {
+      test     = "Null"
+      variable = "aws:RequestTag/DeleteAfter"
       values   = ["false"]
     }
   }
