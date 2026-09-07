@@ -186,6 +186,7 @@ data "aws_iam_policy_document" "sfn_execution" {
     resources = [
       aws_lambda_function.ec2_power_control.arn,
       aws_lambda_function.lock_acquire.arn,
+      aws_lambda_function.snapshot_manager.arn,
     ]
   }
 
