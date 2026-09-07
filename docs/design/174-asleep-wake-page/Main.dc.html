@@ -31,7 +31,11 @@
        compiled stylesheet). Brand/success hues stay the same; only surface/text tokens shift. */
     .o_asleep_page[data-theme="dark"] {
       --o-brand-active-bg: #3f3a55;
-      --o-success-bg: #1c3324;
+      /* The light theme's saturated #28a745 read as a neon accent against a dark surface -
+         desaturated and slightly muted for dark mode, same hue family. */
+      --o-success: #4caf7a;
+      --o-success-hover: #3d9163;
+      --o-success-bg: #203028;
       --o-gray-100: #1b1b26;
       --o-gray-300: #383846;
       --o-gray-600: #a7a7b8;
