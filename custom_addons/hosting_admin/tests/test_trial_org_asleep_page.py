@@ -1,5 +1,9 @@
+from datetime import timedelta
+
+from odoo import fields
 from odoo.tests import HttpCase, tagged
 
+from odoo.addons.hosting_admin.controllers.asleep import WAKING_PHASE_TIMEOUT_MINUTES
 from odoo.addons.hosting_admin.models.trial_org import CONFIG_PARAM_DNS_DOMAIN_SUFFIX
 
 DOMAIN_SUFFIX = "dev.example.test"
@@ -50,6 +54,22 @@ class TestTrialOrgAsleepPage(HttpCase):
     def test_status_endpoint_reports_awake_once_the_job_has_succeeded(self):
         self._post('/hosting_admin/asleep/wake')
         self.trial_org.write({'last_job_status': 'succeeded'})
+
+        response = self._get('/hosting_admin/asleep/status')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'phase': 'awake'})
+
+    def test_status_endpoint_reports_awake_once_the_waking_timeout_elapses_with_no_provisioner(self):
+        # A StubProvisioner-backed record (no AWS wiring configured - dev/test/demo, see
+        # docs/agents/odoo-19-development.md's walkthrough guidance) has no real execution for
+        # _cron_poll_pending_jobs to ever observe, so last_job_status alone would never leave
+        # 'running' - this page must not show "Waking up" forever in that environment.
+        self._post('/hosting_admin/asleep/wake')
+        self.trial_org.write({
+            'last_job_started_at': fields.Datetime.now() - timedelta(
+                minutes=WAKING_PHASE_TIMEOUT_MINUTES + 1),
+        })
 
         response = self._get('/hosting_admin/asleep/status')
 

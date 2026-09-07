@@ -10,13 +10,17 @@ request here once the Trial Org's own health check starts failing; `IrHttp._disp
 (models/ir_http.py) is the other half of that wiring - it's what makes every route on a
 suspended Trial Org's Host land here, not just this controller's own routes.
 """
+from datetime import timedelta
 from html import escape
 from string import Template
 
 from werkzeug.exceptions import NotFound
 
-from odoo import http
+from odoo import fields, http
 from odoo.http import request
+
+# See _phase()'s own docstring for why this bounds "waking" rather than last_job_status alone.
+WAKING_PHASE_TIMEOUT_MINUTES = 5
 
 # string.Template, not str.format(): the page's own CSS/JS is full of literal `{`/`}`, which
 # .format() would force doubling every single one of to escape - Template's $-prefixed
@@ -80,7 +84,9 @@ _PAGE_TEMPLATE = Template("""<!doctype html>
     align-items: center;
     justify-content: center;
   }
+  .o_asleep_icon_ring.o_asleep_icon_ring_awake { background: #e3f5e8; }
   .o_asleep_icon_ring svg { width: 36px; height: 36px; color: var(--o-brand); }
+  .o_asleep_icon_ring_awake svg { color: var(--o-success); }
   .o_asleep_org_name {
     font-size: 12px;
     font-weight: 500;
@@ -141,9 +147,12 @@ _PAGE_TEMPLATE = Template("""<!doctype html>
 <body data-phase="$phase">
 <div class="o_asleep_page">
   <div class="o_asleep_card">
-    <div class="o_asleep_icon_ring">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <div class="o_asleep_icon_ring" id="o_asleep_icon_ring">
+      <svg id="o_asleep_icon_sleep" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"></path>
+      </svg>
+      <svg id="o_asleep_icon_awake" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 6 9 17l-5-5"></path>
       </svg>
     </div>
     <p class="o_asleep_org_name">$org_name</p>
@@ -176,6 +185,9 @@ _PAGE_TEMPLATE = Template("""<!doctype html>
     document.getElementById('o_asleep_wake_btn').style.display = phase === 'idle' ? '' : 'none';
     document.getElementById('o_asleep_progress').style.display = phase === 'waking' ? '' : 'none';
     document.getElementById('o_asleep_awake_link').style.display = phase === 'awake' ? '' : 'none';
+    document.getElementById('o_asleep_icon_ring').classList.toggle('o_asleep_icon_ring_awake', phase === 'awake');
+    document.getElementById('o_asleep_icon_sleep').style.display = phase === 'awake' ? 'none' : '';
+    document.getElementById('o_asleep_icon_awake').style.display = phase === 'awake' ? '' : 'none';
   }
 
   function poll() {
@@ -248,14 +260,26 @@ class HostingAsleepController(http.Controller):
 
     @staticmethod
     def _phase(trial_org):
-        """'idle' (suspended, showing Wake Up), 'waking' (a wake job just started but hasn't
+        """'idle' (suspended, showing Wake Up), 'waking' (a wake job started recently and hasn't
         reached AwsProvisioner.check_status()'s SUCCEEDED promotion yet), or 'awake' (anything
-        else - active with no running wake job, including a StubProvisioner-backed record whose
-        job never resolves either way, which should still eventually read as awake rather than
-        wake forever)."""
+        else - active with no running wake job).
+
+        'waking' is bounded by WAKING_PHASE_TIMEOUT_MINUTES, not just last_job_status == 'running'
+        - _cron_poll_pending_jobs is what would normally flip that to 'succeeded', but a
+        StubProvisioner-backed record (no AWS wiring configured - dev, tests, or a demo
+        environment per docs/agents/odoo-19-development.md's walkthrough guidance) has no
+        real execution for that cron to ever observe, so last_job_status would otherwise stay
+        'running' forever and this page would show "Waking up" indefinitely. The timeout is
+        generously above ADR-0014's ~1-2 minute real-world target so it never cuts off a
+        genuinely still-running AWS wake early."""
         if trial_org.state == 'suspended':
             return 'idle'
-        if trial_org.last_job_action == 'wake' and trial_org.last_job_status == 'running':
+        started_recently = (
+            trial_org.last_job_started_at
+            and fields.Datetime.now() - trial_org.last_job_started_at
+            < timedelta(minutes=WAKING_PHASE_TIMEOUT_MINUTES)
+        )
+        if trial_org.last_job_action == 'wake' and trial_org.last_job_status == 'running' and started_recently:
             return 'waking'
         return 'awake'
 
