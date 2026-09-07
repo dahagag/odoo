@@ -389,5 +389,9 @@ class HostingAsleepController(http.Controller):
         return _PAGE_TEMPLATE.substitute(
             org_name=escape(trial_org.name),
             phase=phase,
-            instance_url=escape(f'https://{host}'),
+            # /web/login, not the bare domain: once DNS failover stops routing this Host here,
+            # the bare domain resolves straight to the Trial Org's own (now-running) instance,
+            # but landing an org user directly on the login screen - rather than whatever "/"
+            # happens to render - is the actually useful destination for "go to your instance".
+            instance_url=escape(f'https://{host}/web/login'),
         )

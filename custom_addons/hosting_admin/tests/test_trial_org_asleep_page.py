@@ -80,6 +80,14 @@ class TestTrialOrgAsleepPage(HttpCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['phase'], 'awake')
 
+    def test_awake_page_links_to_the_instances_own_login_page(self):
+        self._post('/hosting_admin/asleep/wake')
+        self.trial_org.write({'last_job_status': 'succeeded'})
+
+        response = self._get('/hosting_admin/asleep')
+
+        self.assertIn(f'https://{HOST}/web/login', response.text)
+
     def test_status_endpoint_reports_awake_once_the_waking_timeout_elapses_with_no_provisioner(self):
         # A StubProvisioner-backed record (no AWS wiring configured - dev/test/demo, see
         # docs/agents/odoo-19-development.md's walkthrough guidance) has no real execution for
