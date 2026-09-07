@@ -337,16 +337,18 @@ class Component extends DCLogic {
     this.setState({ phase: 'waking', progress: 0 });
     // Sample-data timer standing in for polling the real Wake Up job's status from AWS
     // (Step Functions execution progress) - uneven increments so it doesn't read as a fake
-    // linear fill, and it always reaches 100 before flipping to 'awake'.
+    // linear fill, and it always reaches 100 before flipping to 'awake'. Slow enough (~25s
+    // full run) that each of the four WAKE_STEPS milestones is actually readable for review,
+    // not just a flash.
     this._interval = setInterval(() => {
-      const next = Math.min(100, this.state.progress + (2 + Math.random() * 4));
+      const next = Math.min(100, this.state.progress + (0.6 + Math.random() * 1.2));
       if (next >= 100) {
         this._stopProgress();
         this.setState({ phase: 'awake', progress: 100 });
       } else {
         this.setState({ progress: next });
       }
-    }, 220);
+    }, 300);
   }
 
   _restartDemo() {
