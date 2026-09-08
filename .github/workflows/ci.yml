@@ -230,15 +230,31 @@ jobs:
         if: needs.changes.outputs.infra_relevant == 'true'
         with:
           python-version: '3.x'
-      - name: Install ruff and interrogate
+      - name: Install ruff, interrogate, and boto3 (for the lambda_src unit tests below)
         if: needs.changes.outputs.infra_relevant == 'true'
-        run: pip install ruff==0.16.1 interrogate==1.7.0
+        run: pip install ruff==0.16.1 interrogate==1.7.0 boto3
       - name: Run ruff
         if: needs.changes.outputs.infra_relevant == 'true'
         run: ruff check --config ruff.toml infra/
       - name: Run interrogate (docstring-coverage regression tripwire, not a documentation-quality proxy — 80% floor matches CodeRabbit's own default)
         if: needs.changes.outputs.infra_relevant == 'true'
         run: interrogate --fail-under 80 infra/
+      - name: Run lambda_src unit tests
+        if: needs.changes.outputs.infra_relevant == 'true'
+        # One `unittest discover` per Lambda directory, not a single discover rooted at
+        # lambda_src/ - each Lambda's handler.py imports its sibling `ec2_client` module as a flat
+        # module (no `__init__.py` anywhere here, matching how lambda.tf's archive_file zips them
+        # flat at the deployment package root), and a single discover walking multiple such
+        # sibling directories as one implicit namespace package finds zero tests instead of
+        # reporting the import error.
+        run: |
+          for dir in infra/foundation/lambda_src/*/; do
+            if compgen -G "${dir}test_*.py" > /dev/null; then
+              echo "::group::unittest discover $dir"
+              python3 -m unittest discover -s "$dir" -p "test_*.py" -v
+              echo "::endgroup::"
+            fi
+          done
 
   ci-required:
     name: CI required checks (required)

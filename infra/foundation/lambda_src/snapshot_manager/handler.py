@@ -17,6 +17,14 @@ self-assumes `trial_org_execution` via `TRIAL_ORG_EXECUTION_ROLE_ARN`, tagging t
 this invocation's own TrialOrgId, before making the create-snapshot/create-tags calls - so its
 mutate access is genuinely scoped to the one Trial Org this invocation names, not "any tagged
 Trial Org resource".
+
+Idempotent across the Task's own Step Functions retry (issue #176): SnapshotBeforeDestroy's
+`States.ALL` Retry re-invokes this handler from scratch, so a partial failure (one volume's
+`create_snapshot` succeeds, a later one throttles/times out) must not create a second snapshot for
+the volume that already succeeded. Every snapshot is tagged with the invocation's own JobId
+(state_machine.asl.json.tftpl's `$.job_id`, stable across retries of the same execution) and the
+VolumeId it was taken from; before calling `create_snapshot` for a volume, the handler checks for
+an existing snapshot carrying that exact (JobId, VolumeId) pair and reuses it instead.
 """
 import os
 from datetime import datetime, timedelta, timezone
@@ -25,9 +33,10 @@ from ec2_client import get_ec2_client, get_trial_org_scoped_ec2_client
 
 
 def handler(event, _context):
-    """`event` = {"trial_org_id": "...", "retention_days": 7}."""
+    """`event` = {"trial_org_id": "...", "retention_days": 7, "job_id": "..."}."""
     trial_org_id = str(event["trial_org_id"])
     retention_days = int(event["retention_days"])
+    job_id = str(event["job_id"])
 
     describe_client = get_ec2_client()
     reservations = describe_client.describe_instances(Filters=[
@@ -55,18 +64,45 @@ def handler(event, _context):
 
     delete_after = (datetime.now(timezone.utc) + timedelta(days=retention_days)).date().isoformat()
     snapshot_ids = [
-        scoped_client.create_snapshot(
-            VolumeId=volume_id,
-            Description=f"Trial Org {trial_org_id} - auto-destroy snapshot",
-            TagSpecifications=[{
-                "ResourceType": "snapshot",
-                "Tags": [
-                    {"Key": "TrialOrgId", "Value": trial_org_id},
-                    {"Key": "DeleteAfter", "Value": delete_after},
-                ],
-            }],
-        )["SnapshotId"]
+        _snapshot_volume(
+            describe_client=describe_client,
+            scoped_client=scoped_client,
+            volume_id=volume_id,
+            trial_org_id=trial_org_id,
+            job_id=job_id,
+            delete_after=delete_after,
+        )
         for volume_id in volume_ids
     ]
 
     return {"snapshotted": True, "snapshot_ids": snapshot_ids, "delete_after": delete_after}
+
+
+def _snapshot_volume(describe_client, scoped_client, volume_id, trial_org_id, job_id, delete_after):
+    """Returns this volume's snapshot id, reusing one already tagged for this exact retry attempt.
+
+    Queried via `describe_client` (the Lambda's own static, account-wide client) rather than
+    `scoped_client`: `ec2:DescribeSnapshots` doesn't support resource-level permissions/tag
+    conditions (same carve-out as `DescribeInstancesToFindVolumes` below), so tag-scoping it to
+    `trial_org_execution`'s per-invocation session would gain nothing.
+    """
+    existing = describe_client.describe_snapshots(Filters=[
+        {"Name": "tag:JobId", "Values": [job_id]},
+        {"Name": "tag:VolumeId", "Values": [volume_id]},
+    ])["Snapshots"]
+    if existing:
+        return existing[0]["SnapshotId"]
+
+    return scoped_client.create_snapshot(
+        VolumeId=volume_id,
+        Description=f"Trial Org {trial_org_id} - auto-destroy snapshot",
+        TagSpecifications=[{
+            "ResourceType": "snapshot",
+            "Tags": [
+                {"Key": "TrialOrgId", "Value": trial_org_id},
+                {"Key": "DeleteAfter", "Value": delete_after},
+                {"Key": "JobId", "Value": job_id},
+                {"Key": "VolumeId", "Value": volume_id},
+            ],
+        }],
+    )["SnapshotId"]

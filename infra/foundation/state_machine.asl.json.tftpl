@@ -161,14 +161,15 @@
     },
 
     "SnapshotBeforeDestroy": {
-      "Comment": "Auto-Destroy always leaves a short-lived EBS snapshot before RunTofu's `tofu destroy` runs (#174, hosting.trial.org.snapshot_retention_until) - its own Task state, same as SuspendInstance/WakeInstance above, since a snapshot taken at this exact moment is a runtime action tied to one specific destroy, not something a declarative OpenTofu resource in modules/trial_org could express (ADR-0021's 'OpenTofu must never contend with the runtime', applied to a third action). Resolves the instance by its TrialOrgId tag rather than an instance id from Odoo, same reason ec2_power_control's IAM policy is tag-scoped instead of instance-ARN-scoped.",
+      "Comment": "Auto-Destroy always leaves a short-lived EBS snapshot before RunTofu's `tofu destroy` runs (#174, hosting.trial.org.snapshot_retention_until) - its own Task state, same as SuspendInstance/WakeInstance above, since a snapshot taken at this exact moment is a runtime action tied to one specific destroy, not something a declarative OpenTofu resource in modules/trial_org could express (ADR-0021's 'OpenTofu must never contend with the runtime', applied to a third action). Resolves the instance by its TrialOrgId tag rather than an instance id from Odoo, same reason ec2_power_control's IAM policy is tag-scoped instead of instance-ARN-scoped. Passes $.job_id (ADR-0019's job identity, stable across this Task's own States.ALL Retry below) so the handler can tag each snapshot it creates and skip re-creating one a prior, partially-failed attempt of this same retry already made (issue #176).",
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
       "Parameters": {
         "FunctionName": "${snapshot_manager_lambda_arn}",
         "Payload": {
           "trial_org_id.$": "$.trial_org_id",
-          "retention_days.$": "$.snapshot_retention_days"
+          "retention_days.$": "$.snapshot_retention_days",
+          "job_id.$": "$.job_id"
         }
       },
       "ResultPath": "$.snapshot_result",
