@@ -298,6 +298,18 @@ data "aws_iam_policy_document" "snapshot_manager" {
     actions   = ["ec2:DescribeInstances"]
     resources = ["*"]
   }
+
+  # Same describe-only carve-out as DescribeInstancesToFindVolumes above: ec2:DescribeSnapshots
+  # doesn't support resource-level permissions/tag conditions either, so it stays account-wide on
+  # this static role. Issue #176: queried before each create_snapshot call to make snapshot
+  # creation idempotent across the SnapshotBeforeDestroy Task's own States.ALL Retry — a snapshot
+  # already tagged with this invocation's (JobId, VolumeId) pair is reused instead of re-created.
+  statement {
+    sid       = "DescribeSnapshotsForIdempotencyCheck"
+    effect    = "Allow"
+    actions   = ["ec2:DescribeSnapshots"]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "snapshot_manager" {
