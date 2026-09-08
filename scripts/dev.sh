@@ -45,7 +45,7 @@ ctx_index_run() {
         # session's root cwd (confirmed by reading context-mode's own source: the
         # ctx_search `project` param only filters rows in the already-open store,
         # it does not select which database file to open).
-        npx --yes context-mode@latest index "$abs_path" --project "$REPO_ROOT" --source "$source" --max-files "$max_files" --ext "$extensions"
+        npx --yes context-mode@1.0.169 index "$abs_path" --project "$REPO_ROOT" --source "$source" --max-files "$max_files" --ext "$extensions"
     }
     ctx_index_target custom_addons fork-diff:custom_addons 300
     ctx_index_target docs fork-diff:docs 200
@@ -57,7 +57,7 @@ ctx_index_run() {
     # duplicates for content still on disk. The one gap is a file deleted from
     # disk between runs, whose old chunk is orphaned rather than pruned -
     # accepted, since this fork's diff is overwhelmingly additive.
-    echo "Fork-diff index ready. Query via ctx_search (source: 'fork-diff:*') or 'npx context-mode@latest search <query> --source fork-diff:custom_addons'."
+    echo "Fork-diff index ready. Query via ctx_search (source: 'fork-diff:*') or 'npx context-mode@1.0.169 search <query> --source fork-diff:custom_addons'."
 }
 
 resolve_compose() {

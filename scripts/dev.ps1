@@ -393,7 +393,7 @@ function Invoke-CtxIndex {
         # session's root cwd (confirmed by reading context-mode's own source: the
         # ctx_search `project` param only filters rows in the already-open store,
         # it does not select which database file to open).
-        & npx --yes context-mode@latest index $absPath --project $repoRoot --source $target.Source --max-files $target.MaxFiles --ext $extensions
+        & npx --yes context-mode@1.0.169 index $absPath --project $repoRoot --source $target.Source --max-files $target.MaxFiles --ext $extensions
         if ($LASTEXITCODE -ne 0) { throw "context-mode index failed for $($target.Path) (exit $LASTEXITCODE)." }
     }
     # Re-running this is safe: context-mode deletes-then-reinserts a file's chunks
@@ -401,7 +401,7 @@ function Invoke-CtxIndex {
     # duplicates for content still on disk. The one gap is a file deleted from
     # disk between runs, whose old chunk is orphaned rather than pruned -
     # accepted, since this fork's diff is overwhelmingly additive.
-    Write-Host "Fork-diff index ready. Query via ctx_search (source: 'fork-diff:*') or 'npx context-mode@latest search <query> --source fork-diff:custom_addons'."
+    Write-Host "Fork-diff index ready. Query via ctx_search (source: 'fork-diff:*') or 'npx context-mode@1.0.169 search <query> --source fork-diff:custom_addons'."
 }
 
 function Invoke-Doctor {
