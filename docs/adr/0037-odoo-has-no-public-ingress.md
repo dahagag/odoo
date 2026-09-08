@@ -1,3 +1,7 @@
+---
+status: accepted
+---
+
 # Odoo has no public ingress; public surfaces move to static hosting and the client app
 
 Part of the Hosting Operations completion epic

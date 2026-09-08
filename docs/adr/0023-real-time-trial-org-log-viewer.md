@@ -1,5 +1,5 @@
 ---
-status: superseded by ADR-0034 and ADR-0037 (viewer rebuilt in the staff app — #199)
+status: superseded by ADR-0034 and ADR-0037
 ---
 
 # Real-time Trial Org log viewer via CloudWatch subscription, a shared Lambda, and Odoo's own bus

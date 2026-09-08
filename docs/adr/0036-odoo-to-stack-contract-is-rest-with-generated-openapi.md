@@ -1,3 +1,7 @@
+---
+status: accepted
+---
+
 # The Odoo-to-stack contract is REST with a generated, committed OpenAPI document
 
 Part of the Hosting Operations completion epic

@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0034 (moves to the stack; projection and alerting added — #198)
+status: amended by ADR-0034
 ---
 
 # Cost dashboard: daily-refresh snapshot, not a live-pulled view

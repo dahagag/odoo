@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0037 (landing page moves to static hosting)
+status: amended by ADR-0037
 ---
 
 # Public landing page overrides the root route, /odoo stays untouched
@@ -11,8 +11,8 @@ Account, because Odoo loses its public listener entirely — see
 
 The `/`-overriding `auth='public'` controller in `crm_methodology` was the right call while Odoo
 *was* the public deploy surface. Once it is not, there is nothing for that controller to serve to
-anyone. The reasoning below therefore stays valid on its own terms and is superseded by a change
-of premise, not a change of mind.
+anyone. The reasoning below therefore stays valid on its own terms, and is overtaken by a change
+of premise rather than a change of mind.
 
 Two of the rejections below are also re-answered by that premise. Hosting the landing page on a
 separate static site was rejected as "a second deploy surface" — the epic builds that surface

@@ -180,7 +180,7 @@ Detailed glossaries are created lazily under `docs/contexts/<context>/CONTEXT.md
 
 **Boundary:** Owns the lifecycle of both Trial Orgs (issuance, seats, suspend/wake, extension, auto-destroy) and Client Orgs, Promotion between them, and the AWS infrastructure they run on. It holds the record of truth for every org, outside Odoo, in the Administration Stack. It does not own the commercial decision to issue a Trial Org or to promote one (that's CRM's Opportunity and won deal), the sales-methodology qualification that gates Extension (CRM's), or billing for paid hosting (future Accounting/Sales concern).
 
-**Addon anchors:** `hosting` on each org's own instance; `hosting_admin` as the CRM integration on ours. The Administration Stack is this context's primary implementation unit and is not an Odoo addon — see [ADR-0034](docs/adr/0034-administration-stack-owns-org-record-of-truth.md).
+**Addon anchors:** `hosting`, `hosting_admin`.
 
 **Business concepts:** Trial Org, Client Org, Promotion, Seat, Active, Suspended, Wake, Asleep Page, Auto-Destroy, Extension, Administration Stack, Staff App, Client App, Hosting Account, Org Region, Org Registration.
 

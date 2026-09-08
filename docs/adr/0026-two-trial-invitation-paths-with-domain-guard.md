@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0037 (paths move to the client app — #200; the domain guard is unchanged)
+status: amended by ADR-0037
 ---
 
 # Two trial invitation paths, both guarded by a rep-provided expected domain

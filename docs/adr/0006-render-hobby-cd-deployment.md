@@ -1,5 +1,5 @@
 ---
-status: superseded by ADR-0015; Render implementation removed entirely (issue #193, #204)
+status: superseded by ADR-0015 and issue #193
 ---
 
 # Render Hobby CD deployment

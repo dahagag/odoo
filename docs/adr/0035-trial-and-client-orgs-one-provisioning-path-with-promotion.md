@@ -1,3 +1,7 @@
+---
+status: accepted
+---
+
 # Trial Org and Client Org are distinct concepts sharing one provisioning path
 
 Part of the Hosting Operations completion epic

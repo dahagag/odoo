@@ -1,5 +1,5 @@
 ---
-status: superseded by issue #193 (GitHub Actions with OIDC; pipeline built in #202)
+status: superseded by issue #193
 ---
 
 # Self-hosted GitHub Actions runner in the Platform Account

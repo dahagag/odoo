@@ -1,5 +1,5 @@
 ---
-status: superseded by ADR-0034 (except the surviving thin addon and the no-dependency rule)
+status: superseded by ADR-0034
 ---
 
 # Hosting Operations splits into `hosting` and `hosting_admin` addons

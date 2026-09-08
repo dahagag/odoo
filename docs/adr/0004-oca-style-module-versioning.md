@@ -1,5 +1,5 @@
 ---
-status: amended by issue #193 (one repo-wide release tag; manifest versions derived — #202)
+status: amended by issue #193
 ---
 
 # OCA-style module versioning

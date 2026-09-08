@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0034 (moves to the administration stack; live-pull decision unchanged)
+status: amended by ADR-0034
 ---
 
 # Live AWS-pulled audit view for Trial Org lifecycle actions

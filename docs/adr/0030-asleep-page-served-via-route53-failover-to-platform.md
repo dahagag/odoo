@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0037 (failover target becomes the client app — #200)
+status: amended by ADR-0037
 ---
 
 # Asleep/Wake-Up page served via Route53 failover to the Platform instance

@@ -1,3 +1,7 @@
+---
+status: accepted
+---
+
 # The administration stack owns the Trial Org and Client Org record of truth
 
 Part of the Hosting Operations completion epic
