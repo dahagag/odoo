@@ -297,15 +297,18 @@ resource "aws_iam_policy" "trial_org_instance_boundary" {
 }
 
 # ---------------------------------------------------------------------------
-# Trial Org execution role (issue #125, ADR-0031): the per-invocation identity RunTofu actually acts as.
-# Assumed by sfn_execution on the ECS task's behalf (the AssumeTrialOrgExecutionRole state,
-# state_machine.asl.json.tftpl), with sts:TagSession carrying this invocation's own TrialOrgId
-# and DnsRecordName - the same session-tag mechanism hosting_admin's own role above uses for
-# ReadTrialOrgLogs, applied here because ecs:RunTask itself has no equivalent to
-# sts:AssumeRole's TagSession for the ECS task role directly. This is what makes
-# ManageTrialOrgEc2Existing/ManageTrialOrgDnsRecords below genuine per-execution ABAC rather
-# than "any tagged Trial Org resource" - every other statement here is otherwise identical to
-# what the (now-empty) ecs_task role used to carry directly.
+# Trial Org execution role (issue #125, ADR-0031; extended by issue #183, ADR-0033): the
+# per-invocation identity RunTofu and snapshot_manager each act as. sfn_execution assumes it on
+# the ECS task's behalf (the AssumeTrialOrgExecutionRole state, state_machine.asl.json.tftpl),
+# with sts:TagSession carrying this invocation's own TrialOrgId and DnsRecordName - the same
+# session-tag mechanism hosting_admin's own role above uses for ReadTrialOrgLogs, applied here
+# because ecs:RunTask itself has no equivalent to sts:AssumeRole's TagSession for the ECS task
+# role directly. snapshot_manager instead self-assumes it directly (no ECS credential-injection
+# mechanics to work around) — see its own trust-policy statement and lambda.tf's inline policy.
+# This is what makes ManageTrialOrgEc2Existing/ManageTrialOrgDnsRecords/SnapshotTrialOrgVolume
+# below genuine per-execution ABAC rather than "any tagged Trial Org resource" - every other
+# statement here is otherwise identical to what the (now-empty) ecs_task role used to carry
+# directly.
 # ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "trial_org_execution_trust" {
@@ -316,6 +319,20 @@ data "aws_iam_policy_document" "trial_org_execution_trust" {
     principals {
       type        = "AWS"
       identifiers = [aws_iam_role.sfn_execution.arn]
+    }
+  }
+
+  # Issue #183, ADR-0033: snapshot_manager self-assumes this role directly (tagging its own
+  # invocation's TrialOrgId) rather than the state machine assuming it on the Lambda's behalf, the
+  # way it does for RunTofu above — see snapshot_manager's own inline policy in lambda.tf for the
+  # matching sts:AssumeRole/sts:TagSession grant on this role's ARN.
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole", "sts:TagSession"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.snapshot_manager.arn]
     }
   }
 }
@@ -624,6 +641,62 @@ data "aws_iam_policy_document" "trial_org_execution" {
     effect    = "Allow"
     actions   = ["route53:GetChange", "route53:ListResourceRecordSets"]
     resources = ["arn:aws:route53:::change/*", aws_route53_zone.root.arn]
+  }
+
+  # Issue #183, ADR-0033: snapshot_manager self-assumes this role before its own pre-destroy
+  # snapshot step, tagging the session with the TrialOrgId already present in its own invocation
+  # payload. The source EBS volume is an existing resource already carrying the TrialOrgId tag
+  # OpenTofu set on it at provisioning time — the same tag ManageTrialOrgEc2Existing above keys
+  # off — so a plain aws:ResourceTag match works here, mirroring that statement's pattern.
+  statement {
+    sid    = "SnapshotTrialOrgVolume"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateSnapshot",
+    ]
+    resources = [
+      "arn:aws:ec2:${var.aws_region}:${local.account_id}:volume/*",
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/TrialOrgId"
+      values   = ["$${aws:PrincipalTag/TrialOrgId}"]
+    }
+  }
+
+  # A newly created snapshot carries no tags of its own yet, so aws:ResourceTag (which reads an
+  # *existing* resource's tags) can't gate it — only aws:RequestTag (the tags this call is asking
+  # to apply) can, scoped to creation time via ec2:CreateAction. This is the same
+  # ResourceTag/CreateSnapshot vs. RequestTag/CreateTags-on-create split snapshot_manager's own
+  # (now-removed) inline policy used, tightened here to an exact match against this session's own
+  # TrialOrgId rather than mere tag presence (ADR-0033).
+  statement {
+    sid    = "TagSnapshotOnCreate"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateTags",
+    ]
+    resources = [
+      "arn:aws:ec2:${var.aws_region}:${local.account_id}:snapshot/*",
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:CreateAction"
+      values   = ["CreateSnapshot"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/TrialOrgId"
+      values   = ["$${aws:PrincipalTag/TrialOrgId}"]
+    }
+    # Preserved from snapshot_manager's own (now-removed) TagSnapshotOnCreate statement: every
+    # snapshot this path creates must also carry a DeleteAfter tag, so snapshot_cleanup's own
+    # DeleteExpiredTrialOrgSnapshots sweep (lambda.tf) can never orphan one with no expiry.
+    condition {
+      test     = "Null"
+      variable = "aws:RequestTag/DeleteAfter"
+      values   = ["false"]
+    }
   }
 }
 

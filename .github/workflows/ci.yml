@@ -220,6 +220,12 @@ jobs:
             (cd "$dir" && tofu init -backend=false -input=false && tofu validate)
             echo "::endgroup::"
           done
+      - name: tofu test (foundation — issue #183/ADR-0033 IAM isolation, no live AWS account needed)
+        if: needs.changes.outputs.infra_relevant == 'true'
+        run: |
+          cd infra/foundation
+          tofu init -backend=false -input=false
+          tofu test
       - uses: actions/setup-python@v5
         if: needs.changes.outputs.infra_relevant == 'true'
         with:
