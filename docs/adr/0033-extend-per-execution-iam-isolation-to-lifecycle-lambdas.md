@@ -11,11 +11,14 @@ payload names."
 
 This is the identical class of gap [ADR-0031](0031-per-execution-trial-org-iam-isolation.md)
 (issue #125) closed for the `RunTofu`/ECS path via a per-invocation `AssumeRole` + session-tag
-ABAC pattern — but ADR-0031 explicitly scoped itself out of these two Lambdas ("the Lambda's own
-gap is unchanged and remains tracked by its existing inline comment, not by this ADR"), since
-`ecs:RunTask` and `lambda:InvokeFunction` are different integrations with different credential-
-delivery mechanics. This ADR closes that deferred gap by applying the same, already-proven
-pattern to both Lambdas.
+ABAC pattern. ADR-0031 explicitly scoped itself out of `ec2_power_control` ("the Lambda's own gap
+is unchanged and remains tracked by its existing inline comment, not by this ADR"), since
+`ecs:RunTask` and `lambda:InvokeFunction` are different integrations with different
+credential-delivery mechanics. `snapshot_manager` didn't exist yet at that time — it was added
+later, under issue #174's Auto-Destroy work — so ADR-0031 never addressed it at all, but its own
+inline comment documents the identical "any tagged Trial Org resource" shape of gap, citing
+`ec2_power_control`'s as precedent. This ADR closes both Lambdas' gaps by applying the same,
+already-proven pattern to each.
 
 ## Why this is narrower than the issue's original "IDOR" framing
 
@@ -27,10 +30,9 @@ gated by ordinary Odoo ACL — `group_hosting_admin_administrator`-only
 (`custom_addons/hosting_admin/security/ir.model.access.csv`) — so `trial_org_id` reaching
 `AwsProvisioner` is already derived from an ACL-checked recordset, not raw caller input. This is
 structurally different from the `action_join_open_invite`/`action_invite` gap
-([ADR-0032](0032-defer-invite-reachability-and-identity-hardening.md), issues #161/#110/#162),
-which deliberately carries its own `sudo()` boundary reachable by any authenticated internal
-user — that gap remains deferred until the org-facing login layer's design begins, unaffected by
-this decision.
+([ADR-0032](0032-defer-invite-proof-of-receipt-guard.md), issues #161/#110), which deliberately
+carries its own `sudo()` boundary reachable by any authenticated internal user — that gap remains
+deferred until the org-facing login layer's design begins, unaffected by this decision.
 
 The residual risk this ADR actually addresses is narrower: an over-privileged or compromised
 Hosting Admin operator (or a compromised `hosting_admin` AWS credential — a risk
@@ -91,7 +93,7 @@ restatement of the old "any tagged Trial Org resource" condition.
   may act on which specific Trial Org, beyond today's all-or-nothing
   `group_hosting_admin_administrator` grant) is a separate commercial-ownership question, not
   implied by CodeRabbit's finding, and not addressed here.
-- **The #161/#110/#162 invite-reachability/identity-binding gap** (ADR-0032) is unaffected by this
-  decision and remains deferred until the org-facing login/controller layer's design begins.
+- **The #161/#110 invite proof-of-receipt gap** (ADR-0032) is unaffected by this decision and
+  remains deferred until the org-facing login/controller layer's design begins.
 - `snapshot_cleanup`'s own IAM role is a separate Lambda, not named in CodeRabbit's finding or
   issue #177, and is out of scope here unless a later pass finds it shares the identical pattern.
