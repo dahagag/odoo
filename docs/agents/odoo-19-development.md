@@ -4,7 +4,19 @@ Use this playbook before creating or changing an Odoo addon. Completion means ev
 
 ## Source of truth
 
-Use sources in this order:
+For a question about **this fork's own existing content** under `custom_addons/`, `docs/`, or
+`infra/` (not vanilla Odoo API behavior — that's the numbered list below), search before reading
+the tree by hand: if the `context-mode` MCP tools are available in the current session, check
+first with `ctx_search` on a `fork-diff:*` source (e.g. `source: "fork-diff:custom_addons"`). An
+empty result means the machine hasn't indexed it yet, or the index is stale — run
+`./scripts/dev.ps1 ctx-index` (PowerShell) or `bash scripts/dev.sh ctx-index` (POSIX) once, then
+search again; see `docs/agents/local-development.md`'s `ctx-index` command. The index is local to
+whichever machine builds it — there is no shared/committed knowledge base, so this bootstrap step
+may be needed on every new machine or fresh agent environment. If `context-mode` tools aren't
+available in the session at all, fall back straight to grep/reading the tree directly — this is an
+accelerant, not a hard dependency.
+
+For everything else, use sources in this order:
 
 1. The checked-out Odoo 19 runtime source.
 2. [Official Odoo 19 developer documentation](https://www.odoo.com/documentation/19.0/developer.html).
@@ -23,7 +35,7 @@ Runtime behavior and established addon style outrank a style-only rewrite.
 
 ## Explore before generating
 
-1. Read `CONTEXT-MAP.md`, relevant context glossaries, and applicable ADRs. List every owning context and integration edge touched by the feature.
+1. Read `CONTEXT-MAP.md`, relevant context glossaries, and applicable ADRs. List every owning context and integration edge touched by the feature. When the feature touches existing `custom_addons/`, `docs/`, or `infra/` content, `ctx_search` the `fork-diff:*` sources first, per "Source of truth" above.
 2. Read the target addon's complete `__manifest__.py` and recursively account for relevant dependencies.
 3. Trace the affected models and every extension of them. Include fields, computes, constraints, indexes, lifecycle actions, CRUD overrides, and business methods.
 4. Trace security groups and privileges, ACLs, record rules, field restrictions, multi-company rules, and any `sudo()` boundary.
