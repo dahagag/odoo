@@ -219,8 +219,15 @@ resource "aws_lambda_function" "ec2_power_control" {
 
 # ---------------------------------------------------------------------------
 # Auto-Destroy snapshot Lambda (#174), invoked by the state machine's own SnapshotBeforeDestroy
-# Task state — see state_machine.asl.json.tftpl. Same pattern as ec2_power_control above: a
-# runtime action Suspend/Wake/now-Destroy's snapshot step take outside OpenTofu (ADR-0021).
+# Task state — see state_machine.asl.json.tftpl. A runtime action Suspend/Wake/Destroy's snapshot
+# step take outside OpenTofu (ADR-0021).
+#
+# Unlike ec2_power_control (still tag-presence-scoped, tracked separately), this Lambda's own
+# mutate access is closed per issue #183/ADR-0033: its static role holds no direct EC2 grant at
+# all, only an sts:AssumeRole/sts:TagSession on trial_org_execution, which the handler assumes
+# itself — tagging the session with the TrialOrgId from its own invocation payload — before
+# making any create-snapshot/create-tags call. A Lambda that never performs the assume therefore
+# has zero standing mutate access, the same backstop ADR-0031 established for ecs_task.
 # ---------------------------------------------------------------------------
 
 data "archive_file" "snapshot_manager" {
@@ -251,50 +258,22 @@ resource "aws_iam_role_policy_attachment" "snapshot_manager_basic" {
 }
 
 data "aws_iam_policy_document" "snapshot_manager" {
-  # Same "any Trial Org" tag-scoping rationale as ec2_power_control's own ControlTrialOrgInstancePower
-  # statement above: this Lambda has no execution-scoped identity to condition on beyond the
-  # TrialOrgId tag its own payload names.
+  # Issue #183, ADR-0033: the only standing grant this role holds is permission to assume
+  # trial_org_execution itself (tagging the session with this invocation's own TrialOrgId) —
+  # mirroring ecs_task's now-empty policy (ADR-0031), so a Lambda that never performs the assume
+  # has zero standing EC2 mutate access.
   statement {
-    sid       = "SnapshotTrialOrgVolumes"
+    sid       = "AssumeTrialOrgExecutionRole"
     effect    = "Allow"
-    actions   = ["ec2:CreateSnapshot"]
-    resources = ["*"]
-    condition {
-      test     = "Null"
-      variable = "aws:ResourceTag/TrialOrgId"
-      values   = ["false"]
-    }
-  }
-
-  # ec2:CreateTags is evaluated separately from ec2:CreateSnapshot for tag-on-create
-  # (TagSpecifications): the new snapshot has no tags yet, so aws:ResourceTag (which reads an
-  # existing resource's tags) can't authorize it - only aws:RequestTag/aws:TagKeys (the tags
-  # being applied) can, scoped by ec2:CreateAction to this exact call shape.
-  statement {
-    sid       = "TagSnapshotOnCreate"
-    effect    = "Allow"
-    actions   = ["ec2:CreateTags"]
-    resources = ["*"]
-    condition {
-      test     = "StringEquals"
-      variable = "ec2:CreateAction"
-      values   = ["CreateSnapshot"]
-    }
-    condition {
-      test     = "Null"
-      variable = "aws:RequestTag/TrialOrgId"
-      values   = ["false"]
-    }
-    condition {
-      test     = "Null"
-      variable = "aws:RequestTag/DeleteAfter"
-      values   = ["false"]
-    }
+    actions   = ["sts:AssumeRole", "sts:TagSession"]
+    resources = [aws_iam_role.trial_org_execution.arn]
   }
 
   # Describe* actions don't support resource-level permissions/tag conditions (AWS EC2 IAM
   # reference), so this is necessarily an account-wide read-only grant, used only to resolve the
-  # Trial Org's instance/volume ids from its TrialOrgId tag.
+  # Trial Org's instance/volume ids from its TrialOrgId tag. Kept on this Lambda's own static role
+  # rather than the assumed one, matching ADR-0033's "describe-only reads AWS doesn't support
+  # tag-conditioning on" carve-out.
   statement {
     sid       = "DescribeInstancesToFindVolumes"
     effect    = "Allow"
@@ -317,6 +296,14 @@ resource "aws_lambda_function" "snapshot_manager" {
   timeout          = var.lambda_invoke_timeout_seconds
   filename         = data.archive_file.snapshot_manager.output_path
   source_code_hash = data.archive_file.snapshot_manager.output_base64sha256
+
+  environment {
+    variables = {
+      # Issue #183, ADR-0033: the handler self-assumes this role, tagging the session with the
+      # TrialOrgId already present in its own invocation payload, before making any EC2 call.
+      TRIAL_ORG_EXECUTION_ROLE_ARN = aws_iam_role.trial_org_execution.arn
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------
