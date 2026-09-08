@@ -183,7 +183,7 @@ class HostingCostDashboardSnapshot(models.Model):
             # instead of a traceback.
             _logger.exception("Could not fetch AWS daily cost data for the Cost Dashboard")
             raise UserError(_(
-                "Could not refresh AWS cost data (%s). Try again shortly."
+                "Could not refresh AWS cost data (%s). Try again shortly.",
             ) % self._describe_cost_explorer_failure(exc)) from exc
 
         figures = self._compute_figures(daily_rows, credit_amount, credit_start_date, today)
