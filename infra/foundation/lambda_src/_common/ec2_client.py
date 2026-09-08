@@ -1,5 +1,5 @@
-"""Shared boto3 EC2 client helpers - used by both snapshot_manager and snapshot_cleanup (#174),
-which each need one but have no other reason to share a Lambda.
+"""Shared boto3 EC2 client helpers - used by snapshot_manager, snapshot_cleanup (#174), and
+ec2_power_control (#184), which each need one but have no other reason to share a Lambda.
 
 `get_ec2_client()` is a lazily-created, cached client under the Lambda's own static credentials,
 used for read-only/account-wide calls. `get_trial_org_scoped_ec2_client()` (issue #183, ADR-0033)

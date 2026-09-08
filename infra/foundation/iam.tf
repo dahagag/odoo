@@ -298,13 +298,14 @@ resource "aws_iam_policy" "trial_org_instance_boundary" {
 
 # ---------------------------------------------------------------------------
 # Trial Org execution role (issue #125, ADR-0031; extended by issue #183, ADR-0033): the
-# per-invocation identity RunTofu and snapshot_manager each act as. sfn_execution assumes it on
-# the ECS task's behalf (the AssumeTrialOrgExecutionRole state, state_machine.asl.json.tftpl),
-# with sts:TagSession carrying this invocation's own TrialOrgId and DnsRecordName - the same
-# session-tag mechanism hosting_admin's own role above uses for ReadTrialOrgLogs, applied here
-# because ecs:RunTask itself has no equivalent to sts:AssumeRole's TagSession for the ECS task
-# role directly. snapshot_manager instead self-assumes it directly (no ECS credential-injection
-# mechanics to work around) — see its own trust-policy statement and lambda.tf's inline policy.
+# per-invocation identity RunTofu, snapshot_manager, and ec2_power_control each act as.
+# sfn_execution assumes it on the ECS task's behalf (the AssumeTrialOrgExecutionRole state,
+# state_machine.asl.json.tftpl), with sts:TagSession carrying this invocation's own TrialOrgId and
+# DnsRecordName - the same session-tag mechanism hosting_admin's own role above uses for
+# ReadTrialOrgLogs, applied here because ecs:RunTask itself has no equivalent to sts:AssumeRole's
+# TagSession for the ECS task role directly. snapshot_manager and ec2_power_control instead
+# self-assume it directly (no ECS credential-injection mechanics to work around) — see their own
+# trust-policy statements and lambda.tf's inline policies.
 # This is what makes ManageTrialOrgEc2Existing/ManageTrialOrgDnsRecords/SnapshotTrialOrgVolume
 # below genuine per-execution ABAC rather than "any tagged Trial Org resource" - every other
 # statement here is otherwise identical to what the (now-empty) ecs_task role used to carry
@@ -333,6 +334,20 @@ data "aws_iam_policy_document" "trial_org_execution_trust" {
     principals {
       type        = "AWS"
       identifiers = [aws_iam_role.snapshot_manager.arn]
+    }
+  }
+
+  # Issue #184, ADR-0033: ec2_power_control self-assumes this role directly on both its
+  # Suspend and Wake paths (tagging its own invocation's TrialOrgId, resolved from the
+  # instance_id already in its payload) — same self-assume pattern as snapshot_manager above,
+  # not the sfn_execution/AssumeTrialOrgExecutionRole indirection RunTofu uses.
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole", "sts:TagSession"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.ec2_power_control.arn]
     }
   }
 }
@@ -471,6 +486,10 @@ data "aws_iam_policy_document" "trial_org_execution" {
   # the assumed session's, not merely be present. One Trial Org's RunTofu invocation can no
   # longer touch another tagged Trial Org's EC2 resources, closing the gap the previous "any
   # tagged resource" Null condition here left open (CodeRabbit, PR #124).
+  #
+  # ec2:StartInstances/ec2:StopInstances here also cover ec2_power_control's own Suspend/Wake
+  # path (issue #184, ADR-0033): its self-assumed session is scoped by the exact same
+  # ResourceTag == PrincipalTag condition, so no separate statement was needed for it.
   statement {
     sid    = "ManageTrialOrgEc2Existing"
     effect = "Allow"

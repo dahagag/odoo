@@ -148,12 +148,30 @@ resource "aws_lambda_function" "lock_cleanup" {
 # ---------------------------------------------------------------------------
 # EC2 power-control Lambda for Suspend/Wake (ADR-0021), invoked by the state machine's own Task
 # state — see state_machine.asl.json.tftpl.
+#
+# This Lambda's own static role holds no direct EC2 mutate permission (issue #184, ADR-0033),
+# mirroring snapshot_manager below: only an sts:AssumeRole/sts:TagSession on trial_org_execution,
+# which the handler assumes itself — resolving the target instance's own TrialOrgId tag (its
+# payload only carries instance_id/action, not the Trial Org id) and tagging the session with it —
+# before calling StartInstances/StopInstances. A Lambda that never performs the assume therefore
+# has zero standing mutate access, the same backstop ADR-0031 established for ecs_task.
 # ---------------------------------------------------------------------------
 
 data "archive_file" "ec2_power_control" {
   type        = "zip"
-  source_dir  = "${path.module}/lambda_src/ec2_power_control"
   output_path = "${path.module}/.build/ec2_power_control.zip"
+
+  # Explicit `source` blocks, not `source_dir`, so this Lambda's own handler.py and the
+  # ec2_client.py helper it shares with snapshot_manager/snapshot_cleanup (lambda_src/_common/)
+  # both land at the zip root as sibling modules, without duplicating that helper's source here.
+  source {
+    content  = file("${path.module}/lambda_src/ec2_power_control/handler.py")
+    filename = "handler.py"
+  }
+  source {
+    content  = file("${path.module}/lambda_src/_common/ec2_client.py")
+    filename = "ec2_client.py"
+  }
 }
 
 resource "aws_iam_role" "ec2_power_control" {
@@ -167,29 +185,21 @@ resource "aws_iam_role_policy_attachment" "ec2_power_control_basic" {
 }
 
 data "aws_iam_policy_document" "ec2_power_control" {
-  # Requires TrialOrgId to be present on the target instance (any value) — excludes every
-  # non-Trial-Org instance in the account. Not scoped to the one specific Trial Org a given
-  # Suspend/Wake Task-state invocation targets: this Lambda has no execution-scoped identity to
-  # condition on (it's invoked with a plain {instance_id, action} payload, not an assumed-role
-  # session tagged per invocation), so "any Trial Org" is the tightest condition available here.
+  # Issue #184, ADR-0033: the only standing grant this role holds is permission to assume
+  # trial_org_execution itself (tagging the session with this invocation's own TrialOrgId) —
+  # mirroring ecs_task's now-empty policy (ADR-0031) and snapshot_manager's own policy below, so a
+  # Lambda that never performs the assume has zero standing EC2 mutate access.
   statement {
-    sid    = "ControlTrialOrgInstancePower"
-    effect = "Allow"
-    actions = [
-      "ec2:StartInstances",
-      "ec2:StopInstances",
-    ]
-    resources = ["*"]
-    condition {
-      test     = "Null"
-      variable = "aws:ResourceTag/TrialOrgId"
-      values   = ["false"]
-    }
+    sid       = "AssumeTrialOrgExecutionRole"
+    effect    = "Allow"
+    actions   = ["sts:AssumeRole", "sts:TagSession"]
+    resources = [aws_iam_role.trial_org_execution.arn]
   }
 
   # Describe* actions don't support resource-level permissions/tag conditions (AWS EC2 IAM
-  # reference), so this is necessarily an account-wide read-only grant, used only by the waiter
-  # to poll the instance this function itself just started/stopped.
+  # reference), so this is necessarily an account-wide read-only grant, used both to resolve the
+  # target instance's own TrialOrgId tag before self-assuming, and by the waiter to poll the
+  # instance this function itself just started/stopped.
   statement {
     sid    = "DescribeInstancesForWaiter"
     effect = "Allow"
@@ -215,6 +225,14 @@ resource "aws_lambda_function" "ec2_power_control" {
   timeout          = var.ec2_power_timeout_seconds
   filename         = data.archive_file.ec2_power_control.output_path
   source_code_hash = data.archive_file.ec2_power_control.output_base64sha256
+
+  environment {
+    variables = {
+      # Issue #184, ADR-0033: the handler self-assumes this role, tagging the session with the
+      # target instance's own TrialOrgId tag, before making any EC2 mutate call.
+      TRIAL_ORG_EXECUTION_ROLE_ARN = aws_iam_role.trial_org_execution.arn
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -222,12 +240,12 @@ resource "aws_lambda_function" "ec2_power_control" {
 # Task state — see state_machine.asl.json.tftpl. A runtime action Suspend/Wake/Destroy's snapshot
 # step take outside OpenTofu (ADR-0021).
 #
-# Unlike ec2_power_control (still tag-presence-scoped, tracked separately), this Lambda's own
-# mutate access is closed per issue #183/ADR-0033: its static role holds no direct EC2 grant at
-# all, only an sts:AssumeRole/sts:TagSession on trial_org_execution, which the handler assumes
-# itself — tagging the session with the TrialOrgId from its own invocation payload — before
-# making any create-snapshot/create-tags call. A Lambda that never performs the assume therefore
-# has zero standing mutate access, the same backstop ADR-0031 established for ecs_task.
+# Same self-assume pattern as ec2_power_control above (issue #184 extended issue #183/ADR-0033's
+# design to it): this Lambda's own static role holds no direct EC2 grant at all, only an
+# sts:AssumeRole/sts:TagSession on trial_org_execution, which the handler assumes itself —
+# tagging the session with the TrialOrgId from its own invocation payload — before making any
+# create-snapshot/create-tags call. A Lambda that never performs the assume therefore has zero
+# standing mutate access, the same backstop ADR-0031 established for ecs_task.
 # ---------------------------------------------------------------------------
 
 data "archive_file" "snapshot_manager" {

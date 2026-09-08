@@ -90,6 +90,13 @@ override_resource {
 }
 
 override_resource {
+  target = aws_iam_role.ec2_power_control
+  values = {
+    arn = "arn:aws:iam::111111111111:role/test-ec2-power-control"
+  }
+}
+
+override_resource {
   target = aws_iam_role.trial_org_execution
   values = {
     arn = "arn:aws:iam::111111111111:role/test-trial-org-execution"
@@ -214,5 +221,93 @@ run "verify_snapshot_iam_isolation" {
       ) != "2002"
     )
     error_message = "A trial_org_execution session tagged for Trial Org 1001 must resolve TagSnapshotOnCreate's RequestTag condition to '1001' and must not resolve to '2002'."
+  }
+}
+
+# Issue #184, ADR-0033 acceptance criterion: "A test (IAM policy simulator or equivalent)
+# demonstrates an assumed session tagged for Trial Org A cannot StartInstances/StopInstances
+# against an instance tagged for Trial Org B, and can succeed against its own Trial Org's
+# instance." ec2_power_control reuses trial_org_execution's pre-existing ManageTrialOrgEc2Existing
+# statement (already asserted on by RunTofu's own coverage) rather than a new one of its own, so
+# this run block's own assertions are about ec2_power_control's role/trust wiring, plus the same
+# substitution proof against ManageTrialOrgEc2Existing that the run block above does for the
+# snapshot statements.
+
+run "verify_ec2_power_control_iam_isolation" {
+  command = apply
+
+  plan_options {
+    target = [
+      aws_route53_zone.root,
+      aws_iam_policy.trial_org_instance_boundary,
+      aws_iam_role.sfn_execution,
+      aws_iam_role.ec2_power_control,
+      aws_iam_role.trial_org_execution,
+      data.aws_iam_policy_document.ec2_power_control,
+      data.aws_iam_policy_document.trial_org_execution_trust,
+      data.aws_iam_policy_document.trial_org_execution,
+    ]
+  }
+
+  # --- ec2_power_control's own role: no direct EC2 mutate grant left standing (ADR-0033) ---
+
+  assert {
+    condition = alltrue([
+      for statement in jsondecode(data.aws_iam_policy_document.ec2_power_control.json).Statement :
+      !contains(flatten([statement.Action]), "ec2:StartInstances") && !contains(flatten([statement.Action]), "ec2:StopInstances")
+    ])
+    error_message = "ec2_power_control's own IAM role must not carry any direct ec2:StartInstances/ec2:StopInstances grant — it must self-assume trial_org_execution instead (ADR-0033)."
+  }
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.ec2_power_control.json).Statement :
+      contains(flatten([statement.Action]), "sts:AssumeRole")
+      && contains(flatten([statement.Action]), "sts:TagSession")
+      && contains(flatten([statement.Resource]), aws_iam_role.trial_org_execution.arn)
+    ])
+    error_message = "ec2_power_control's own IAM role must grant sts:AssumeRole/sts:TagSession on trial_org_execution's ARN."
+  }
+
+  # --- trial_org_execution's trust policy: ec2_power_control may assume it directly ---
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(aws_iam_role.trial_org_execution.assume_role_policy).Statement :
+      contains(flatten([statement.Principal.AWS]), aws_iam_role.ec2_power_control.arn)
+      && contains(flatten([statement.Action]), "sts:AssumeRole")
+      && contains(flatten([statement.Action]), "sts:TagSession")
+    ])
+    error_message = "trial_org_execution's trust policy must allow ec2_power_control's own role to sts:AssumeRole/sts:TagSession directly."
+  }
+
+  # --- trial_org_execution's own ABAC statement covering the Suspend/Wake path ---
+
+  assert {
+    condition = length([
+      for statement in jsondecode(data.aws_iam_policy_document.trial_org_execution.json).Statement :
+      statement if statement.Sid == "ManageTrialOrgEc2Existing"
+      && contains(flatten([statement.Action]), "ec2:StartInstances")
+      && contains(flatten([statement.Action]), "ec2:StopInstances")
+    ]) == 1
+    error_message = "trial_org_execution's ManageTrialOrgEc2Existing statement must grant ec2:StartInstances/ec2:StopInstances (reused by ec2_power_control's self-assumed session)."
+  }
+
+  # --- cross-Trial-Org isolation simulation (same substitution as the snapshot run block above) ---
+
+  assert {
+    condition = (
+      replace(
+        [for statement in jsondecode(data.aws_iam_policy_document.trial_org_execution.json).Statement :
+        statement if statement.Sid == "ManageTrialOrgEc2Existing"][0].Condition.StringEquals["aws:ResourceTag/TrialOrgId"],
+        "$${aws:PrincipalTag/TrialOrgId}", "1001"
+      ) == "1001"
+      && replace(
+        [for statement in jsondecode(data.aws_iam_policy_document.trial_org_execution.json).Statement :
+        statement if statement.Sid == "ManageTrialOrgEc2Existing"][0].Condition.StringEquals["aws:ResourceTag/TrialOrgId"],
+        "$${aws:PrincipalTag/TrialOrgId}", "1001"
+      ) != "2002"
+    )
+    error_message = "A trial_org_execution session tagged for Trial Org 1001 must resolve ManageTrialOrgEc2Existing's ResourceTag condition to '1001' (matches its own instance, StartInstances/StopInstances allowed) and must not resolve to '2002' (another Trial Org's instance, StartInstances/StopInstances must be denied)."
   }
 }
