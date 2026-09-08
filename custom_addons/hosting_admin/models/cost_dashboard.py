@@ -1,10 +1,14 @@
+import logging
 from collections import defaultdict
 from datetime import timedelta
 
-from odoo import api, fields, models
+from odoo import _, api, fields, models
+from odoo.exceptions import UserError
 
 from .cost_explorer import AwsCostExplorerClient, StubCostExplorerClient
 from .trial_org import CONFIG_PARAM_AWS_REGION, CONFIG_PARAM_STATE_MACHINE_ARN
+
+_logger = logging.getLogger(__name__)
 
 # ir.config_parameter keys the Cost Dashboard is configured from. Unset credit fields fall back to
 # DEFAULT_CREDIT_AMOUNT/"today" respectively - see _cron_refresh_snapshot.
@@ -141,6 +145,17 @@ class HostingCostDashboardSnapshot(models.Model):
             'per_trial_org_spend': dict(per_trial_org_spend),
         }
 
+    @staticmethod
+    def _describe_cost_explorer_failure(exc):
+        """Best-effort label for why the AWS Cost Explorer call failed, read from the AWS error
+        code when the client raised a real ``botocore.ClientError`` (e.g. ``ThrottlingException``,
+        ``AccessDeniedException``) - never a guessed cause. Falls back to the exception's own
+        class name otherwise. Same pattern as AwsProvisioner._describe_history_failure
+        (models/provisioner.py)."""
+        response = getattr(exc, 'response', None)
+        code = response.get('Error', {}).get('Code') if isinstance(response, dict) else None
+        return code or exc.__class__.__name__
+
     def _cron_refresh_snapshot(self):
         """Scheduled action (daily, data/ir_cron.xml): pull AWS's own cost-and-usage data
         grouped by the TrialOrgId cost-allocation tag since the configured credit start date,
@@ -155,8 +170,21 @@ class HostingCostDashboardSnapshot(models.Model):
         today = fields.Date.context_today(self)
 
         client = self._get_cost_explorer_client()
-        daily_rows = client.get_daily_cost_by_trial_org(
-            credit_start_date, today + timedelta(days=1))
+        try:
+            daily_rows = client.get_daily_cost_by_trial_org(
+                credit_start_date, today + timedelta(days=1))
+        except Exception as exc:
+            # A transient AWS hiccup (throttling, an IAM permissions blip, or the known
+            # cost-allocation-tag activation delay - docs/adr/0030) must not kill the whole
+            # refresh with a raw, unclear exception. Same "log then surface a clear reason"
+            # convention as AwsProvisioner.check_status/_describe_history_failure
+            # (models/provisioner.py) - the daily cron logs this and retries tomorrow, and
+            # action_refresh_now/action_open_dashboard show it to the admin as a plain message
+            # instead of a traceback.
+            _logger.exception("Could not fetch AWS daily cost data for the Cost Dashboard")
+            raise UserError(_(
+                "Could not refresh AWS cost data (%s). Try again shortly."
+            ) % self._describe_cost_explorer_failure(exc)) from exc
 
         figures = self._compute_figures(daily_rows, credit_amount, credit_start_date, today)
 

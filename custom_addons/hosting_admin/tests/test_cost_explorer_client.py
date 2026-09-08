@@ -74,6 +74,56 @@ class TestAwsCostExplorerClient(TransactionCase):
 
         self.assertEqual(rows, [{'date': date(2026, 1, 1), 'trial_org_id': None, 'amount': 1.10}])
 
+    def test_get_daily_cost_by_trial_org_maps_a_non_int_parseable_tag_value_to_none(self):
+        # '²' (superscript "2") passes str.isdigit() but int() still can't parse it - the
+        # guard must use isdecimal(), or this raises ValueError and aborts the whole refresh.
+        boto_client = MagicMock()
+        boto_client.get_cost_and_usage.return_value = _cost_and_usage_response([
+            (date(2026, 1, 1), [('²', '2.00')]),
+        ])
+        client = self._make_client(boto_client)
+
+        rows = client.get_daily_cost_by_trial_org(date(2026, 1, 1), date(2026, 1, 2))
+
+        self.assertEqual(rows, [{'date': date(2026, 1, 1), 'trial_org_id': None, 'amount': 2.00}])
+
+    def test_get_daily_cost_by_trial_org_skips_a_result_with_no_time_period(self):
+        boto_client = MagicMock()
+        boto_client.get_cost_and_usage.return_value = {
+            'ResultsByTime': [{'Groups': []}],
+        }
+        client = self._make_client(boto_client)
+
+        rows = client.get_daily_cost_by_trial_org(date(2026, 1, 1), date(2026, 1, 2))
+
+        self.assertEqual(rows, [])
+
+    def test_get_daily_cost_by_trial_org_skips_a_group_with_no_usable_amount(self):
+        boto_client = MagicMock()
+        boto_client.get_cost_and_usage.return_value = {
+            'ResultsByTime': [{
+                'TimePeriod': {'Start': '2026-01-01', 'End': '2026-01-02'},
+                'Groups': [
+                    {'Keys': ['TrialOrgId$1'], 'Metrics': {}},
+                    {'Keys': ['TrialOrgId$2'],
+                     'Metrics': {'UnblendedCost': {'Amount': '5.0', 'Unit': 'USD'}}},
+                ],
+            }],
+        }
+        client = self._make_client(boto_client)
+
+        rows = client.get_daily_cost_by_trial_org(date(2026, 1, 1), date(2026, 1, 2))
+
+        self.assertEqual(rows, [{'date': date(2026, 1, 1), 'trial_org_id': 2, 'amount': 5.0}])
+
+    def test_get_daily_cost_by_trial_org_raises_when_the_aws_call_itself_fails(self):
+        boto_client = MagicMock()
+        boto_client.get_cost_and_usage.side_effect = RuntimeError("boom")
+        client = self._make_client(boto_client)
+
+        with self.assertRaises(RuntimeError):
+            client.get_daily_cost_by_trial_org(date(2026, 1, 1), date(2026, 1, 2))
+
     def test_get_daily_cost_by_trial_org_follows_next_page_token(self):
         boto_client = MagicMock()
         first_page = _cost_and_usage_response(

@@ -1,5 +1,8 @@
+import logging
 from abc import ABC, abstractmethod
 from datetime import date
+
+_logger = logging.getLogger(__name__)
 
 
 class CostExplorerClient(ABC):
@@ -72,18 +75,38 @@ class AwsCostExplorerClient(CostExplorerClient):
                 kwargs['NextPageToken'] = next_page_token
             response = self.client.get_cost_and_usage(**kwargs)
             for result in response.get('ResultsByTime', []):
-                result_date = date.fromisoformat(result['TimePeriod']['Start'])
-                for group in result.get('Groups', []):
-                    trial_org_id = self._trial_org_id_from_tag_keys(group.get('Keys', []))
-                    amount = float(group['Metrics']['UnblendedCost']['Amount'])
-                    rows.append({
-                        'date': result_date,
-                        'trial_org_id': trial_org_id,
-                        'amount': amount,
-                    })
+                rows.extend(self._rows_from_result(result))
             next_page_token = response.get('NextPageToken')
             if not next_page_token:
                 break
+        return rows
+
+    @classmethod
+    def _rows_from_result(cls, result):
+        """One ``ResultsByTime`` entry's rows, skipping (with a logged warning) whatever this
+        entry can't make sense of rather than aborting the whole daily refresh over it - AWS's
+        response shape is untyped deserialization with no runtime contract (botocore's
+        ``ParamValidator`` only validates outgoing request parameters), so a missing/malformed
+        member here is a real possibility, not a "can't happen"."""
+        rows = []
+        start = result.get('TimePeriod', {}).get('Start')
+        if start is None:
+            _logger.warning("Cost Explorer result missing TimePeriod.Start, skipping: %r", result)
+            return rows
+        try:
+            result_date = date.fromisoformat(start)
+        except ValueError:
+            _logger.warning("Cost Explorer result has an unparseable date %r, skipping", start)
+            return rows
+        for group in result.get('Groups', []):
+            try:
+                amount = float(group['Metrics']['UnblendedCost']['Amount'])
+            except (KeyError, TypeError, ValueError):
+                _logger.warning(
+                    "Cost Explorer group has no usable UnblendedCost amount, skipping: %r", group)
+                continue
+            trial_org_id = cls._trial_org_id_from_tag_keys(group.get('Keys', []))
+            rows.append({'date': result_date, 'trial_org_id': trial_org_id, 'amount': amount})
         return rows
 
     @staticmethod
@@ -91,8 +114,10 @@ class AwsCostExplorerClient(CostExplorerClient):
         """A ``GroupBy=TAG`` result's ``Keys`` entry is ``"TrialOrgId$<value>"`` (AWS's own
         tag-group key format, one entry since only one GroupBy key was requested) - untagged
         spend comes back with an empty value after the ``$``, mapped to ``None`` rather than a
-        garbage ``int()`` call on an empty string."""
+        garbage ``int()`` call on an empty string. ``isdecimal()`` rather than ``isdigit()``:
+        ``isdigit()`` returns True for some Unicode digit-like characters (e.g. superscript
+        "²") that ``int()`` still can't parse, which would raise past this guard."""
         if not keys:
             return None
         _, _, value = keys[0].partition('$')
-        return int(value) if value.isdigit() else None
+        return int(value) if value.isdecimal() else None
