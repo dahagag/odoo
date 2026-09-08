@@ -1,5 +1,6 @@
 from datetime import date
 
+from odoo.exceptions import UserError
 from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.hosting_admin.models.cost_dashboard import (
@@ -22,6 +23,23 @@ class FakeCostExplorerClient(CostExplorerClient):
 
     def get_daily_cost_by_trial_org(self, start_date, end_date):
         return [row for row in self._rows if start_date <= row['date'] < end_date]
+
+
+class FailingCostExplorerClient(CostExplorerClient):
+    """Test double standing in for a real AWS call that fails (throttling, an IAM permissions
+    blip, ClientError, ...) - the daily refresh must surface this as a clear UserError rather
+    than the raw exception."""
+
+    class FakeClientError(Exception):
+        def __init__(self, code):
+            super().__init__(code)
+            self.response = {'Error': {'Code': code}}
+
+    def __init__(self, code='ThrottlingException'):
+        self._code = code
+
+    def get_daily_cost_by_trial_org(self, start_date, end_date):
+        raise self.FakeClientError(self._code)
 
 
 @tagged('post_install', '-at_install')
@@ -195,6 +213,29 @@ class TestCostDashboardSnapshot(TransactionCase):
 
         self.assertFalse(snapshot.line_ids.trial_org_id)
         self.assertEqual(snapshot.line_ids.spend, 4.0)
+
+    def test_cron_refresh_snapshot_raises_a_clear_user_error_when_the_aws_call_fails(self):
+        self._inject_cost_explorer_client(FailingCostExplorerClient('AccessDeniedException'))
+
+        with self.assertRaises(UserError) as capture:
+            self.Snapshot._cron_refresh_snapshot()
+
+        self.assertIn('AccessDeniedException', str(capture.exception))
+
+    def test_cron_refresh_snapshot_leaves_a_prior_snapshot_untouched_when_the_aws_call_fails(self):
+        today = date.today()
+        self._set_credit_config(amount=200.0, start_date=today)
+        self._inject_cost_explorer_client(FakeCostExplorerClient([
+            {'date': today, 'trial_org_id': self.trial_org.id, 'amount': 5.0},
+        ]))
+        self.Snapshot._cron_refresh_snapshot()
+
+        self._inject_cost_explorer_client(FailingCostExplorerClient())
+        with self.assertRaises(UserError):
+            self.Snapshot._cron_refresh_snapshot()
+
+        snapshot = self.Snapshot.search([('snapshot_date', '=', today)])
+        self.assertEqual(snapshot.total_spend, 5.0)
 
     def test_action_open_dashboard_reuses_an_existing_snapshot_without_refreshing(self):
         today = date.today()
