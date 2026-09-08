@@ -23,6 +23,17 @@ call. What stays is everything the scheme was adopted for below — the migratio
 a **major** bump means a migration script must run before `update <module>` is safe, a **minor**
 bump means an upgrade but no migration, and a **patch** bump means neither. That signal now
 applies repo-wide: cutting a major release asserts that some module in it needs a migration.
+
+One thing this amendment deliberately does not settle: a repo-wide major bump raises the major on
+*every* owned addon, including ones with no change and no migration script. Nothing breaks when
+that happens — Odoo builds its candidate list only from migration files that exist, so a major
+bump with no scripts is a silent no-op — but the major stops meaning "a migration script must
+run", which is the whole signal this scheme was adopted to carry. Whether the derivation skips
+unchanged addons, or every addon carries the release major and the migration-risk signal moves to
+the release notes, is #202's to decide — it owns the mechanical derivation and its CI check.
+Today's manifests do diverge (`crm_methodology` is `19.0.1.1.0`, `example_addon` is a bare
+`1.0.0`), so the first derivation also has to bring them onto one scheme.
+
 The branching and release mechanics in [`docs/agents/sdlc.md`](../agents/sdlc.md) still describe
 the per-module scheme and Render-watched promotion; #202 updates them alongside the pipeline.
 

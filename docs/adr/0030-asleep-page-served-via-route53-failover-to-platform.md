@@ -22,6 +22,8 @@ This is also a better fit than the original target: the client app already owns 
 and invitations (ADR-0026 as amended), so the asleep page's "Wake Up" button now lives on the
 same surface as the action it triggers rather than crossing into a staff-facing system.
 
+**Everything below is the original decision, since amended — read it with the note above.**
+
 Closes one of the two functional gaps tracked by [#174](https://github.com/dahagag/odoo/issues/174)
 (carried over from [#106](https://github.com/dahagag/odoo/issues/106) user stories 10/11).
 [ADR-0014](0014-per-org-ec2-with-suspend-wake-for-trials.md) already committed to a real, bounded

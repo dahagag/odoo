@@ -28,6 +28,8 @@ Related: [#206](https://github.com/dahagag/odoo/issues/206) is a separate resear
 AWS actually permits around credit visibility and upfront expense control. It may change what a
 credit-burn figure can be built from; it does not change this decision.
 
+**Everything below is the original decision, since amended — read it with the note above.**
+
 `hosting_admin` shows AWS spend across every Trial Org (issue #115) as a stored, cron-refreshed
 snapshot (`hosting.cost.dashboard.snapshot` + its `hosting.cost.dashboard.line` breakdown), not as
 computed fields pulled live from AWS on every page open — the opposite choice from the lifecycle

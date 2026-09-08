@@ -23,6 +23,9 @@ filter per Trial Org log group feeding **one shared Lambda** declared in the sta
 which org each event belongs to. [ADR-0021](0021-trial-org-ec2-power-state-and-instance-profile-boundary.md)'s
 narrow instance profile — the thing that gets logs into that group at all — is unaffected.
 
+**Everything below is the original decision. It is superseded — implement nothing from it
+except what the note above explicitly preserves.**
+
 `hosting_admin` gives technical support a live-tailing, auto-refreshing view of a Trial Org's
 Odoo application log — filterable by org and by user — so support can diagnose a problem with a
 client live, the way Render's log viewer works. This is push-based, not polling: a CloudWatch

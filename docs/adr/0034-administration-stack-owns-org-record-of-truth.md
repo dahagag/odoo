@@ -18,7 +18,13 @@ serves two surfaces: a staff administration app and a public client app.
 `hosting_admin` shrinks to a **CRM integration**: issue a Trial Org from an Opportunity, mirror
 read-only state onto that Opportunity, hold the Opportunity link. Nothing else. Its lifecycle
 logic, seat rules, provisioner, and cost models port to the stack with their behaviour
-reproduced, and Odoo holds no AWS credential afterwards.
+reproduced, and Odoo holds no Hosting Account credential afterwards — no OpenTofu, Step Functions,
+EC2, or Cost Explorer access. What it keeps is the IAM role on its own instance profile, scoped to
+signing calls to the stack's API
+([ADR-0036](0036-odoo-to-stack-contract-is-rest-with-generated-openapi.md)), which is why there is
+no shared secret to store or rotate. Where the epic says Odoo "holds no AWS credentials", read it
+as this narrower claim: no Hosting Account access, and no AWS credential `hosting_admin` stores
+rather than assumes from its own instance profile.
 
 Two things ADR-0018 decided **still stand** and are not reopened here:
 

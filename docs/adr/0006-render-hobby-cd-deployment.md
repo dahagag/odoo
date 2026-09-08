@@ -20,14 +20,17 @@ The running Render service stays as the rollback target until the production cut
 ([#204](https://github.com/dahagag/odoo/issues/204)) completes; the code goes once staging is
 proven.
 
-Two mechanisms below outlived their host and are worth naming, because they are now
-requirements rather than free-tier workarounds. The self-healing boot that reinitialises a
-missing database is the shape staging deliberately adopts on every deploy (fresh demo data per
-deploy, #203) — see also
-[ADR-0012](0012-local-dev-self-heals-crm-methodology-like-render.md). And forcing
-`ir_attachment.location` to `db` was a fix for having no persistent disk; on AWS the filestore
-gets real durable storage, so that override is a decision to re-make deliberately rather than
-inherit.
+Two mechanisms below outlived their host, in different ways. The self-healing boot that
+reinitialises a missing database stops being a workaround and becomes a **requirement**: it is the
+shape staging deliberately adopts on every deploy (fresh demo data per deploy, #203) — see also
+[ADR-0012](0012-local-dev-self-heals-crm-methodology-like-render.md). Forcing
+`ir_attachment.location` to `db`, by contrast, becomes an **open decision**: it was a fix for
+having no persistent disk, and on AWS durable storage is available, so the posture has to be
+re-made deliberately rather than inherited. That decision is tracked in
+[#209](https://github.com/dahagag/odoo/issues/209), not settled here.
+
+**Everything below is the original decision. It is superseded — implement nothing from it
+except what the note above explicitly preserves.**
 
 The client-demo instance runs on Render's free web service + free Postgres, promoted by
 merging a release PR from `dev/19.0` into a new `main/19.0` branch, which Render watches for

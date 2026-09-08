@@ -24,6 +24,9 @@ The isolation argument below — that admin-only code must be *absent* from a cu
 instance rather than inert on it — is also not repudiated. ADR-0034 applies the same reasoning
 one boundary further out.
 
+**Everything below is the original decision. It is superseded — implement nothing from it
+except what the note above explicitly preserves.**
+
 Hosting Operations ships as two addons rather than one mode-gated addon. `hosting` is installed
 on every Trial Org's (and later, paying customer's) own Odoo instance, namespaced `hosting`, and
 is deliberately thin: it surfaces that org's own Org Registration info (name, domain, seats

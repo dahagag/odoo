@@ -23,6 +23,8 @@ it ruled out forwarding credentials through Step Functions state data — Odoo n
 `states:GetExecutionHistory` at all — but that ADR's conclusion is unaffected: the readable
 principal is now the stack, and placing credentials in execution history stays the wrong shape.
 
+**Everything below is the original decision, since amended — read it with the note above.**
+
 `hosting_admin` shows a Trial Org's lifecycle audit trail (issue/extend/suspend/wake/destroy —
 who, when, what happened at each step) by calling AWS directly when an admin opens the record,
 rather than maintaining its own audit log or syncing one on a schedule. Step Functions already

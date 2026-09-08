@@ -26,6 +26,9 @@ compute it runs on, and with it all three reasons given for owning that compute:
   solo-maintainer repo, and it is a machine holding a GitHub registration token that nobody is
   watching.
 
+**Everything below is the original decision. It is superseded — implement nothing from it
+except what the note above explicitly preserves.**
+
 CI/CD runs on a dedicated, self-hosted GitHub Actions runner living in the Platform Account
 ([ADR-0015](0015-production-migrates-to-aws-platform-account.md)), rather than GitHub-hosted
 runners. Three reasons drove this: CI/CD needs private network access to the OpenTofu remote-state
