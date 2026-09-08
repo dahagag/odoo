@@ -19,12 +19,14 @@ class TestCrmLeadTrialConcurrency(BaseCase):
     connection, then prove a second, fully independent connection's identical
     ``FOR UPDATE NOWAIT`` is rejected immediately rather than silently proceeding past it. A
     genuine multi-threaded test that drives the full action end-to-end under real concurrent
-    execution turned out to be impractical here - constructing a second api.Environment() from
-    a real background thread stalls for ~20s inside this test runner's process for reasons that
-    didn't resolve after real investigation (see issue #134) - so this proves the load-bearing
-    claim (the lock is real, and on the correct row) without touching the ORM from a second
-    thread. It does not re-prove the read-after-lock business logic itself, which the ordinary
-    sequential tests in test_crm_lead_trial.py already cover.
+    execution turned out to be impractical here - constructing a second api.Environment() from a
+    real background thread stalls inside this test runner's process for however long is left in
+    the whole `scripts/dev.ps1 test` invocation's test run, not just this test (see issue #134
+    and docs/agents/odoo-19-development.md's "api.Environment() stalls when built from a
+    background thread under scripts/dev.ps1 test") - so this proves the load-bearing claim (the
+    lock is real, and on the correct row) without touching the ORM from a second thread. It does
+    not re-prove the read-after-lock business logic itself, which the ordinary sequential tests
+    in test_crm_lead_trial.py already cover.
 
     BaseCase, not TransactionCase: proving a Postgres row lock blocks a second transaction
     needs two real, independently-committing connections - TransactionCase wraps an entire
