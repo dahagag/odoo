@@ -55,6 +55,30 @@ Runtime behavior and established addon style outrank a style-only rewrite.
 - Use Hoot for isolated frontend logic and an `HttpCase` tour when Python and browser behavior must work together.
 - Run focused tests through `scripts/dev.ps1 test <module>` or `scripts/dev.sh test <module>` before broader selections.
 
+### `api.Environment()` stalls when built from a background thread under `scripts/dev.ps1 test`
+
+Don't construct an `api.Environment()` (or anything else that resolves a `Registry`) on a real
+`threading.Thread` inside a test run through `scripts/dev.ps1 test`/`scripts/dev.sh test`. Likely
+cause, identified by reading the source rather than an isolated repro (issue #134):
+`Registry(cr.dbname)`, which `Environment.__new__` calls on first use of a cursor
+(`odoo/orm/environments.py`), blocks on `Registry._lock` — a plain class-level `threading.RLock`,
+reentrant only for the thread holding it (`odoo/orm/registry.py`). `ThreadedServer.run()`
+(`odoo/service/server.py`) holds that same
+lock for its entire `preload_registries()` call: module loading, `at_install` tests, and the full
+`post_install` suite. So any thread but the main one blocks until the whole invocation's test run
+finishes, not until the current test does — with test order deterministic per run, that lands on
+roughly the same wait every time, which is why the reported stall looked like a fixed ~20s rather
+than a coincidence with an unrelated 20s constant elsewhere in the test harness.
+
+Nothing about choosing `BaseCase` over `TransactionCase`/`HttpCase`, or tuning a timeout, avoids
+this — it's the CLI runner's one process-wide lock. (`HttpCase`'s `registry_enter_test_mode_cls()`
+patches `Registry._lock` to a no-op, but only after `ThreadedServer.run()` already holds the real
+one.) For a test that genuinely needs two independent connections to prove real concurrent
+execution, drive both connections' SQL directly on nested cursors instead of building a second
+`Environment()` — see `custom_addons/crm_methodology/tests/test_crm_lead_trial_concurrency.py` and
+Odoo core's `odoo/addons/base/tests/test_ir_sequence.py` (`TestIrSequenceNoGap`): hold a lock open
+on one cursor, then assert a second cursor's identical `FOR UPDATE NOWAIT` is rejected immediately.
+
 ## Infra changes (OpenTofu)
 
 A ticket that touches `infra/` (a `.tf`/`.tftpl` file, or a `lambda_src/*/handler.py`) is not done
