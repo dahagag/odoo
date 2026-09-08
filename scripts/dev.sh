@@ -33,7 +33,12 @@ ctx_index_run() {
     # dev/19.0 shows them essentially untouched (0 and 4 files respectively), and
     # .claude/ is excluded as Claude Code tooling/skill cache, not fork-domain content.
     command -v npx >/dev/null 2>&1 || { echo "ctx-index needs 'npx' (Node.js) on PATH." >&2; exit 1; }
-    local extensions='.md,.mdx,.txt,.json,.yaml,.yml,.ts,.tsx,.js,.jsx,.py,.rs,.go,.sh,.xml,.csv'
+    # Keep in sync with dev.ps1's copy. When a new tech stack, language, or config
+    # format shows up under custom_addons/, docs/, infra/, scripts/, or .github/,
+    # append its extension here (and there) rather than letting it silently go
+    # unindexed - see docs/agents/local-development.md's ctx-index entry for the
+    # currently-known, deliberately excluded types (media, binaries, build output).
+    local extensions='.md,.mdx,.txt,.json,.yaml,.yml,.ts,.tsx,.js,.jsx,.py,.rs,.go,.sh,.xml,.csv,.tf,.tftpl,.hcl,.ps1,.po'
     ctx_index_target() {
         local rel_path="$1" source="$2" max_files="$3" abs_path="${REPO_ROOT}/${1}"
         [[ -d "$abs_path" ]] || return 0

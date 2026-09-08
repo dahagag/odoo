@@ -367,7 +367,12 @@ function Invoke-CtxIndex {
     # authored content; odoo/ and addons/ are excluded because upstream/19.0 vs
     # dev/19.0 shows them essentially untouched (0 and 4 files respectively), and
     # .claude/ is excluded as Claude Code tooling/skill cache, not fork-domain content.
-    $extensions = '.md,.mdx,.txt,.json,.yaml,.yml,.ts,.tsx,.js,.jsx,.py,.rs,.go,.sh,.xml,.csv'
+    # Keep in sync with dev.sh's copy. When a new tech stack, language, or config
+    # format shows up under custom_addons/, docs/, infra/, scripts/, or .github/,
+    # append its extension here (and there) rather than letting it silently go
+    # unindexed - see docs/agents/local-development.md's ctx-index entry for the
+    # currently-known, deliberately excluded types (media, binaries, build output).
+    $extensions = '.md,.mdx,.txt,.json,.yaml,.yml,.ts,.tsx,.js,.jsx,.py,.rs,.go,.sh,.xml,.csv,.tf,.tftpl,.hcl,.ps1,.po'
     $targets = @(
         @{ Path = 'custom_addons'; Source = 'fork-diff:custom_addons'; MaxFiles = 300 },
         @{ Path = 'docs'; Source = 'fork-diff:docs'; MaxFiles = 200 },
