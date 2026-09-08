@@ -38,7 +38,14 @@ ctx_index_run() {
         local rel_path="$1" source="$2" max_files="$3" abs_path="${REPO_ROOT}/${1}"
         [[ -d "$abs_path" ]] || return 0
         echo "Indexing ${rel_path} as ${source}..."
-        npx --yes context-mode@latest index "$abs_path" --source "$source" --max-files "$max_files" --ext "$extensions"
+        # --project pins every call to the repo root's project DB. Without it, the
+        # CLI derives the project from the indexed path itself, so custom_addons/,
+        # docs/, etc. would each land in their OWN separate per-directory database -
+        # invisible to ctx_search, whose MCP server always opens the store for the
+        # session's root cwd (confirmed by reading context-mode's own source: the
+        # ctx_search `project` param only filters rows in the already-open store,
+        # it does not select which database file to open).
+        npx --yes context-mode@latest index "$abs_path" --project "$REPO_ROOT" --source "$source" --max-files "$max_files" --ext "$extensions"
     }
     ctx_index_target custom_addons fork-diff:custom_addons 300
     ctx_index_target docs fork-diff:docs 200

@@ -378,11 +378,22 @@ function Invoke-CtxIndex {
     if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
         throw "ctx-index needs 'npx' (Node.js) on PATH."
     }
+    # Local copy: some npx shims (e.g. nvm-windows' npx.ps1) reconstruct and
+    # re-evaluate the command line, and choke on a scope-qualified variable
+    # name ($script:RepoRoot) surviving into that reconstruction.
+    $repoRoot = $script:RepoRoot
     foreach ($target in $targets) {
-        $absPath = Join-Path $script:RepoRoot $target.Path
+        $absPath = Join-Path $repoRoot $target.Path
         if (-not (Test-Path -LiteralPath $absPath)) { continue }
         Write-Host "Indexing $($target.Path) as $($target.Source)..."
-        & npx --yes context-mode@latest index $absPath --source $target.Source --max-files $target.MaxFiles --ext $extensions
+        # --project pins every call to the repo root's project DB. Without it, the
+        # CLI derives the project from the indexed path itself, so custom_addons/,
+        # docs/, etc. would each land in their OWN separate per-directory database -
+        # invisible to ctx_search, whose MCP server always opens the store for the
+        # session's root cwd (confirmed by reading context-mode's own source: the
+        # ctx_search `project` param only filters rows in the already-open store,
+        # it does not select which database file to open).
+        & npx --yes context-mode@latest index $absPath --project $repoRoot --source $target.Source --max-files $target.MaxFiles --ext $extensions
         if ($LASTEXITCODE -ne 0) { throw "context-mode index failed for $($target.Path) (exit $LASTEXITCODE)." }
     }
     # Re-running this is safe: context-mode deletes-then-reinserts a file's chunks
