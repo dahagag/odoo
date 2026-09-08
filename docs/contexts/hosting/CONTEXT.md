@@ -1,12 +1,20 @@
 # Hosting Operations
 
-Provisions and operates isolated Odoo instances for prospects and customers outside the primary agentic-erp deployment: sales trials today, paid hosting later. Owns instance lifecycle, not the commercial decision to offer one.
+Provisions and operates isolated Odoo instances for prospects and customers outside the primary agentic-erp deployment: evaluation orgs for leads, and hosted orgs for paying clients. Owns instance lifecycle, not the commercial decision to offer one.
 
 ## Language
 
 **Trial Org**:
-An isolated Odoo instance provisioned for a single CRM Opportunity's prospect domain, running for a fixed window (default 14 days) before Auto-Destroy.
+An isolated Odoo instance provisioned for a single CRM Opportunity's prospect domain, running for a fixed window (default 14 days). The low-cost, ephemeral evaluation offering issued to a lead so they and their colleagues can evaluate our addons. Auto-Destroy is its default outcome at the end of that window, pre-empted only by Promotion.
 _Avoid_: Tenant, demo instance, sandbox
+
+**Client Org**:
+A stable hosted Odoo instance operated for a paying client. Anchored to a won deal rather than an Opportunity, with no expiry window and no Auto-Destroy. Reached either by Promotion of a Trial Org or by being provisioned directly for a client who never evaluated.
+_Avoid_: Production org, tenant, customer instance (a Client Org is one client's own hosted org, not a tier of our own production)
+
+**Promotion**:
+A Trial Org becoming a Client Org without moving its data — the client keeps what they entered while evaluating. The only event that pre-empts Auto-Destroy, and the reason expiry is a default outcome rather than an unconditional one. Org Region is immutable, so a Promotion never crosses regions.
+_Avoid_: Conversion (that's the CRM Opportunity's own word), upgrade, migration (nothing moves)
 
 **Seat**:
 A named user account within a Trial Org. The count is set per-trial at issuance (system-wide max 25) and each invite must match the Trial Org's prospect domain.
@@ -21,24 +29,44 @@ A Trial Org's two operating states. Active means its compute is running; Suspend
 _Avoid_: Sleeping, paused (use Suspended); running, live (use Active)
 
 **Wake**:
-The explicit action ("Wake Up" button) an org user takes on a Suspended Trial Org to start its compute again. Not automatic — visiting the URL shows a static waiting page rather than triggering a wake by itself.
+The explicit action ("Wake Up" button) an org user takes on a Suspended Trial Org to start its compute again. Not automatic — visiting the URL shows the Asleep Page rather than triggering a wake by itself.
 _Avoid_: Resume, start (use Wake as the noun/verb for this specific action)
 
+**Asleep Page**:
+The static page shown at a Suspended org's own URL, explaining that the org is asleep and offering the Wake action, so a stopped instance does not look like a broken product. Served from an always-on surface rather than from the stopped instance itself.
+_Avoid_: Error page, maintenance page, waiting page (it's a working state, not a fault)
+
 **Auto-Destroy**:
-Permanent teardown of a Trial Org's compute and database, firing when its expiry date is reached (or earlier by manual teardown). A short-lived (7-day) database snapshot is retained afterward in case of revival.
+Permanent teardown of a Trial Org's compute and database — the default outcome when its expiry date is reached, pre-empted by Promotion, and available earlier by manual teardown. A short-lived (7-day) database snapshot is retained afterward in case of revival. Client Orgs are never auto-destroyed.
 _Avoid_: Expiry (expiry is the date; Auto-Destroy is the action it triggers)
 
 **Extension**:
 An action available to the sales rep or manager who owns the Opportunity (via the sales methodology addon) that pushes out a Trial Org's expiry date before Auto-Destroy fires.
 
+**Administration Stack**:
+The application that holds the record of truth for every Trial Org and Client Org and operates their infrastructure — issuance, seats, suspend/wake, extension, auto-destroy, cost, and logs — separate from any Odoo instance so the infrastructure plane stays available when Odoo is not. Serves two surfaces: the Staff App and the Client App.
+_Avoid_: Control plane, backend, admin panel (name the stack, or name the surface)
+
+**Staff App**:
+The Administration Stack's internal surface, where staff operate the whole fleet across accounts: every org's state, its provisioning logs, and what AWS is costing per org. Not reachable from the public internet.
+_Avoid_: Admin dashboard, back office
+
+**Client App**:
+The Administration Stack's public surface, where an org's own people see their org's standing, accept invitations, Wake a Suspended org, and land on the Asleep Page. The only public surface of Hosting Operations.
+_Avoid_: Portal (that's Odoo's own `portal` concept), customer dashboard
+
 **Hosting Account**:
-The AWS Organizations member account that holds all Trial Org infrastructure, kept separate from the Management account that owns billing and Organization structure, and from the Platform Account.
+The AWS Organizations member account that holds all Trial Org and Client Org infrastructure, kept separate from the Management account that owns billing and Organization structure, and from the Platform Account.
 
 **Platform Account**:
-The AWS Organizations member account holding agentic-erp's own production instance, migrated from Render. Kept separate from the Hosting Account so disposable trial-org infrastructure never shares an account boundary with production.
+The AWS Organizations member account holding agentic-erp's own instances — production and staging — along with the Administration Stack and the static public surfaces. Kept separate from the Hosting Account so disposable trial-org infrastructure never shares an account boundary with production.
+
+**Org Region**:
+The single AWS region an org's infrastructure and data live in, fixed when the org is provisioned and immutable thereafter. Today every org lands in the one region the Hosting Account's foundation defines; per-org selection is a captured requirement, not a capability.
+_Avoid_: Data residency, availability zone, location
 
 **Org Registration**:
-The read-only summary of a Trial Org's own standing — name, domain, seats used/total, expiry date — surfaced inside that org's own Odoo instance via the `hosting` addon. The prelude to a self-service view paid hosting customers will later see (plan, billing) once that tier exists.
+The read-only summary of an org's own standing — name, domain, seats used/total, expiry date — surfaced inside that org's own Odoo instance. Sourced from the Administration Stack, scoped so an org can read only its own. The prelude to a self-service view paid hosting customers will later see (plan, billing) once that tier exists.
 _Avoid_: Subscription info (not yet a subscription — no billing exists for Trial Orgs)
 
 **Deployment Version**:

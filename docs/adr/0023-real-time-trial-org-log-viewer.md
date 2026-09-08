@@ -1,4 +1,27 @@
+---
+status: superseded by ADR-0034 and ADR-0037 (viewer rebuilt in the staff app — #199)
+---
+
 # Real-time Trial Org log viewer via CloudWatch subscription, a shared Lambda, and Odoo's own bus
+
+**Superseded:** the log viewer is rebuilt in the administration stack's staff app and the
+CloudWatch forwarder retargets to the stack — see
+[ADR-0034](0034-administration-stack-owns-org-record-of-truth.md) for the ownership move,
+[ADR-0037](0037-odoo-has-no-public-ingress.md) for the constraint that forces it, and
+[#199](https://github.com/dahagag/odoo/issues/199) for the rebuild, all under epic
+[#193](https://github.com/dahagag/odoo/issues/193).
+
+This is superseded rather than amended because the *delivery mechanism* below cannot survive the
+move, not just its host: an HMAC-signed POST from a Hosting Account Lambda into an Odoo webhook
+controller, plus Odoo's own bus for live tailing, both require Odoo to have a public listener,
+which ADR-0037 removes. Leaving this implementation in place would have left a support tool
+unreachable behind a private Odoo.
+
+What carries forward is the shape of the pipe, not the endpoint: a CloudWatch Logs subscription
+filter per Trial Org log group feeding **one shared Lambda** declared in the static foundation
+(the per-trial-Lambda cost objection below still holds), with the log group's name identifying
+which org each event belongs to. [ADR-0021](0021-trial-org-ec2-power-state-and-instance-profile-boundary.md)'s
+narrow instance profile — the thing that gets logs into that group at all — is unaffected.
 
 `hosting_admin` gives technical support a live-tailing, auto-refreshing view of a Trial Org's
 Odoo application log — filterable by org and by user — so support can diagnose a problem with a

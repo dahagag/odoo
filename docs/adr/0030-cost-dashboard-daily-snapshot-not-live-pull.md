@@ -1,4 +1,32 @@
+---
+status: amended by ADR-0034 (moves to the stack; projection and alerting added — #198)
+---
+
 # Cost dashboard: daily-refresh snapshot, not a live-pulled view
+
+**Amended:** the cost dashboard moves to the administration stack — see
+[ADR-0034](0034-administration-stack-owns-org-record-of-truth.md) — and gains **state-aware
+projection and threshold alerting** on top of the snapshot, under epic
+[#193](https://github.com/dahagag/odoo/issues/193), built in
+[#198](https://github.com/dahagag/odoo/issues/198).
+
+**The decision below is unchanged and is the foundation the additions sit on:** cost data is a
+stored, cron-refreshed snapshot, not computed live on every dashboard open, because
+`GetCostAndUsage` refreshes only daily and charges per request. That reasoning is what makes a
+projection possible at all — a projection needs a series of stored daily figures to extrapolate
+from, which a live-pull design never accumulates.
+
+What is added: a burn projection that accounts for each org's **actual power state** rather than
+extrapolating a flat average, so a fleet of Suspended Trial Orgs is not projected as if it were
+running; and alerting when spend or credit burn crosses a threshold, emitted to an SNS topic with
+email subscribed so another channel can be added without changing the emitter. The dashboard's
+own storage model (`hosting.cost.dashboard.snapshot` and its
+`hosting.cost.dashboard.line` breakdown) is reproduced in the stack's own store, with the
+`AwsGateway` seam replacing `CostExplorerClient` as the boundary the logic tests against.
+
+Related: [#206](https://github.com/dahagag/odoo/issues/206) is a separate research spike on what
+AWS actually permits around credit visibility and upfront expense control. It may change what a
+credit-burn figure can be built from; it does not change this decision.
 
 `hosting_admin` shows AWS spend across every Trial Org (issue #115) as a stored, cron-refreshed
 snapshot (`hosting.cost.dashboard.snapshot` + its `hosting.cost.dashboard.line` breakdown), not as

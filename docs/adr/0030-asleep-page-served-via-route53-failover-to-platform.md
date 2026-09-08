@@ -1,4 +1,26 @@
+---
+status: amended by ADR-0037 (failover target becomes the client app — #200)
+---
+
 # Asleep/Wake-Up page served via Route53 failover to the Platform instance
+
+**Amended:** the failover record's secondary target becomes the **client app** — one of the
+administration stack's two surfaces — rather than the Platform Odoo instance, because Odoo loses
+its public listener. See [ADR-0037](0037-odoo-has-no-public-ingress.md) and
+[ADR-0034](0034-administration-stack-owns-org-record-of-truth.md), under epic
+[#193](https://github.com/dahagag/odoo/issues/193); built in
+[#200](https://github.com/dahagag/odoo/issues/200).
+
+**The mechanism below is unchanged.** A suspended Trial Org's EC2 instance is fully stopped, so
+its own instance cannot serve the page; a Route53 failover record is still what puts an
+explanatory page and a Wake affordance at the org's own URL instead of a connection error, and
+the health-check-driven failover and back are as designed. Only the always-on target the record
+fails over *to* changes — and it has to, since a private Odoo would not answer the health check
+in the first place.
+
+This is also a better fit than the original target: the client app already owns Wake, org status,
+and invitations (ADR-0026 as amended), so the asleep page's "Wake Up" button now lives on the
+same surface as the action it triggers rather than crossing into a staff-facing system.
 
 Closes one of the two functional gaps tracked by [#174](https://github.com/dahagag/odoo/issues/174)
 (carried over from [#106](https://github.com/dahagag/odoo/issues/106) user stories 10/11).

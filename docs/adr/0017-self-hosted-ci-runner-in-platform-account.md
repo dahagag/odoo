@@ -1,4 +1,30 @@
+---
+status: superseded by issue #193 (GitHub Actions with OIDC; pipeline built in #202)
+---
+
 # Self-hosted GitHub Actions runner in the Platform Account
+
+**Superseded:** CI/CD runs on **GitHub-hosted runners, authenticating to AWS via GitHub Actions'
+OIDC federation** — no self-hosted runner. Decided in the Hosting Operations completion epic
+([#193](https://github.com/dahagag/odoo/issues/193)) and built in
+[#202](https://github.com/dahagag/odoo/issues/202), which owns the deploy pipeline's own record.
+
+This ADR's OIDC decision (below) survives intact and is the part that carried forward: no stored
+long-lived AWS credential in CI, `AssumeRoleWithWebIdentity` instead. What is reversed is the
+compute it runs on, and with it all three reasons given for owning that compute:
+
+- **Private network access.** A GitHub-hosted runner cannot reach a private VPC, but it does not
+  need to. The pipeline's AWS work is API calls to AWS endpoints under an OIDC-assumed role,
+  including the OpenTofu remote-state backend, which is S3 and DynamoDB rather than something
+  inside the VPC. What genuinely needs in-network access — reaching Odoo itself — is now over
+  Tailscale ([ADR-0037](0037-odoo-has-no-public-ingress.md)), not something CI does.
+- **Persistent caching.** GitHub Actions' own cache covers Docker layers and OpenTofu providers
+  well enough for this repo's CI volume. Buying it with a permanently running EC2 instance is the
+  expensive way to pay for it.
+- **Cost.** The minutes argument assumed CI volume we do not have; a self-hosted runner's own
+  standing compute, patching, and runner-registration lifecycle is the larger real cost for a
+  solo-maintainer repo, and it is a machine holding a GitHub registration token that nobody is
+  watching.
 
 CI/CD runs on a dedicated, self-hosted GitHub Actions runner living in the Platform Account
 ([ADR-0015](0015-production-migrates-to-aws-platform-account.md)), rather than GitHub-hosted

@@ -1,4 +1,28 @@
+---
+status: superseded by ADR-0034 (except the surviving thin addon and the no-dependency rule)
+---
+
 # Hosting Operations splits into `hosting` and `hosting_admin` addons
+
+**Superseded:** the cross-org Trial Org model, the AWS integration, suspend/wake control, and the
+cost dashboard move **out of `hosting_admin` and out of Odoo entirely**, into the administration
+stack — see [ADR-0034](0034-administration-stack-owns-org-record-of-truth.md), which records the
+reversal and its rejected alternatives, and the epic it belongs to
+([#193](https://github.com/dahagag/odoo/issues/193)). `hosting_admin` shrinks to a CRM
+integration ([#197](https://github.com/dahagag/odoo/issues/197)).
+
+**Two of this ADR's decisions are not superseded and are still binding:**
+
+1. The thin `hosting` addon survives, installed on every org's own instance, surfacing that org's
+   own Org Registration and nothing else. It now reads that registration from the stack over a
+   read-only per-org-scoped endpoint ([#201](https://github.com/dahagag/odoo/issues/201)).
+2. The **no-dependency rule** between `hosting` and `hosting_admin` stands. It is why the
+   org-facing read path gets its own minimal `OrgRegistrationClient` rather than reusing
+   `hosting_admin`'s stack client.
+
+The isolation argument below — that admin-only code must be *absent* from a customer-facing
+instance rather than inert on it — is also not repudiated. ADR-0034 applies the same reasoning
+one boundary further out.
 
 Hosting Operations ships as two addons rather than one mode-gated addon. `hosting` is installed
 on every Trial Org's (and later, paying customer's) own Odoo instance, namespaced `hosting`, and
