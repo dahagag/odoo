@@ -14,7 +14,7 @@ Domain documentation uses the multi-context layout rooted at `CONTEXT-MAP.md`. B
 
 ### Odoo 19 development
 
-Before creating or changing an addon, read `docs/agents/odoo-19-development.md`. Owned modules belong in `custom_addons/`; the upstream `odoo/` and `addons/` trees are reference implementations unless a core patch is explicitly approved.
+Before creating or changing an addon, or researching/investigating existing Odoo 19 or fork-specific behavior, read `docs/agents/odoo-19-development.md`. Owned modules belong in `custom_addons/`; the upstream `odoo/` and `addons/` trees are reference implementations unless a core patch is explicitly approved.
 
 ### Agentic administration
 

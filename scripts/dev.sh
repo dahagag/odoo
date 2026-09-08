@@ -20,8 +20,49 @@ COMPOSE=()
 DEFAULT_I18N_LANGUAGES="ar,de,es,fr,it,ja,ko,nl,pl,pt,pt_BR,ru,sv,tr,zh_CN,zh_TW"
 
 usage() {
-    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|i18n-export|docs-build|docs-build:doc|docs-build:video|docs-build:capture|docs-build:check-staleness|reset} [argument] [extra] [option]" >&2
+    echo "Usage: scripts/dev.sh {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|i18n-export|ctx-index|docs-build|docs-build:doc|docs-build:video|docs-build:capture|docs-build:check-staleness|reset} [argument] [extra] [option]" >&2
     exit "${1:-2}"
+}
+
+ctx_index_run() {
+    # Docker-free, like lint: this only feeds the context-mode MCP plugin's local
+    # FTS5 knowledge base (docs/agents/odoo-19-development.md's "Source of truth"),
+    # so it needs neither the Odoo dev image nor a running Compose stack.
+    # custom_addons/, docs/, infra/, scripts/, and .github/ are this fork's own
+    # authored content; odoo/ and addons/ are excluded because upstream/19.0 vs
+    # dev/19.0 shows them essentially untouched (0 and 4 files respectively), and
+    # .claude/ is excluded as Claude Code tooling/skill cache, not fork-domain content.
+    command -v npx >/dev/null 2>&1 || { echo "ctx-index needs 'npx' (Node.js) on PATH." >&2; exit 1; }
+    # Keep in sync with dev.ps1's copy. When a new tech stack, language, or config
+    # format shows up under custom_addons/, docs/, infra/, scripts/, or .github/,
+    # append its extension here (and there) rather than letting it silently go
+    # unindexed - see docs/agents/local-development.md's ctx-index entry for the
+    # currently-known, deliberately excluded types (media, binaries, build output).
+    local extensions='.md,.mdx,.txt,.json,.yaml,.yml,.ts,.tsx,.js,.jsx,.py,.rs,.go,.sh,.xml,.csv,.tf,.tftpl,.hcl,.ps1,.po'
+    ctx_index_target() {
+        local rel_path="$1" source="$2" max_files="$3" abs_path="${REPO_ROOT}/${1}"
+        [[ -d "$abs_path" ]] || return 0
+        echo "Indexing ${rel_path} as ${source}..."
+        # --project pins every call to the repo root's project DB. Without it, the
+        # CLI derives the project from the indexed path itself, so custom_addons/,
+        # docs/, etc. would each land in their OWN separate per-directory database -
+        # invisible to ctx_search, whose MCP server always opens the store for the
+        # session's root cwd (confirmed by reading context-mode's own source: the
+        # ctx_search `project` param only filters rows in the already-open store,
+        # it does not select which database file to open).
+        npx --yes context-mode@1.0.169 index "$abs_path" --project "$REPO_ROOT" --source "$source" --max-files "$max_files" --ext "$extensions"
+    }
+    ctx_index_target custom_addons fork-diff:custom_addons 300
+    ctx_index_target docs fork-diff:docs 200
+    ctx_index_target infra fork-diff:infra 100
+    ctx_index_target scripts fork-diff:scripts 100
+    ctx_index_target .github fork-diff:github-ci 50
+    # Re-running this is safe: context-mode deletes-then-reinserts a file's chunks
+    # on every re-index of the same source label, so it never accumulates
+    # duplicates for content still on disk. The one gap is a file deleted from
+    # disk between runs, whose old chunk is orphaned rather than pruned -
+    # accepted, since this fork's diff is overwhelmingly additive.
+    echo "Fork-diff index ready. Query via ctx_search (source: 'fork-diff:*') or 'npx context-mode@1.0.169 search <query> --source fork-diff:custom_addons'."
 }
 
 resolve_compose() {
@@ -340,9 +381,9 @@ case "$COMMAND" in
     --help|-h) usage 0 ;;
     '') usage ;;
 esac
-# lint is Docker-free (see docs/adr/0028) and doesn't touch the Compose stack,
-# so unlike every other subcommand it doesn't need a configured .env.
-[[ "$COMMAND" == lint ]] || require_env
+# lint and ctx-index are Docker-free (see docs/adr/0028 for lint) and don't touch
+# the Compose stack, so unlike every other subcommand they don't need a configured .env.
+[[ "$COMMAND" == lint || "$COMMAND" == ctx-index ]] || require_env
 
 case "$COMMAND" in
     doctor) doctor ;;
@@ -371,6 +412,7 @@ case "$COMMAND" in
     update) module_lifecycle "$ARGUMENT" update ;;
     test) module_test "$ARGUMENT" "$EXTRA" "$CLEANUP_OPTION" ;;
     i18n-export) module_i18n_export "$ARGUMENT" "$EXTRA" ;;
+    ctx-index) ctx_index_run ;;
     lint)
         # Docker-free: `ruff` is self-contained and needs neither the Odoo dev
         # image nor a running Compose stack (verified in docs/adr/0028), so

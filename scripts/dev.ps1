@@ -28,7 +28,7 @@ Set-Location -LiteralPath $script:RepoRoot
 
 function Show-Usage {
     param([int]$ExitCode = 2)
-    Write-Host 'Usage: ./scripts/dev.ps1 {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|i18n-export|docs-build|docs-build:doc|docs-build:video|docs-build:capture|docs-build:check-staleness|reset} [argument] [extra] [-CleanupOnFailure]'
+    Write-Host 'Usage: ./scripts/dev.ps1 {doctor|build|init|up|down|logs|shell|db-shell|scaffold|install|update|test|lint|i18n-export|ctx-index|docs-build|docs-build:doc|docs-build:video|docs-build:capture|docs-build:check-staleness|reset} [argument] [extra] [-CleanupOnFailure]'
     exit $ExitCode
 }
 
@@ -359,6 +359,56 @@ function Invoke-ModuleI18nExport {
     Write-Host "Updated custom_addons/$Module/i18n/*.po for: $langCsv"
 }
 
+function Invoke-CtxIndex {
+    # Docker-free, like lint: this only feeds the context-mode MCP plugin's local
+    # FTS5 knowledge base (docs/agents/odoo-19-development.md's "Source of truth"),
+    # so it needs neither the Odoo dev image nor a running Compose stack.
+    # custom_addons/, docs/, infra/, scripts/, and .github/ are this fork's own
+    # authored content; odoo/ and addons/ are excluded because upstream/19.0 vs
+    # dev/19.0 shows them essentially untouched (0 and 4 files respectively), and
+    # .claude/ is excluded as Claude Code tooling/skill cache, not fork-domain content.
+    # Keep in sync with dev.sh's copy. When a new tech stack, language, or config
+    # format shows up under custom_addons/, docs/, infra/, scripts/, or .github/,
+    # append its extension here (and there) rather than letting it silently go
+    # unindexed - see docs/agents/local-development.md's ctx-index entry for the
+    # currently-known, deliberately excluded types (media, binaries, build output).
+    $extensions = '.md,.mdx,.txt,.json,.yaml,.yml,.ts,.tsx,.js,.jsx,.py,.rs,.go,.sh,.xml,.csv,.tf,.tftpl,.hcl,.ps1,.po'
+    $targets = @(
+        @{ Path = 'custom_addons'; Source = 'fork-diff:custom_addons'; MaxFiles = 300 },
+        @{ Path = 'docs'; Source = 'fork-diff:docs'; MaxFiles = 200 },
+        @{ Path = 'infra'; Source = 'fork-diff:infra'; MaxFiles = 100 },
+        @{ Path = 'scripts'; Source = 'fork-diff:scripts'; MaxFiles = 100 },
+        @{ Path = '.github'; Source = 'fork-diff:github-ci'; MaxFiles = 50 }
+    )
+    if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
+        throw "ctx-index needs 'npx' (Node.js) on PATH."
+    }
+    # Local copy: some npx shims (e.g. nvm-windows' npx.ps1) reconstruct and
+    # re-evaluate the command line, and choke on a scope-qualified variable
+    # name ($script:RepoRoot) surviving into that reconstruction.
+    $repoRoot = $script:RepoRoot
+    foreach ($target in $targets) {
+        $absPath = Join-Path $repoRoot $target.Path
+        if (-not (Test-Path -LiteralPath $absPath)) { continue }
+        Write-Host "Indexing $($target.Path) as $($target.Source)..."
+        # --project pins every call to the repo root's project DB. Without it, the
+        # CLI derives the project from the indexed path itself, so custom_addons/,
+        # docs/, etc. would each land in their OWN separate per-directory database -
+        # invisible to ctx_search, whose MCP server always opens the store for the
+        # session's root cwd (confirmed by reading context-mode's own source: the
+        # ctx_search `project` param only filters rows in the already-open store,
+        # it does not select which database file to open).
+        & npx --yes context-mode@1.0.169 index $absPath --project $repoRoot --source $target.Source --max-files $target.MaxFiles --ext $extensions
+        if ($LASTEXITCODE -ne 0) { throw "context-mode index failed for $($target.Path) (exit $LASTEXITCODE)." }
+    }
+    # Re-running this is safe: context-mode deletes-then-reinserts a file's chunks
+    # on every re-index of the same source label, so it never accumulates
+    # duplicates for content still on disk. The one gap is a file deleted from
+    # disk between runs, whose old chunk is orphaned rather than pruned -
+    # accepted, since this fork's diff is overwhelmingly additive.
+    Write-Host "Fork-diff index ready. Query via ctx_search (source: 'fork-diff:*') or 'npx context-mode@1.0.169 search <query> --source fork-diff:custom_addons'."
+}
+
 function Invoke-Doctor {
     Resolve-Compose
     $required = @('compose.yaml', 'docker\odoo-dev.Dockerfile', 'docker\odoo.conf', '.env.example', 'custom_addons\README.md')
@@ -399,9 +449,9 @@ function Invoke-Doctor {
 if ($Command -in @('--help', '-h')) { Show-Usage -ExitCode 0 }
 if (-not $Command) { Show-Usage }
 
-# lint is Docker-free (see docs/adr/0028) and doesn't touch the Compose stack,
-# so unlike every other subcommand it doesn't need a configured .env.
-if ($Command -ne 'lint') { Require-EnvironmentFile }
+# lint and ctx-index are Docker-free (see docs/adr/0028 for lint) and don't touch
+# the Compose stack, so unlike every other subcommand they don't need a configured .env.
+if ($Command -notin @('lint', 'ctx-index')) { Require-EnvironmentFile }
 
 switch ($Command) {
     'doctor' { Invoke-Doctor }
@@ -434,6 +484,7 @@ switch ($Command) {
     'update' { Invoke-ModuleLifecycle $Argument 'update' }
     'test' { Invoke-ModuleTest $Argument $Extra $CleanupOnFailure.IsPresent }
     'i18n-export' { Invoke-ModuleI18nExport $Argument $Extra }
+    'ctx-index' { Invoke-CtxIndex }
     'lint' {
         # Docker-free: `ruff` is self-contained and needs neither the Odoo dev
         # image nor a running Compose stack (verified in docs/adr/0028), so
