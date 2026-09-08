@@ -1,4 +1,5 @@
 import logging
+import math
 from abc import ABC, abstractmethod
 from datetime import date
 
@@ -89,21 +90,32 @@ class AwsCostExplorerClient(CostExplorerClient):
         ``ParamValidator`` only validates outgoing request parameters), so a missing/malformed
         member here is a real possibility, not a "can't happen"."""
         rows = []
-        start = result.get('TimePeriod', {}).get('Start')
-        if start is None:
-            _logger.warning("Cost Explorer result missing TimePeriod.Start, skipping: %r", result)
+        time_period = result.get('TimePeriod')
+        start = time_period.get('Start') if isinstance(time_period, dict) else None
+        if not isinstance(start, str):
+            _logger.warning(
+                "Cost Explorer result has no usable TimePeriod.Start, skipping: %r", result)
             return rows
         try:
             result_date = date.fromisoformat(start)
-        except ValueError:
+        except (TypeError, ValueError):
             _logger.warning("Cost Explorer result has an unparseable date %r, skipping", start)
             return rows
-        for group in result.get('Groups', []):
+        groups = result.get('Groups', [])
+        if not isinstance(groups, list):
+            _logger.warning("Cost Explorer result has a non-list Groups, skipping: %r", result)
+            return rows
+        for group in groups:
             try:
                 amount = float(group['Metrics']['UnblendedCost']['Amount'])
             except (KeyError, TypeError, ValueError):
                 _logger.warning(
                     "Cost Explorer group has no usable UnblendedCost amount, skipping: %r", group)
+                continue
+            if not math.isfinite(amount):
+                _logger.warning(
+                    "Cost Explorer group has a non-finite UnblendedCost amount, skipping: %r",
+                    group)
                 continue
             trial_org_id = cls._trial_org_id_from_tag_keys(group.get('Keys', []))
             rows.append({'date': result_date, 'trial_org_id': trial_org_id, 'amount': amount})

@@ -116,6 +116,66 @@ class TestAwsCostExplorerClient(TransactionCase):
 
         self.assertEqual(rows, [{'date': date(2026, 1, 1), 'trial_org_id': 2, 'amount': 5.0}])
 
+    def test_get_daily_cost_by_trial_org_skips_a_result_with_an_explicit_null_time_period(self):
+        # A malformed 'TimePeriod: null' isn't caught by .get('TimePeriod', {}) - that default
+        # only applies when the key is missing, not when it's present with value None.
+        boto_client = MagicMock()
+        boto_client.get_cost_and_usage.return_value = {
+            'ResultsByTime': [{'TimePeriod': None, 'Groups': []}],
+        }
+        client = self._make_client(boto_client)
+
+        rows = client.get_daily_cost_by_trial_org(date(2026, 1, 1), date(2026, 1, 2))
+
+        self.assertEqual(rows, [])
+
+    def test_get_daily_cost_by_trial_org_skips_a_result_with_a_non_string_start(self):
+        boto_client = MagicMock()
+        boto_client.get_cost_and_usage.return_value = {
+            'ResultsByTime': [{'TimePeriod': {'Start': 20260101}, 'Groups': []}],
+        }
+        client = self._make_client(boto_client)
+
+        rows = client.get_daily_cost_by_trial_org(date(2026, 1, 1), date(2026, 1, 2))
+
+        self.assertEqual(rows, [])
+
+    def test_get_daily_cost_by_trial_org_skips_a_result_with_an_explicit_null_groups(self):
+        boto_client = MagicMock()
+        boto_client.get_cost_and_usage.return_value = {
+            'ResultsByTime': [{
+                'TimePeriod': {'Start': '2026-01-01', 'End': '2026-01-02'}, 'Groups': None,
+            }],
+        }
+        client = self._make_client(boto_client)
+
+        rows = client.get_daily_cost_by_trial_org(date(2026, 1, 1), date(2026, 1, 2))
+
+        self.assertEqual(rows, [])
+
+    def test_get_daily_cost_by_trial_org_skips_a_group_with_a_non_finite_amount(self):
+        boto_client = MagicMock()
+        boto_client.get_cost_and_usage.return_value = {
+            'ResultsByTime': [{
+                'TimePeriod': {'Start': '2026-01-01', 'End': '2026-01-02'},
+                'Groups': [
+                    {'Keys': ['TrialOrgId$1'],
+                     'Metrics': {'UnblendedCost': {'Amount': 'NaN', 'Unit': 'USD'}}},
+                    {'Keys': ['TrialOrgId$2'],
+                     'Metrics': {'UnblendedCost': {'Amount': 'Infinity', 'Unit': 'USD'}}},
+                    {'Keys': ['TrialOrgId$3'],
+                     'Metrics': {'UnblendedCost': {'Amount': '-Infinity', 'Unit': 'USD'}}},
+                    {'Keys': ['TrialOrgId$4'],
+                     'Metrics': {'UnblendedCost': {'Amount': '5.0', 'Unit': 'USD'}}},
+                ],
+            }],
+        }
+        client = self._make_client(boto_client)
+
+        rows = client.get_daily_cost_by_trial_org(date(2026, 1, 1), date(2026, 1, 2))
+
+        self.assertEqual(rows, [{'date': date(2026, 1, 1), 'trial_org_id': 4, 'amount': 5.0}])
+
     def test_get_daily_cost_by_trial_org_raises_when_the_aws_call_itself_fails(self):
         boto_client = MagicMock()
         boto_client.get_cost_and_usage.side_effect = RuntimeError("boom")
