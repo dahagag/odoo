@@ -63,19 +63,23 @@ cause, identified by reading the source rather than an isolated repro (issue #13
 `Registry(cr.dbname)`, which `Environment.__new__` calls on first use of a cursor
 (`odoo/orm/environments.py`), blocks on `Registry._lock` — a plain class-level `threading.RLock`,
 reentrant only for the thread holding it (`odoo/orm/registry.py`). `ThreadedServer.run()`
-(`odoo/service/server.py`) holds that same
-lock for its entire `preload_registries()` call: module loading, `at_install` tests, and the full
-`post_install` suite. So any thread but the main one blocks until the whole invocation's test run
-finishes, not until the current test does — with test order deterministic per run, that lands on
-roughly the same wait every time, which is why the reported stall looked like a fixed ~20s rather
-than a coincidence with an unrelated 20s constant elsewhere in the test harness.
+(`odoo/service/server.py`) holds that same lock for its entire `preload_registries()` call: module
+loading, `at_install` tests, and the full `post_install` suite. So any thread but the main one
+blocks until the whole invocation's test run finishes, not until the current test does — with
+test order deterministic per run, that lands on roughly the same wait every time, which is why
+the reported stall looked like a fixed ~20s rather than a coincidence with an unrelated 20s
+constant elsewhere in the test harness.
 
-Nothing about choosing `BaseCase` over `TransactionCase`/`HttpCase`, or tuning a timeout, avoids
-this — it's the CLI runner's one process-wide lock. (`HttpCase`'s `registry_enter_test_mode_cls()`
-patches `Registry._lock` to a no-op, but only after `ThreadedServer.run()` already holds the real
-one.) For a test that genuinely needs two independent connections to prove real concurrent
-execution, drive both connections' SQL directly on nested cursors instead of building a second
-`Environment()` — see `custom_addons/crm_methodology/tests/test_crm_lead_trial_concurrency.py` and
+Tuning a timeout doesn't avoid this for `BaseCase`, `TransactionCase`, or an `HttpCase` subclass
+that sets `registry_test_mode = False` — none of them ever repoint `Registry._lock` away from the
+real one `ThreadedServer.run()` holds. A default `HttpCase` test (`registry_test_mode = True`, the
+default) is different: its `setUpClass()` runs `registry_enter_test_mode_cls()` before any test
+method executes, which repoints the class-level `Registry._lock` to a `DummyRLock()` — so a
+background thread's `Registry(dbname)` call during the test method itself acquires the harmless
+dummy, not the real lock underneath, and doesn't stall. For a test that genuinely needs two
+independent connections to prove real concurrent execution, drive both connections' SQL directly
+on nested cursors instead of building a second `Environment()` — see
+`custom_addons/crm_methodology/tests/test_crm_lead_trial_concurrency.py` and
 Odoo core's `odoo/addons/base/tests/test_ir_sequence.py` (`TestIrSequenceNoGap`): hold a lock open
 on one cursor, then assert a second cursor's identical `FOR UPDATE NOWAIT` is rejected immediately.
 
