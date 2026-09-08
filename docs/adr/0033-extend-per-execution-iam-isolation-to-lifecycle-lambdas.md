@@ -47,34 +47,65 @@ resources; this ADR caps it to the one Trial Org the execution actually names.
 Rather than minting a separate scoped role per Lambda, `trial_org_execution`'s existing IAM
 policy (ADR-0031) is broadened to also grant:
 
-- `ec2:CreateSnapshot`/`ec2:CreateTags`, tag-scoped via `aws:ResourceTag/TrialOrgId ==
+- `ec2:CreateSnapshot`, tag-scoped via `aws:ResourceTag/TrialOrgId ==
   ${aws:PrincipalTag/TrialOrgId}` (the same ABAC condition `ManageTrialOrgEc2Existing` already
-  uses), for `snapshot_manager`'s use.
-- `ec2:StartInstances`/`ec2:StopInstances`, same condition shape, for `ec2_power_control`'s use.
+  uses) — this matches the *source EBS volume* being snapshotted, an existing resource already
+  carrying the `TrialOrgId` tag OpenTofu set on it at provisioning time, the same tag
+  `ManageTrialOrgEc2Existing` already keys off.
+- `ec2:CreateTags`, scoped to creation time only (`ec2:CreateAction == CreateSnapshot`) and
+  conditioned on `aws:RequestTag/TrialOrgId == ${aws:PrincipalTag/TrialOrgId}` — a newly created
+  snapshot carries no tags of its own yet, so `aws:ResourceTag` (which reads an *existing*
+  resource's tags) cannot gate it; only `aws:RequestTag` (the tags this call is asking to apply)
+  can. `snapshot_manager`'s current policy already draws exactly this ResourceTag/CreateSnapshot
+  vs. RequestTag/CreateTags-on-create distinction (`infra/foundation/lambda.tf`'s
+  `SnapshotTrialOrgVolumes`/`TagSnapshotOnCreate` statements) — today only checking the tag is
+  *present*, not that it *matches the session's own `TrialOrgId`*; this decision tightens that
+  existing split to an exact match rather than replacing its shape.
+- `ec2:StartInstances`/`ec2:StopInstances`, `aws:ResourceTag/TrialOrgId ==
+  ${aws:PrincipalTag/TrialOrgId}`, for `ec2_power_control`'s use — a plain existing-resource ABAC
+  match, no creation-time nuance since no new resource is created.
 
-One scoped role for "acts on this Trial Org's EC2/EBS resources" across every Task state that
-needs it, rather than a differently-shaped isolation mechanism per Lambda.
+One scoped role for "acts on this Trial Org's EC2/EBS resources" across every caller that needs
+it, rather than a differently-shaped isolation mechanism per Lambda.
 
-A new `AssumeTrialOrgExecutionRole`-shaped Task state (tagging the assumed session with
-`TrialOrgId`, mirroring the one already in place before `RunTofu`) is inserted immediately before
-`SnapshotBeforeDestroy`, `SuspendInstance`, and `WakeInstance`.
+**Each Lambda assumes `trial_org_execution` itself — no credentials travel through Step
+Functions state data.** Unlike `RunTofu` (ADR-0031), where the state machine assumes the scoped
+role on the ECS task's behalf and injects the resulting temporary credentials as container
+environment overrides, `snapshot_manager` and `ec2_power_control` each perform their own
+`sts:AssumeRole`/`sts:TagSession` call against `trial_org_execution` — tagging the session with
+the `TrialOrgId` value already present in their own invocation payload (`trial_org_id`/
+`instance_id`'s owning Trial Org) — before making any EC2 call. This needs each Lambda's own
+static execution role to hold only an `sts:AssumeRole`/`sts:TagSession` grant on
+`trial_org_execution`'s ARN, nothing else standing.
 
-**Credential delivery differs from the ECS path.** `ecs:RunTask` accepts container environment
-overrides, which is how `RunTofu` receives `trial_org_execution`'s temporary credentials
-(ADR-0031). A Lambda function's execution role cannot be swapped per-invocation the same way, so
-the assumed session's temporary credentials are instead passed as fields in the `Payload` each
-Task state already sends its Lambda, alongside the existing `trial_org_id`/`retention_days` (for
-`snapshot_manager`) or `instance_id`/`action` (for `ec2_power_control`) fields. Both Lambdas'
-handler code is updated to construct their boto3 EC2 client from these explicit payload-supplied
-credentials when present, in preference to their own implicit execution-role credential chain —
-the same "explicit credentials win" precedence the AWS SDK/Terraform AWS provider already give
-`RunTofu`'s injected environment variables over ECS task-role credentials.
+This design was chosen over having the state machine assume the role and forward the resulting
+temporary credentials through the Lambda's invocation `Payload` (the pattern this ADR originally
+proposed, mirroring `RunTofu` more literally): Step Functions persists a Task state's input in its
+own execution history, and `hosting_admin` already holds `states:GetExecutionHistory` (tag-scoped
+to its own Trial Org, per [ADR-0022](0022-live-aws-pulled-audit-view.md)) — so credentials placed
+in that payload would be readable by exactly the principal ADR-0019 already promises can only
+"start or read executions, not directly touch EC2/S3/DynamoDB resources." Having each Lambda
+assume the role itself means only the plain, non-secret `trial_org_id`/`instance_id` ever appears
+in Step Functions state data (as today), and no `AssumeTrialOrgExecutionRole`-shaped Task state is
+needed before either Lambda's invocation — `RunTofu`'s own Task-state assume is unaffected, since
+ECS's credential-injection mechanics are what forced that design in the first place.
 
-**Both Lambdas' own static execution roles are stripped to the minimum.** Once their mutating EC2
-permissions move to `trial_org_execution`, `snapshot_manager`'s and `ec2_power_control`'s own IAM
-roles keep only `AWSLambdaBasicExecutionRole` plus the describe-only reads AWS doesn't support
-tag-conditioning on (`ec2:DescribeInstances` for `snapshot_manager`'s volume lookup;
-`ec2:DescribeInstances`/`ec2:DescribeInstanceStatus` for `ec2_power_control`'s waiter). A Lambda
+This does move which code is trusted to derive the correct `TrialOrgId` session tag from the
+trusted, already-authorized `trial_org_id` the execution input carries: from the state machine's
+own fixed ASL definition (`RunTofu`'s and, previously, this proposal's Task-state `Parameters`) to
+each Lambda's own handler code. Both are equally reviewed, deployed infrastructure code, not
+caller-supplied input, so this is the same class of trust this state machine already places in
+`sfn_execution`'s ASL logic (ADR-0031) — not a new one — but it's worth naming explicitly: a
+`snapshot_manager`/`ec2_power_control` code change that mis-derives or hardcodes the session tag
+would silently regain the "any Trial Org" blast radius this ADR closes, the same way a bug in
+`sfn_execution`'s own Task-state definition would for `RunTofu`.
+
+**Both Lambdas' own static execution roles are stripped to the minimum.** `snapshot_manager`'s and
+`ec2_power_control`'s own IAM roles keep only `AWSLambdaBasicExecutionRole`, the new
+`sts:AssumeRole`/`sts:TagSession` grant on `trial_org_execution` described above, and the
+describe-only reads AWS doesn't support tag-conditioning on (`ec2:DescribeInstances` for
+`snapshot_manager`'s volume lookup; `ec2:DescribeInstances`/`ec2:DescribeInstanceStatus` for
+`ec2_power_control`'s waiter). Neither role holds any mutating EC2 permission directly. A Lambda
 that never performs the assume therefore has zero standing mutate access — the same backstop
 property ADR-0031 established for `ecs_task`'s now-empty policy, rather than merely an equivalent
 restatement of the old "any tagged Trial Org resource" condition.
