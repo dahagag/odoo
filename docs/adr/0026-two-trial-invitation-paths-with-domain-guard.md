@@ -22,7 +22,7 @@ The one thing to carry forward carefully: the deferred invite proof-of-receipt g
 ([ADR-0032](0032-defer-invite-proof-of-receipt-guard.md), issues
 [#161](https://github.com/dahagag/odoo/issues/161)/[#110](https://github.com/dahagag/odoo/issues/110))
 was deferred "until the org-facing login layer's design begins". That layer is the client app, so
-#200 is where that gap comes due rather than being inherited silently.
+issue #200 is where that gap comes due rather than being inherited silently.
 
 Trial Orgs can be started two ways: a **Targeted Invite** to a specific known email, or an
 **Open Invite Link** shared when the sales rep knows the prospect's domain but not yet who
