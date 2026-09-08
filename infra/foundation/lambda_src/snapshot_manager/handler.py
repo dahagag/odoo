@@ -25,11 +25,31 @@ the volume that already succeeded. Every snapshot is tagged with the invocation'
 (state_machine.asl.json.tftpl's `$.job_id`, stable across retries of the same execution) and the
 VolumeId it was taken from; before calling `create_snapshot` for a volume, the handler checks for
 an existing snapshot carrying that exact (JobId, VolumeId) pair and reuses it instead.
+
+That dedup check polls, with backoff, rather than looking once (issue #190): EC2's own consistency
+guarantees don't unambiguously cover a tag-filtered `DescribeSnapshots` called immediately after
+the `CreateSnapshot` that set those same tags, so a retry landing right after a prior attempt's
+`create_snapshot` succeeded could still see an empty result and create a duplicate. See the
+`_SNAPSHOT_LOOKUP_POLL_*` constants below for the budget this closes that race window with, and
+`_snapshot_volume` for the poll loop itself.
 """
 import os
+import time
 from datetime import datetime, timedelta, timezone
 
 from ec2_client import get_ec2_client, get_trial_org_scoped_ec2_client
+
+# Bounded budget for _snapshot_volume's existing-snapshot poll (issue #190): long enough to ride
+# out EC2's eventual-consistency window on a tag-filtered DescribeSnapshots right after a
+# CreateSnapshot, short enough that even 5 volumes on one instance polling the full budget in
+# sequence (5 * 8s = 40s) still leaves headroom under this Lambda's own timeout
+# (`var.lambda_invoke_timeout_seconds`, 60s by default - lambda.tf) for the `describe_instances`
+# call and the `create_snapshot` calls themselves. Backed off exponentially between attempts
+# (initial/max interval below) rather than at a fixed rate, so a longer wait doesn't mean
+# hammering DescribeSnapshots once a second for the whole budget.
+_SNAPSHOT_LOOKUP_POLL_BUDGET_SECONDS = 8
+_SNAPSHOT_LOOKUP_POLL_INITIAL_INTERVAL_SECONDS = 0.5
+_SNAPSHOT_LOOKUP_POLL_MAX_INTERVAL_SECONDS = 2
 
 
 def handler(event, _context):
@@ -78,20 +98,36 @@ def handler(event, _context):
     return {"snapshotted": True, "snapshot_ids": snapshot_ids, "delete_after": delete_after}
 
 
-def _snapshot_volume(describe_client, scoped_client, volume_id, trial_org_id, job_id, delete_after):
+def _snapshot_volume(
+    describe_client, scoped_client, volume_id, trial_org_id, job_id, delete_after,
+    sleep=None, monotonic=None,
+):
     """Returns this volume's snapshot id, reusing one already tagged for this exact retry attempt.
 
     Queried via `describe_client` (the Lambda's own static, account-wide client) rather than
     `scoped_client`: `ec2:DescribeSnapshots` doesn't support resource-level permissions/tag
     conditions (same carve-out as `DescribeInstancesToFindVolumes` below), so tag-scoping it to
     `trial_org_execution`'s per-invocation session would gain nothing.
+
+    Polls this lookup with exponential backoff, for up to `_SNAPSHOT_LOOKUP_POLL_BUDGET_SECONDS`
+    (module docstring, issue #190), instead of checking once. `sleep`/`monotonic` are injectable so
+    tests can exercise the poll loop without real delays.
     """
-    existing = describe_client.describe_snapshots(Filters=[
-        {"Name": "tag:JobId", "Values": [job_id]},
-        {"Name": "tag:VolumeId", "Values": [volume_id]},
-    ])["Snapshots"]
-    if existing:
-        return existing[0]["SnapshotId"]
+    sleep = sleep or time.sleep
+    monotonic = monotonic or time.monotonic
+    deadline = monotonic() + _SNAPSHOT_LOOKUP_POLL_BUDGET_SECONDS
+    interval = _SNAPSHOT_LOOKUP_POLL_INITIAL_INTERVAL_SECONDS
+    while True:
+        existing = describe_client.describe_snapshots(Filters=[
+            {"Name": "tag:JobId", "Values": [job_id]},
+            {"Name": "tag:VolumeId", "Values": [volume_id]},
+        ])["Snapshots"]
+        if existing:
+            return existing[0]["SnapshotId"]
+        if monotonic() >= deadline:
+            break
+        sleep(interval)
+        interval = min(interval * 2, _SNAPSHOT_LOOKUP_POLL_MAX_INTERVAL_SECONDS)
 
     return scoped_client.create_snapshot(
         VolumeId=volume_id,
