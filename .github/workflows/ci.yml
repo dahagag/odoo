@@ -275,6 +275,9 @@ jobs:
           # the PR's base ref (git show, below) - needs that history reachable, which a
           # shallow (default) checkout doesn't guarantee once the base branch has moved on.
           fetch-depth: 0
+          # This job runs `npm ci` on PR-controlled dependencies; a malicious lifecycle script
+          # must not be able to read a persisted git credential out of local config afterward.
+          persist-credentials: false
       - uses: actions/setup-node@v4
         if: needs.changes.outputs.stack_relevant == 'true'
         with:
