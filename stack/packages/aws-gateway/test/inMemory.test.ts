@@ -57,6 +57,25 @@ describe('InMemoryAwsGateway dynamoDb', () => {
       .resolves.toEqual({ pk: 'org#1', seatCount: 25 });
   });
 
+  it('rejects a numeric_less_than_or_equal condition on a missing item/attribute (no implicit zero, matching real DynamoDB)', async () => {
+    const gateway = new InMemoryAwsGateway();
+
+    await expect(gateway.dynamoDb.transactWrite({
+      items: [{
+        increment: {
+          table: 'orgs',
+          key: { pk: 'org#nonexistent' },
+          attribute: 'seatCount',
+          delta: 1,
+          condition: { type: 'numeric_less_than_or_equal', attribute: 'seatCount', value: 24 },
+        },
+      }],
+    })).rejects.toBeInstanceOf(TransactionCanceledError);
+
+    await expect(gateway.dynamoDb.getItem({ table: 'orgs', key: { pk: 'org#nonexistent' } }))
+      .resolves.toBeUndefined();
+  });
+
   it('applies a transactWrite all-or-nothing: one failing item leaves every item unapplied', async () => {
     const gateway = new InMemoryAwsGateway();
     await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'org#1', seatCount: 1 } });

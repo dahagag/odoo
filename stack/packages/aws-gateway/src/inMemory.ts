@@ -36,8 +36,13 @@ function evaluateCondition(item: DynamoItem | undefined, condition: DynamoCondit
     case 'attribute_equals':
       return item?.[condition.attribute] === condition.value ? undefined : 'ConditionalCheckFailed';
     case 'numeric_less_than_or_equal': {
-      const current = Number(item?.[condition.attribute] ?? 0);
-      return current <= condition.value ? undefined : 'ConditionalCheckFailed';
+      // A DynamoDB ConditionExpression referencing a missing attribute fails the condition
+      // outright - it has no implicit zero. Defaulting to 0 here would let the fake accept an
+      // increment a real conditional write would reject (this ticket's Testing Decisions: "the
+      // fake must reject calls the real one would reject").
+      const value = item?.[condition.attribute];
+      if (value === undefined) return 'ConditionalCheckFailed';
+      return Number(value) <= condition.value ? undefined : 'ConditionalCheckFailed';
     }
     /* istanbul ignore next -- exhaustiveness guard */
     default: {
