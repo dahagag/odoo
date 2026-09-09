@@ -17,4 +17,7 @@ COPY packages ./packages
 COPY apps/api ./apps/api
 ENV NODE_ENV=production
 EXPOSE 3000
+# node:22-slim defaults to root; the service itself only listens on a port and reads its own
+# already-installed files, so it never needs write access to /workspace at runtime.
+USER node
 CMD ["npx", "tsx", "apps/api/src/index.ts"]
