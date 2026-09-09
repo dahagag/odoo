@@ -1,0 +1,38 @@
+name: Compute the Odoo dev image tag and build defaults
+description: >-
+  Reads the base image/UID/GID defaults shared with local dev out of .env.example,
+  and computes the content-hash image tag both build-image and publish-image use —
+  the same tag scheme, from the same inputs, so a PR build and its eventual merge
+  publish resolve to the identical tag (see docs/adr/0030).
+outputs:
+  odoo_image:
+    description: The base ODOO_IMAGE build-arg read from .env.example.
+    value: ${{ steps.defaults.outputs.odoo_image }}
+  uid:
+    description: The runner's HOST_UID build-arg.
+    value: ${{ steps.defaults.outputs.uid }}
+  gid:
+    description: The runner's HOST_GID build-arg.
+    value: ${{ steps.defaults.outputs.gid }}
+  image:
+    description: The full ghcr.io content-hash-tagged image reference.
+    value: ${{ steps.tag.outputs.image }}
+runs:
+  using: composite
+  steps:
+    - name: Read defaults shared with local dev (.env.example)
+      id: defaults
+      shell: bash
+      run: |
+        echo "odoo_image=$(sed -n -E 's/^ODOO_IMAGE=(.*)$/\1/p' .env.example)" >> "$GITHUB_OUTPUT"
+        echo "uid=$(id -u)" >> "$GITHUB_OUTPUT"
+        echo "gid=$(id -g)" >> "$GITHUB_OUTPUT"
+    - name: Compute the image tag from its content inputs
+      # Tag by the hash of everything that actually affects the image's contents
+      # (not github.sha), so a PR build and the eventual publish-image push for
+      # the same content resolve to the identical tag. hashFiles() only works
+      # inside a step's own expression context, not in a job-level env: block,
+      # so it's computed here and read via step outputs.
+      id: tag
+      shell: bash
+      run: echo "image=ghcr.io/${{ github.repository }}/odoo-dev:${{ hashFiles('docker/odoo-dev.Dockerfile', 'docker/*.sh', 'requirements.txt', '.env.example') }}" >> "$GITHUB_OUTPUT"
