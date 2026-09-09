@@ -58,6 +58,14 @@ writes no org records itself (Out of Scope: "Trial Org and Client Org lifecycle 
    `seatsTotal` and deriving the threshold from it as one logical operation is the lifecycle
    port's (#196) job, not this seam's.
 
+   Concretely: **`seatsTotal` must be treated as immutable once an org is issued** unless and
+   until #196 changes the seat-creation path to read the item's current `seatsTotal` and derive
+   the threshold from it in the same transaction (rather than from a value computed earlier).
+   `docs/contexts/hosting/CONTEXT.md`'s Seat entry already describes it as "set per-trial at
+   issuance," not something a later action edits - so today's contract already matches this
+   constraint; it is recorded here so a change that makes `seatsTotal` mutable knows it must
+   revisit this write path too.
+
 ## What this ticket does not decide
 
 Whether patterns 2-4 above use three separate GSIs or fewer, wide-projection GSIs (DynamoDB
