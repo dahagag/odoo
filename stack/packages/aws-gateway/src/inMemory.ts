@@ -159,6 +159,13 @@ class InMemoryDynamoDbGateway implements DynamoDbGateway {
       const value = item[name];
       if (typeof value === 'string' || typeof value === 'number') key[name] = value;
     }
+    if (key.pk === undefined) {
+      // Real DynamoDB rejects a PutItem missing its key attributes outright. Without this,
+      // every malformed item maps to the same {} key here, so a second bad write silently
+      // overwrites the first instead of erroring - cross-item corruption a test would never
+      // catch (this ticket's Testing Decisions: "the fake must reject what the real one would").
+      throw new Error('Item has no usable "pk" attribute; single-table items must carry one.');
+    }
     return key;
   }
 }

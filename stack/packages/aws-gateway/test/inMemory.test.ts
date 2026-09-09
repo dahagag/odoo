@@ -76,6 +76,13 @@ describe('InMemoryAwsGateway dynamoDb', () => {
       .resolves.toBeUndefined();
   });
 
+  it('rejects a put item with no usable pk, rather than silently overwriting a same-shaped item', async () => {
+    const gateway = new InMemoryAwsGateway();
+
+    await expect(gateway.dynamoDb.putItem({ table: 'orgs', item: { seatCount: 1 } }))
+      .rejects.toThrow(/no usable "pk"/);
+  });
+
   it('applies a transactWrite all-or-nothing: one failing item leaves every item unapplied', async () => {
     const gateway = new InMemoryAwsGateway();
     await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'org#1', seatCount: 1 } });
