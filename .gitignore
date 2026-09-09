@@ -10,6 +10,7 @@ _build/
 !.github
 !.mailmap
 !.weblate.json
+!/stack/**/.dockerignore
 # compiled python files
 *.py[co]
 __pycache__/
@@ -43,6 +44,12 @@ tsconfig.json
 package-lock.json
 package.json
 .husky
+# stack/ (docs/adr/0034) is a real JS/TS monorepo, not Odoo's own OWL asset tooling the
+# blanket ignores above exist for - its manifests are checked in like any other project's.
+!/stack/**/package.json
+!/stack/**/package-lock.json
+!/stack/**/tsconfig.json
+!/stack/**/jsconfig.json
 
 # various virtualenv
 /bin/

@@ -1,0 +1,327 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Administration Stack API",
+    "version": "v1",
+    "description": "Odoo/staff-app/client-app contract for the Trial Org and Client Org record of truth (docs/adr/0034, docs/adr/0036)."
+  },
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "orgToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Opaque per-org token issued at provision time (docs/adr/0036). Scoped to exactly one org."
+      },
+      "sigv4": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "AWS SigV4 (docs/adr/0036), verified at the front door before the request reaches this service - not a literal API key. Modeled as apiKey here because OpenAPI 3.0 has no native SigV4 scheme."
+      }
+    },
+    "schemas": {
+      "OrgId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "The Administration Stack's own identifier for a Trial Org or Client Org."
+      },
+      "OrgType": {
+        "type": "string",
+        "enum": [
+          "trial",
+          "client"
+        ],
+        "description": "Trial Org: the ephemeral evaluation offering. Client Org: a stable hosted org for a paying client. See docs/contexts/hosting/CONTEXT.md."
+      },
+      "OrgState": {
+        "type": "string",
+        "enum": [
+          "issued",
+          "active",
+          "suspended",
+          "destroyed"
+        ]
+      },
+      "OrgRegistration": {
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "$ref": "#/components/schemas/OrgId"
+          },
+          "type": {
+            "$ref": "#/components/schemas/OrgType"
+          },
+          "state": {
+            "$ref": "#/components/schemas/OrgState"
+          },
+          "name": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "seatsUsed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "seatsTotal": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true
+          },
+          "expiryDate": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Absent for a Client Org, which has no Auto-Destroy expiry."
+          }
+        },
+        "required": [
+          "orgId",
+          "type",
+          "state",
+          "name",
+          "domain",
+          "seatsUsed",
+          "seatsTotal"
+        ]
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "example": "about:blank"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "description": "Stack-specific machine-readable error code, stable across `detail` wording changes."
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status"
+        ]
+      },
+      "Health": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "Readiness": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "not-ready"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/v1/org/{orgId}/registration": {
+      "get": {
+        "summary": "Read an org's own Org Registration",
+        "description": "docs/contexts/hosting/CONTEXT.md: \"the read-only summary of an org's own standing\". The org token must scope to {orgId} itself (docs/adr/0036) - any other {orgId} is 403.",
+        "tags": [
+          "org"
+        ],
+        "security": [
+          {
+            "orgToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "$ref": "#/components/schemas/OrgId"
+            },
+            "required": true,
+            "name": "orgId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgRegistration"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid org token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Org token does not scope to this org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/orgs/{orgId}": {
+      "get": {
+        "summary": "Read any Trial Org or Client Org record (staff plane)",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "sigv4": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "$ref": "#/components/schemas/OrgId"
+            },
+            "required": true,
+            "name": "orgId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgRegistration"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing admin principal (SigV4 not verified at the front door)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "summary": "Liveness probe - always 200 once the process is up",
+        "tags": [
+          "ops"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "summary": "Readiness probe - whether the service can actually serve (this ticket's User Stories, #9)",
+        "tags": [
+          "ops"
+        ],
+        "responses": {
+          "200": {
+            "description": "Ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

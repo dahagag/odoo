@@ -1,0 +1,28 @@
+{
+  "name": "agentic-erp-stack",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Administration Stack: owns the Trial Org / Client Org record of truth, fronts AWS (docs/adr/0034).",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "openapi:generate": "npm run openapi:generate --workspace apps/api",
+    "openapi:check": "npm run openapi:generate && git diff --exit-code -- apps/api/openapi/openapi.json",
+    "openapi:breaking-check": "npm run openapi:breaking-check --workspace apps/api",
+    "api-client:generate": "npm run generate --workspace packages/api-client"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
