@@ -6,6 +6,16 @@ import { findBreakingChanges, type OpenApiDocument } from './diff';
 const CURRENT_DOCUMENT_PATH = path.join(__dirname, '..', '..', 'openapi', 'openapi.json');
 const REPO_RELATIVE_DOCUMENT_PATH = 'stack/apps/api/openapi/openapi.json';
 
+// git's own two "no such path at this ref" phrasings for `git show <ref>:<path>` - the first
+// when the path was never in that ref's history at all, the second when it exists elsewhere
+// (working tree, a later commit) but not at this specific ref. Anything else `git show` prints
+// (an invalid ref, a corrupt object) is a real failure and must not match here.
+const PATH_MISSING_AT_REF_PATTERN = /does not exist in|exists on disk, but not in/;
+
+function stderrOf(error: unknown): string {
+  return (error as { stderr?: Buffer }).stderr?.toString() ?? '';
+}
+
 function loadPreviousDocument(baseRef: string): OpenApiDocument | undefined {
   // A base ref that doesn't resolve at all (bad ref, or a checkout too shallow to have fetched
   // it) must fail loudly, not be read as "nothing to diff against" - that would silently
@@ -19,8 +29,7 @@ function loadPreviousDocument(baseRef: string): OpenApiDocument | undefined {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
   } catch (error) {
-    const stderr = (error as { stderr?: Buffer }).stderr?.toString() ?? '';
-    if (/does not exist in|exists on disk, but not in/.test(stderr)) {
+    if (PATH_MISSING_AT_REF_PATTERN.test(stderrOf(error))) {
       // The ref resolves but never had this document (e.g. this is the PR that first adds
       // it) - nothing to diff against, so there is nothing that could be a breaking change.
       return undefined;
