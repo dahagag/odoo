@@ -1,6 +1,6 @@
 {
     'name': "Example Addon",
-    'version': '1.0.0',
+    'version': '19.0.1.0.0',
     'category': 'Foundation/Example',
     'summary': "Reference addon demonstrating this repository's Odoo 19 conventions and dev workflow.",
     'description': """
