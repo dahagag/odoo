@@ -85,6 +85,12 @@ describe('findBreakingChanges', () => {
     expect(findBreakingChanges(previous, current)).toContain('removed security scheme "orgToken" for GET /v1/x');
   });
 
+  it('flags newly-required authentication on a previously-open endpoint (e.g. /healthz gaining auth)', () => {
+    const previous = { paths: { '/healthz': { get: { responses: { 200: {} } } } } };
+    const current = { paths: { '/healthz': { get: { security: [{ sigv4: [] }], responses: { 200: {} } } } } };
+    expect(findBreakingChanges(previous, current)).toContain('newly required authentication for GET /healthz');
+  });
+
   it('does not flag adding a second accepted security scheme', () => {
     const previous = { paths: { '/v1/x': { get: { security: [{ orgToken: [] }], responses: { 200: {} } } } } };
     const current = {

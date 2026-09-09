@@ -95,6 +95,12 @@ export function findBreakingChanges(previous: OpenApiDocument, current: OpenApiD
           issues.push(`removed security scheme "${scheme}" for ${label}`);
         }
       }
+      if (previousSchemes.size === 0 && currentSchemes.size > 0) {
+        // The operation accepted anonymous callers before (e.g. /healthz, /readyz today) and
+        // now rejects every one of them with a 401 - as breaking, in the other direction, as
+        // the removed-scheme case above.
+        issues.push(`newly required authentication for ${label}`);
+      }
 
       const previousRequired = new Set(jsonSchemaOf(previous, previousOp.requestBody?.content).required ?? []);
       const currentRequired = new Set(jsonSchemaOf(current, currentOp.requestBody?.content).required ?? []);
