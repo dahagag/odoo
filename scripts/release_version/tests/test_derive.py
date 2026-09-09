@@ -57,6 +57,24 @@ class DeriveManifestVersionMalformedTagsTests(unittest.TestCase):
 
         self.assertIn("not a well-formed release tag", str(ctx.exception))
 
+    def test_unicode_decimal_digit_is_rejected(self):
+        # Regression test for CodeRabbit review on PR #237: bare `\d` matches any Unicode
+        # decimal digit (e.g. Arabic-Indic `٢`), not just ASCII 0-9, which would otherwise
+        # embed a non-ASCII character straight into the derived manifest version.
+        with self.assertRaises(ReleaseVersionError) as ctx:
+            derive_manifest_version("v1٢2.3.4")
+
+        self.assertIn("not a well-formed release tag", str(ctx.exception))
+
+    def test_trailing_newline_is_rejected(self):
+        # Regression test for CodeRabbit review on PR #237: a bare `$` also matches just
+        # before one trailing newline, which would otherwise silently accept an unclean tag
+        # string instead of failing on it.
+        with self.assertRaises(ReleaseVersionError) as ctx:
+            derive_manifest_version("v1.2.3\n")
+
+        self.assertIn("not a well-formed release tag", str(ctx.exception))
+
 
 class DeriveManifestVersionPreReleaseTagsTests(unittest.TestCase):
     def test_prerelease_suffix_is_rejected_with_its_own_message(self):

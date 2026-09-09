@@ -209,6 +209,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         if: needs.changes.outputs.release_version_relevant == 'true'
+        with:
+          # This job runs the unittest suite over PR-controlled test files; a malicious test
+          # must not be able to read a persisted git credential out of local config afterward.
+          persist-credentials: false
       - uses: actions/setup-python@v5
         if: needs.changes.outputs.release_version_relevant == 'true'
         with:

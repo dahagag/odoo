@@ -28,14 +28,19 @@ MANIFEST_SERIES = "19.0"
 # zeros (`01` is ambiguous between octal-looking and decimal intent, and SemVer itself
 # forbids it) — optionally followed by a `-` pre-release or `+` build-metadata suffix, which
 # `derive_manifest_version` rejects explicitly below rather than silently discarding.
+#
+# Components use [0-9], not \d, since \d matches any Unicode decimal digit (e.g. Arabic-Indic
+# ٢) — a plausible-looking tag that would otherwise embed a non-ASCII character straight into
+# the derived manifest version. The end anchor is \Z, not $, since a bare $ also matches just
+# before one trailing newline, which would silently accept an unclean tag string.
 _TAG_PATTERN = re.compile(
     r"""
     ^v
-    (?P<major>0|[1-9]\d*)\.
-    (?P<minor>0|[1-9]\d*)\.
-    (?P<patch>0|[1-9]\d*)
+    (?P<major>0|[1-9][0-9]*)\.
+    (?P<minor>0|[1-9][0-9]*)\.
+    (?P<patch>0|[1-9][0-9]*)
     (?P<suffix>[-+].*)?
-    $
+    \Z
     """,
     re.VERBOSE,
 )
