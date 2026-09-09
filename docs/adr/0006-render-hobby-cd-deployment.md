@@ -1,5 +1,5 @@
 ---
-status: superseded by ADR-0015
+status: superseded by ADR-0015 and issue #193
 ---
 
 # Render Hobby CD deployment
@@ -7,6 +7,30 @@ status: superseded by ADR-0015
 **Superseded:** production is migrating to AWS (Platform Account) — see
 [ADR-0015](0015-production-migrates-to-aws-platform-account.md). This record is kept for the
 zero-cost-POC reasoning below, which no longer applies once the migration completes.
+
+**The Render implementation is removed from the repo, not merely stood down.** The Hosting
+Operations completion epic ([#193](https://github.com/dahagag/odoo/issues/193)) deletes
+`docker/odoo-render.Dockerfile`, `docker/odoo-render-entrypoint.sh`, the
+`scripts/render-demo-setup.*` checklists, and the `main/19.0`-watched auto-deploy wiring, so
+nobody maintains or copies a dead deployment path. Deploys run from GitHub Actions into AWS
+instead: `dev/19.0` to staging ([#203](https://github.com/dahagag/odoo/issues/203)), `main/19.0`
+to production, via OIDC role assumption ([#202](https://github.com/dahagag/odoo/issues/202), which
+also reverses [ADR-0017](0017-self-hosted-ci-runner-in-platform-account.md)'s self-hosted runner).
+The running Render service stays as the rollback target until the production cutover
+([#204](https://github.com/dahagag/odoo/issues/204)) completes; the code goes once staging is
+proven.
+
+Two mechanisms below outlived their host, in different ways. The self-healing boot that
+reinitialises a missing database stops being a workaround and becomes a **requirement**: it is the
+shape staging deliberately adopts on every deploy (fresh demo data per deploy, #203) — see also
+[ADR-0012](0012-local-dev-self-heals-crm-methodology-like-render.md). Forcing
+`ir_attachment.location` to `db`, by contrast, becomes an **open decision**: it was a fix for
+having no persistent disk, and on AWS durable storage is available, so the posture has to be
+re-made deliberately rather than inherited. That decision is tracked in
+[#209](https://github.com/dahagag/odoo/issues/209), not settled here.
+
+**Everything below is the original decision. It is superseded — implement nothing from it
+except what the note above explicitly preserves.**
 
 The client-demo instance runs on Render's free web service + free Postgres, promoted by
 merging a release PR from `dev/19.0` into a new `main/19.0` branch, which Render watches for

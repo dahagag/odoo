@@ -1,4 +1,28 @@
+---
+status: amended by ADR-0037
+---
+
 # Two trial invitation paths, both guarded by a rep-provided expected domain
+
+**Amended:** both invitation paths move to the public **client app** — one of the administration
+stack's two surfaces — because Odoo loses its public listener. See
+[ADR-0037](0037-odoo-has-no-public-ingress.md) and
+[ADR-0034](0034-administration-stack-owns-org-record-of-truth.md), under epic
+[#193](https://github.com/dahagag/odoo/issues/193); built in
+[#200](https://github.com/dahagag/odoo/issues/200).
+
+**Every rule below is unchanged.** A Targeted Invite still goes to a specific known email; an
+Open Invite Link is still shared when the rep knows the domain but not the person; the expected
+domain is still fixed by the rep at issuance; and the first login through an Open Invite Link
+still has to confirm a company email matching that domain, with a mismatch rejected rather than
+silently accepted. Magic-link auth on the client app is the mechanism that carries the
+confirmation step, and it honours the same guard.
+
+The one thing to carry forward carefully: the deferred invite proof-of-receipt gap
+([ADR-0032](0032-defer-invite-proof-of-receipt-guard.md), issues
+[#161](https://github.com/dahagag/odoo/issues/161)/[#110](https://github.com/dahagag/odoo/issues/110))
+was deferred "until the org-facing login layer's design begins". That layer is the client app, so
+issue #200 is where that gap comes due rather than being inherited silently.
 
 Trial Orgs can be started two ways: a **Targeted Invite** to a specific known email, or an
 **Open Invite Link** shared when the sales rep knows the prospect's domain but not yet who

@@ -26,7 +26,7 @@ Detailed glossaries are created lazily under `docs/contexts/<context>/CONTEXT.md
 
 **Boundary:** Owns leads, opportunities, sales teams, pipeline stages, forecasts, and loss reasons. It does not own quotations, confirmed orders, deliveries, or invoices.
 
-**Addon anchors:** `crm`, `sales_team`, `crm_sms`, `crm_livechat`, `crm_iap_enrich`.
+**Addon anchors:** `crm`, `sales_team`, `crm_sms`, `crm_livechat`, `crm_iap_enrich`, `crm_methodology`.
 
 **Business concepts:** Lead, Opportunity, Pipeline Stage, Sales Team, Salesperson, Expected Revenue, Lost Reason.
 
@@ -176,23 +176,24 @@ Detailed glossaries are created lazily under `docs/contexts/<context>/CONTEXT.md
 
 ### Hosting Operations
 
-**Responsibility:** Provision and operate isolated Odoo instances for prospects and customers outside the primary agentic-erp deployment — sales trials today, paid hosting later.
+**Responsibility:** Provision and operate isolated Odoo instances for prospects and customers outside the primary agentic-erp deployment — evaluation orgs issued to leads, and hosted orgs run for paying clients.
 
-**Boundary:** Owns Trial Org lifecycle (issuance, seats, suspend/wake, extension, auto-destroy) and the AWS infrastructure it runs on. It does not own the commercial decision to issue a trial (that's CRM's Opportunity) or billing for paid hosting (future Accounting/Sales concern).
+**Boundary:** Owns the lifecycle of both Trial Orgs (issuance, seats, suspend/wake, extension, auto-destroy) and Client Orgs, Promotion between them, and the AWS infrastructure they run on. It holds the record of truth for every org, outside Odoo, in the Administration Stack. It does not own the commercial decision to issue a Trial Org or to promote one (that's CRM's Opportunity and won deal), the sales-methodology qualification that gates Extension (CRM's), or billing for paid hosting (future Accounting/Sales concern).
 
-**Addon anchors:** `hosting`, `hosting_admin`, `crm_methodology`.
+**Addon anchors:** `hosting`, `hosting_admin`.
 
-**Business concepts:** Trial Org, Seat, Active, Suspended, Wake, Auto-Destroy, Extension, Hosting Account, Org Registration.
+**Business concepts:** Trial Org, Client Org, Promotion, Seat, Active, Suspended, Wake, Asleep Page, Auto-Destroy, Extension, Administration Stack, Staff App, Client App, Hosting Account, Org Region, Org Registration.
 
-**Produces:** A live, reachable demo/hosting environment for a given Opportunity's prospect domain.
+**Produces:** A live, reachable evaluation or hosted environment for a given prospect or client domain; mirrored org state and cost visibility for the people who sell and operate it.
 
-**Consumes:** Opportunity and prospect-domain data from CRM; sales-methodology qualification state for gating Extension.
+**Consumes:** Opportunity, prospect-domain, and won-deal data from CRM; sales-methodology qualification state for gating Extension.
 
 Detailed glossary: [`docs/contexts/hosting/CONTEXT.md`](docs/contexts/hosting/CONTEXT.md)
 
 ## Relationships
 
-- **CRM → Hosting Operations:** a qualified Opportunity can request a Trial Org; Hosting Operations owns the deployed instance's lifecycle and reports its state back onto the Opportunity.
+- **CRM → Hosting Operations (Trial Org):** a qualified Opportunity can request a Trial Org; Hosting Operations owns the deployed instance's lifecycle and reports its state back onto the Opportunity.
+- **CRM → Hosting Operations (Client Org):** a won deal can request a Client Org, either by Promotion of that deal's Trial Org or by direct provisioning; Hosting Operations owns the hosted instance's lifecycle, and the commercial decision stays with CRM.
 - **Foundation → all contexts:** supplies identity, company, contact, product-reference, currency, unit, activity, and communication capabilities; consuming contexts assign their own business roles.
 - **CRM → Sales:** a qualified opportunity can become a quotation; Sales owns the resulting commercial commitment.
 - **Sales → Inventory:** confirmed product demand requests reservation and delivery; Inventory owns fulfillment state.
