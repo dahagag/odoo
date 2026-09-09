@@ -18,15 +18,16 @@ jobs:
       infra_relevant: ${{ steps.check.outputs.infra_relevant }}
       lint_relevant: ${{ steps.check.outputs.lint_relevant }}
       release_version_relevant: ${{ steps.check.outputs.release_version_relevant }}
+      manifest_version_relevant: ${{ steps.check.outputs.manifest_version_relevant }}
       test_modules: ${{ steps.plan.outputs.modules }}
     steps:
-      # image_relevant, docs_build, infra_relevant, lint_relevant, and release_version_relevant
-      # are deliberately independent of each other: docs-build-tests, infra-checks, and
-      # release-version-tests run on bare ubuntu-latest and never touch the Odoo dev image, and
-      # `ruff` (lint_relevant) doesn't need it either (see docs/adr/0028) — none of these
-      # should force build-image/test to run, and a docker/**-only or requirements.txt-only
-      # change (image_relevant) shouldn't force lint to run since it can't affect `ruff`'s
-      # output.
+      # image_relevant, docs_build, infra_relevant, lint_relevant, release_version_relevant,
+      # and manifest_version_relevant are deliberately independent of each other:
+      # docs-build-tests, infra-checks, release-version-tests, and manifest-version-check
+      # run on bare ubuntu-latest and never touch the Odoo dev image, and `ruff`
+      # (lint_relevant) doesn't need it either (see docs/adr/0028) — none of these should
+      # force build-image/test to run, and a docker/**-only or requirements.txt-only change
+      # (image_relevant) shouldn't force lint to run since it can't affect `ruff`'s output.
       - name: Check for changes affecting the Odoo dev image, lint, docs, tests, or infra
         id: check
         uses: dorny/paths-filter@v3
@@ -55,6 +56,10 @@ jobs:
               - 'scripts/dev.ps1'
               - '.github/workflows/ci.yml'
             release_version_relevant:
+              - 'scripts/release_version/**'
+              - '.github/workflows/ci.yml'
+            manifest_version_relevant:
+              - 'custom_addons/**'
               - 'scripts/release_version/**'
               - '.github/workflows/ci.yml'
       - uses: actions/checkout@v4
@@ -222,6 +227,50 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts/release_version/tests -t .
 
+  manifest-version-check:
+    name: Owned addon manifest versions match the release tag
+    needs: changes
+    if: needs.changes.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        if: needs.changes.outputs.manifest_version_relevant == 'true'
+        with:
+          # A malicious PR could edit scripts/release_version/** (this check's own code), so
+          # no persisted git credential should be left behind for it to read.
+          persist-credentials: false
+      - name: Fetch release tags
+        # Shallow, refspec-scoped fetch of just the v* tag refs (and the single commit each
+        # points at) — not a full-history clone (`fetch-depth: 0`), which would walk this
+        # whole (huge) repo's history just to find a tag name.
+        if: needs.changes.outputs.manifest_version_relevant == 'true'
+        run: git fetch --no-tags --depth=1 origin 'refs/tags/v*:refs/tags/v*'
+      - uses: actions/setup-python@v5
+        if: needs.changes.outputs.manifest_version_relevant == 'true'
+        with:
+          python-version: '3.x'
+      - name: Resolve the current release tag
+        # The latest v* tag by version sort, not `git describe` (which needs the ancestry
+        # graph between HEAD and the tag — exactly the history walk the shallow fetch above
+        # avoids). This repo cuts one release tag at a time off its release branches, so
+        # "latest by version" and "nearest reachable ancestor" agree in practice.
+        id: tag
+        if: needs.changes.outputs.manifest_version_relevant == 'true'
+        run: |
+          tag=$(git tag --list 'v*' --sort=-v:refname |
+            grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' |
+            head -n1)
+          if [[ -z "$tag" ]]; then
+            echo "No v* release tag found" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Check owned addon manifest versions against the release tag
+        if: needs.changes.outputs.manifest_version_relevant == 'true'
+        run: python3 -m scripts.release_version.check "${{ steps.tag.outputs.tag }}"
+
   infra-checks:
     name: Infra checks
     needs: changes
@@ -285,22 +334,25 @@ jobs:
 
   ci-required:
     name: CI required checks (required)
-    needs: [lint, docs-build-tests, infra-checks]
+    needs: [lint, docs-build-tests, infra-checks, release-version-tests, manifest-version-check]
     # if: always() so this still runs (and can fail) even when lint,
-    # docs-build-tests, or infra-checks was skipped — e.g. because the
-    # upstream `changes` job itself errored. GitHub branch protection treats
-    # a skipped required check as passing, so without this a `changes`
-    # failure would let a PR merge without any of them ever having run.
+    # docs-build-tests, infra-checks, release-version-tests, or manifest-version-check was
+    # skipped — e.g. because the upstream `changes` job itself errored. GitHub branch
+    # protection treats a skipped required check as passing, so without this
+    # a `changes` failure would let a PR merge without any of them ever
+    # having run.
     if: always()
     runs-on: ubuntu-latest
     permissions: {}
     steps:
-      - name: Require lint, docs-build-tests, and infra-checks to have succeeded
-        if: needs.lint.result != 'success' || needs.docs-build-tests.result != 'success' || needs.infra-checks.result != 'success'
+      - name: Require lint, docs-build-tests, infra-checks, release-version-tests, and manifest-version-check to have succeeded
+        if: needs.lint.result != 'success' || needs.docs-build-tests.result != 'success' || needs.infra-checks.result != 'success' || needs.release-version-tests.result != 'success' || needs.manifest-version-check.result != 'success'
         run: |
           echo "lint: ${{ needs.lint.result }}"
           echo "docs-build-tests: ${{ needs.docs-build-tests.result }}"
           echo "infra-checks: ${{ needs.infra-checks.result }}"
+          echo "release-version-tests: ${{ needs.release-version-tests.result }}"
+          echo "manifest-version-check: ${{ needs.manifest-version-check.result }}"
           exit 1
 
   test:
