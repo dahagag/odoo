@@ -21,6 +21,15 @@ infra/
 │                       stale-lock and snapshot-cleanup rules, and the shared log-forwarding,
 │                       auto-destroy-snapshot, and snapshot-cleanup Lambdas.
 │                       Applied once (and on foundation changes), not per Trial Org.
+├── cicd/               Root module. The GitHub Actions OIDC identity provider and the two
+│                       branch-scoped deploy roles (staging, production) issue #212 added,
+│                       reversing ADR-0017's self-hosted-runner approach in favor of
+│                       `sts:AssumeRoleWithWebIdentity` — no long-lived AWS keys, no runner
+│                       instance to patch. Each role's trust policy is scoped to this repository
+│                       and its one deploying branch, not merely branch protection. Independent of
+│                       `foundation` (own state key, own `tofu init`/`plan`/`apply`); its actual
+│                       deploy permissions are a deliberate placeholder until a later ticket
+│                       defines what a deploy touches (see oidc.tf).
 └── modules/
     └── trial_org/       Reusable module (not a root module — nothing here runs `tofu` against it
                           directly). Declares one Trial Org's own infrastructure: one EC2
