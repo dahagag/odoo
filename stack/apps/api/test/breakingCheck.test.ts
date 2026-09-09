@@ -9,7 +9,20 @@ import { runBreakingCheck } from '../src/openapi/breakingCheck';
  * doesn't guarantee any specific older commit is actually present in the checkout. */
 function fixtureCommitWithNoFiles(): string {
   const emptyTree = execFileSync('git', ['mktree'], { input: '', encoding: 'utf8' }).trim();
-  return execFileSync('git', ['commit-tree', emptyTree, '-m', 'fixture: no files'], { encoding: 'utf8' }).trim();
+  return execFileSync('git', ['commit-tree', emptyTree, '-m', 'fixture: no files'], {
+    encoding: 'utf8',
+    // commit-tree refuses to write a commit object without an author/committer identity, and a
+    // CI runner has no global `user.name`/`user.email` configured (unlike a developer machine)
+    // - this fixture's identity is never meaningful, so supply a fixed one directly rather than
+    // depending on repo/global git config existing at all.
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'test-fixture',
+      GIT_AUTHOR_EMAIL: 'test-fixture@example.invalid',
+      GIT_COMMITTER_NAME: 'test-fixture',
+      GIT_COMMITTER_EMAIL: 'test-fixture@example.invalid',
+    },
+  }).trim();
 }
 
 describe('runBreakingCheck (this ticket\'s CI gate)', () => {
