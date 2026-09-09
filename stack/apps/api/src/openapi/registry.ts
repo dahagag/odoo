@@ -55,6 +55,7 @@ registry.registerPath({
   request: { params: z.object({ orgId: OrgIdSchema }) },
   responses: {
     200: { description: 'OK', content: { 'application/json': { schema: OrgRegistrationSchema } } },
+    400: problemResponse('Malformed orgId'),
     401: problemResponse('Missing or invalid org token'),
     403: problemResponse('Org token does not scope to this org'),
     404: problemResponse('No such org'),
@@ -70,6 +71,7 @@ registry.registerPath({
   request: { params: z.object({ orgId: OrgIdSchema }) },
   responses: {
     200: { description: 'OK', content: { 'application/json': { schema: OrgRegistrationSchema } } },
+    400: problemResponse('Malformed orgId'),
     401: problemResponse('Missing admin principal (SigV4 not verified at the front door)'),
     404: problemResponse('No such org'),
   },
