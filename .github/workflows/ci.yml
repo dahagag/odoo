@@ -14,20 +14,21 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_relevant: ${{ steps.check.outputs.image_relevant }}
+      prod_image_relevant: ${{ steps.check.outputs.prod_image_relevant }}
       docs_build: ${{ steps.check.outputs.docs_build }}
       infra_relevant: ${{ steps.check.outputs.infra_relevant }}
       lint_relevant: ${{ steps.check.outputs.lint_relevant }}
       release_version_relevant: ${{ steps.check.outputs.release_version_relevant }}
       test_modules: ${{ steps.plan.outputs.modules }}
     steps:
-      # image_relevant, docs_build, infra_relevant, lint_relevant, and release_version_relevant
-      # are deliberately independent of each other: docs-build-tests, infra-checks, and
-      # release-version-tests run on bare ubuntu-latest and never touch the Odoo dev image, and
-      # `ruff` (lint_relevant) doesn't need it either (see docs/adr/0028) — none of these
-      # should force build-image/test to run, and a docker/**-only or requirements.txt-only
-      # change (image_relevant) shouldn't force lint to run since it can't affect `ruff`'s
-      # output.
-      - name: Check for changes affecting the Odoo dev image, lint, docs, tests, or infra
+      # image_relevant, prod_image_relevant, docs_build, infra_relevant, lint_relevant, and
+      # release_version_relevant are deliberately independent of each other: docs-build-tests,
+      # infra-checks, and release-version-tests run on bare ubuntu-latest and never touch the
+      # Odoo dev image, and `ruff` (lint_relevant) doesn't need it either (see docs/adr/0028) —
+      # none of these should force build-image/test to run, and a docker/**-only or
+      # requirements.txt-only change (image_relevant) shouldn't force lint to run since it can't
+      # affect `ruff`'s output.
+      - name: Check for changes affecting the Odoo dev image, prod image, lint, docs, tests, or infra
         id: check
         uses: dorny/paths-filter@v3
         with:
@@ -38,6 +39,17 @@ jobs:
               - 'scripts/dev.sh'
               - 'requirements.txt'
               - 'compose.yaml'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/**'
+            prod_image_relevant:
+              - 'odoo-bin'
+              - 'odoo/**'
+              - 'addons/**'
+              - 'custom_addons/**'
+              - 'docker/odoo-prod.Dockerfile'
+              - 'docker/odoo-prod.conf'
+              - 'docker/pip-install-requirements.sh'
+              - 'requirements.txt'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
             docs_build:
@@ -152,6 +164,62 @@ jobs:
             ODOO_IMAGE=${{ steps.defaults.outputs.odoo_image }}
             HOST_UID=${{ steps.defaults.outputs.uid }}
             HOST_GID=${{ steps.defaults.outputs.gid }}
+          push: true
+          tags: ${{ steps.tag.outputs.image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-prod-image:
+    name: Build and publish production image
+    needs: changes
+    if: needs.changes.outputs.prod_image_relevant == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read defaults shared with local dev (.env.example)
+        id: defaults
+        run: echo "odoo_image=$(sed -n -E 's/^ODOO_IMAGE=(.*)$/\1/p' .env.example)" >> "$GITHUB_OUTPUT"
+      - name: Compute the image tag from its content inputs
+        # This image bakes in the whole application tree (odoo-bin, odoo/, addons/,
+        # custom_addons/), not the small, rarely-changing set of build inputs build-image
+        # hashes — hashFiles() walking and hashing the contents of those vendored trees
+        # would be expensive. git already has a cheap content identity for a tree/blob at
+        # HEAD (its object id, no file content read required beyond what git has cached),
+        # so combine those instead of file contents: an unrelated change elsewhere in the
+        # repo (or an edit to another job in this workflow file) still resolves to the
+        # existing published tag and skips the push below, matching build-image's own
+        # "skip if already published" behavior.
+        id: tag
+        run: |
+          content_id=$(
+            for path in odoo-bin odoo addons custom_addons requirements.txt \
+              docker/odoo-prod.Dockerfile docker/odoo-prod.conf docker/pip-install-requirements.sh; do
+              git rev-parse "HEAD:$path"
+            done | sha256sum | cut -d' ' -f1
+          )
+          echo "image=ghcr.io/${{ github.repository }}/odoo-prod:$content_id" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: ./.github/actions/ghcr-login
+      - name: Check whether this image tag is already published
+        id: existing
+        env:
+          PROD_IMAGE: ${{ steps.tag.outputs.image }}
+        run: |
+          if docker buildx imagetools inspect "$PROD_IMAGE" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/build-push-action@v6
+        if: steps.existing.outputs.exists != 'true'
+        with:
+          context: .
+          file: docker/odoo-prod.Dockerfile
+          build-args: |
+            ODOO_IMAGE=${{ steps.defaults.outputs.odoo_image }}
           push: true
           tags: ${{ steps.tag.outputs.image }}
           cache-from: type=gha

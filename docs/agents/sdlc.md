@@ -90,12 +90,12 @@ The workflow itself triggers on every PR targeting either `dev/19.0`
 the demo instance) — no path filter at the trigger level. A preliminary
 `changes` job diffs the PR against its base for `custom_addons/**`,
 `docker/**`, `scripts/dev.sh`, `scripts/dev.ps1`, `scripts/docs_build/**`,
-`requirements.txt`, `compose.yaml`, `infra/**`, `ruff.toml`, or the workflow
-file itself, and the other jobs read its
-`image_relevant`, `docs_build`, `infra_relevant`, and `lint_relevant`
-outputs to decide whether to actually do anything. There is no separate
-deploy workflow — Render's native branch auto-deploy handles promotion
-once a release PR merges.
+`requirements.txt`, `compose.yaml`, `infra/**`, `ruff.toml`, `odoo-bin`,
+`odoo/**`, `addons/**`, or the workflow file itself, and the other jobs
+read its `image_relevant`, `prod_image_relevant`, `docs_build`,
+`infra_relevant`, and `lint_relevant` outputs to decide whether to actually
+do anything. There is no separate deploy workflow — Render's native branch
+auto-deploy handles promotion once a release PR merges.
 
 This replaced an earlier design where the whole workflow was gated by a
 `paths:` filter on the trigger itself: docs-only PRs (regular feature PRs
@@ -110,8 +110,9 @@ check instead of no check at all.
 
 | Job | Trigger scope | Gate |
 |---|---|---|
-| `changes` | every PR | Not a check anyone gates on — feeds `image_relevant`, `docs_build`, `infra_relevant`, and `lint_relevant` to the other jobs |
+| `changes` | every PR | Not a check anyone gates on — feeds `image_relevant`, `prod_image_relevant`, `docs_build`, `infra_relevant`, and `lint_relevant` to the other jobs |
 | `lint` | every PR; steps run only when `lint_relevant` (`custom_addons/**`, `ruff.toml`, `scripts/dev.sh`/`dev.ps1`, or the workflow file) | Feeds `ci-required`; not itself required by branch protection — `ruff` against `custom_addons/**`, Docker-free (`actions/setup-python`, no Odoo dev image; see [ADR 0028](../adr/0028-lint-job-decouples-from-odoo-dev-image.md)) |
+| `build-prod-image` | every PR; whole job skipped when not `prod_image_relevant` (`odoo-bin`, `odoo/**`, `addons/**`, `custom_addons/**`, `docker/odoo-prod.Dockerfile`, `docker/odoo-prod.conf`, `docker/pip-install-requirements.sh`, `requirements.txt`, the workflow file, or `.github/actions/**`) | Not itself required by branch protection — builds `docker/odoo-prod.Dockerfile` (separate from the dev and retired Render Dockerfiles per [ADR 0003](../adr/0003-standardize-local-development-on-containers.md)) and publishes it to GHCR tagged by a hash of its content inputs, skipping the push if that tag is already published (mirrors `build-image`'s own dedup); the only job here holding `packages: write`, and it holds nothing else beyond `contents: read` |
 | `docs-build-tests` | every PR; steps run only when `docs_build` | Feeds `ci-required`; not itself required by branch protection |
 | `infra-checks` | every PR; steps run only when `infra_relevant` (`infra/**` or the workflow file) | Feeds `ci-required`; not itself required by branch protection — `tofu fmt`/`tofu validate` on all three OpenTofu modules, `ruff`, and `interrogate` docstring coverage, all Docker-free (`actions/setup-python`, no Odoo dev image) |
 | `ci-required` | every PR; `if: always()` | **Required** status check — fails unless `lint`, `docs-build-tests`, and `infra-checks` all succeeded, even if one was `skipped` (e.g. because the upstream `changes` job errored) |
