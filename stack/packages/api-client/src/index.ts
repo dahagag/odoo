@@ -54,9 +54,25 @@ export class StackApiClient {
     });
 
     const response = await this.fetchImpl(`${this.baseUrl}/${API_VERSION}${path}`, init);
-    const payload = await response.json();
+    // Read as text first: a 204 (or any empty body) makes `.json()` reject outright, and a
+    // non-JSON error body (e.g. an HTML 502 page from a load balancer in front of the real
+    // deployment) would otherwise turn into an opaque parse error instead of a StackApiError -
+    // the exact case this method exists to surface.
+    const text = await response.text();
+    let payload: unknown;
+    try {
+      payload = text.length > 0 ? JSON.parse(text) : undefined;
+    } catch {
+      payload = undefined;
+    }
+
     if (!response.ok) {
-      throw new StackApiError(ProblemDetailsSchema.parse(payload));
+      const parsed = ProblemDetailsSchema.safeParse(payload);
+      throw new StackApiError(
+        parsed.success
+          ? parsed.data
+          : { type: 'about:blank', title: response.statusText || 'Request failed', status: response.status },
+      );
     }
     return payload as T;
   }
