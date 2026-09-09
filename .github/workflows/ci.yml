@@ -18,16 +18,17 @@ jobs:
       infra_relevant: ${{ steps.check.outputs.infra_relevant }}
       lint_relevant: ${{ steps.check.outputs.lint_relevant }}
       stack_relevant: ${{ steps.check.outputs.stack_relevant }}
+      release_version_relevant: ${{ steps.check.outputs.release_version_relevant }}
       test_modules: ${{ steps.plan.outputs.modules }}
     steps:
-      # image_relevant, docs_build, infra_relevant, lint_relevant, and stack_relevant are
-      # deliberately independent of each other: docs-build-tests, infra-checks, and
-      # stack-checks run on bare ubuntu-latest and never touch the Odoo dev image, and
-      # `ruff` (lint_relevant) doesn't need it either (see docs/adr/0028) — none of these
-      # should force build-image/test to run, and a docker/**-only or
-      # requirements.txt-only change (image_relevant) shouldn't force lint or stack-checks
-      # to run since it can't affect their output.
-      - name: Check for changes affecting the Odoo dev image, lint, docs, tests, infra, or the stack
+      # image_relevant, docs_build, infra_relevant, lint_relevant, stack_relevant, and
+      # release_version_relevant are deliberately independent of each other: docs-build-tests,
+      # infra-checks, stack-checks, and release-version-tests run on bare ubuntu-latest and
+      # never touch the Odoo dev image, and `ruff` (lint_relevant) doesn't need it either (see
+      # docs/adr/0028) — none of these should force build-image/test to run, and a docker/**-only
+      # or requirements.txt-only change (image_relevant) shouldn't force lint, stack-checks, or
+      # release-version-tests to run since it can't affect their output.
+      - name: Check for changes affecting the Odoo dev image, lint, docs, tests, infra, the stack, or release-version derivation
         id: check
         uses: dorny/paths-filter@v3
         with:
@@ -56,6 +57,9 @@ jobs:
               - '.github/workflows/ci.yml'
             stack_relevant:
               - 'stack/**'
+              - '.github/workflows/ci.yml'
+            release_version_relevant:
+              - 'scripts/release_version/**'
               - '.github/workflows/ci.yml'
       - uses: actions/checkout@v4
       - name: Build per-module change filters
@@ -198,6 +202,29 @@ jobs:
         if: needs.changes.outputs.docs_build == 'true'
         run: |
           python3 -m unittest discover -s scripts/docs_build/tests -t .
+
+  release-version-tests:
+    name: Release-version derivation tests
+    needs: changes
+    if: needs.changes.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        if: needs.changes.outputs.release_version_relevant == 'true'
+        with:
+          # This job runs the unittest suite over PR-controlled test files; a malicious test
+          # must not be able to read a persisted git credential out of local config afterward.
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        if: needs.changes.outputs.release_version_relevant == 'true'
+        with:
+          python-version: '3.x'
+      - name: Run release-version unit tests
+        if: needs.changes.outputs.release_version_relevant == 'true'
+        run: |
+          python3 -m unittest discover -s scripts/release_version/tests -t .
 
   infra-checks:
     name: Infra checks
