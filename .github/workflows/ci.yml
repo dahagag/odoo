@@ -259,7 +259,9 @@ jobs:
         id: tag
         if: needs.changes.outputs.manifest_version_relevant == 'true'
         run: |
-          tag=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          tag=$(git tag --list 'v*' --sort=-v:refname |
+            grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' |
+            head -n1)
           if [[ -z "$tag" ]]; then
             echo "No v* release tag found" >&2
             exit 1
@@ -332,10 +334,10 @@ jobs:
 
   ci-required:
     name: CI required checks (required)
-    needs: [lint, docs-build-tests, infra-checks, manifest-version-check]
+    needs: [lint, docs-build-tests, infra-checks, release-version-tests, manifest-version-check]
     # if: always() so this still runs (and can fail) even when lint,
-    # docs-build-tests, infra-checks, or manifest-version-check was skipped —
-    # e.g. because the upstream `changes` job itself errored. GitHub branch
+    # docs-build-tests, infra-checks, release-version-tests, or manifest-version-check was
+    # skipped — e.g. because the upstream `changes` job itself errored. GitHub branch
     # protection treats a skipped required check as passing, so without this
     # a `changes` failure would let a PR merge without any of them ever
     # having run.
@@ -343,12 +345,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions: {}
     steps:
-      - name: Require lint, docs-build-tests, infra-checks, and manifest-version-check to have succeeded
-        if: needs.lint.result != 'success' || needs.docs-build-tests.result != 'success' || needs.infra-checks.result != 'success' || needs.manifest-version-check.result != 'success'
+      - name: Require lint, docs-build-tests, infra-checks, release-version-tests, and manifest-version-check to have succeeded
+        if: needs.lint.result != 'success' || needs.docs-build-tests.result != 'success' || needs.infra-checks.result != 'success' || needs.release-version-tests.result != 'success' || needs.manifest-version-check.result != 'success'
         run: |
           echo "lint: ${{ needs.lint.result }}"
           echo "docs-build-tests: ${{ needs.docs-build-tests.result }}"
           echo "infra-checks: ${{ needs.infra-checks.result }}"
+          echo "release-version-tests: ${{ needs.release-version-tests.result }}"
           echo "manifest-version-check: ${{ needs.manifest-version-check.result }}"
           exit 1
 
