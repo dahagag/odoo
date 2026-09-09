@@ -271,13 +271,16 @@ jobs:
       - uses: actions/checkout@v4
         if: needs.changes.outputs.stack_relevant == 'true'
         with:
-          # openapi:breaking-check diffs the current document against the one committed on
-          # the PR's base ref (git show, below) - needs that history reachable, which a
-          # shallow (default) checkout doesn't guarantee once the base branch has moved on.
-          fetch-depth: 0
           # This job runs `npm ci` on PR-controlled dependencies; a malicious lifecycle script
           # must not be able to read a persisted git credential out of local config afterward.
           persist-credentials: false
+      - name: Fetch the base branch's tip for the OpenAPI breaking-change diff
+        if: needs.changes.outputs.stack_relevant == 'true'
+        # openapi:breaking-check reads the committed document at origin/<base_ref> (git show).
+        # A full fetch-depth: 0 checkout would work too, but clones this repo's entire history
+        # to do it - a shallow, single-commit fetch of just the base branch's tip is enough,
+        # since `git show <ref>:<path>` only needs that one commit's tree.
+        run: git fetch --no-tags --depth=1 origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
       - uses: actions/setup-node@v4
         if: needs.changes.outputs.stack_relevant == 'true'
         with:
