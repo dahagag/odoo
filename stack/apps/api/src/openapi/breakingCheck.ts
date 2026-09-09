@@ -7,17 +7,27 @@ const CURRENT_DOCUMENT_PATH = path.join(__dirname, '..', '..', 'openapi', 'opena
 const REPO_RELATIVE_DOCUMENT_PATH = 'stack/apps/api/openapi/openapi.json';
 
 function loadPreviousDocument(baseRef: string): OpenApiDocument | undefined {
+  // A base ref that doesn't resolve at all (bad ref, or a checkout too shallow to have fetched
+  // it) must fail loudly, not be read as "nothing to diff against" - that would silently
+  // disable the gate this function exists to serve.
+  execFileSync('git', ['rev-parse', '--verify', `${baseRef}^{commit}`], { stdio: 'ignore' });
+
+  let raw: string;
   try {
-    const raw = execFileSync('git', ['show', `${baseRef}:${REPO_RELATIVE_DOCUMENT_PATH}`], {
+    raw = execFileSync('git', ['show', `${baseRef}:${REPO_RELATIVE_DOCUMENT_PATH}`], {
       encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
-    return JSON.parse(raw) as OpenApiDocument;
-  } catch {
-    // No committed document at baseRef yet (e.g. this is the PR that first adds it) - nothing
-    // to diff against, so there is nothing that could be a breaking change.
-    return undefined;
+  } catch (error) {
+    const stderr = (error as { stderr?: Buffer }).stderr?.toString() ?? '';
+    if (/does not exist in|exists on disk, but not in/.test(stderr)) {
+      // The ref resolves but never had this document (e.g. this is the PR that first adds
+      // it) - nothing to diff against, so there is nothing that could be a breaking change.
+      return undefined;
+    }
+    throw error;
   }
+  return JSON.parse(raw) as OpenApiDocument; // a malformed baseline now fails loudly too
 }
 
 export function runBreakingCheck(baseRef: string): string[] {
