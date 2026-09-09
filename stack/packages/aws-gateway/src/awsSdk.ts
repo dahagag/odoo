@@ -32,10 +32,15 @@ export interface AwsSdkGatewayConfig {
   dynamoTableNames: Record<string, string>;
 }
 
+/** This seam only ever round-trips `string`/`number`/`boolean` (`docs/dynamodb-access-
+ * patterns.md`) - anything else reaching here is a caller bug. Coercing it with `String(value)`
+ * would silently store a corrupted-looking-plausible value (`"undefined"`, `"[object
+ * Object]"`) instead of failing where the mistake was made. */
 function marshalValue(value: unknown): AttributeValue {
+  if (typeof value === 'string') return { S: value };
   if (typeof value === 'number') return { N: String(value) };
   if (typeof value === 'boolean') return { BOOL: value };
-  return { S: String(value) };
+  throw new Error(`Unsupported DynamoDB attribute value: ${JSON.stringify(value)}`);
 }
 
 function unmarshalItem(item: Record<string, AttributeValue> | undefined): DynamoItem | undefined {
@@ -44,7 +49,12 @@ function unmarshalItem(item: Record<string, AttributeValue> | undefined): Dynamo
   for (const [key, value] of Object.entries(item)) {
     if (value.N !== undefined) result[key] = Number(value.N);
     else if (value.BOOL !== undefined) result[key] = value.BOOL;
-    else result[key] = value.S;
+    else if (value.S !== undefined) result[key] = value.S;
+    // A real DynamoDB item can carry NULL/L/M/set attributes this seam has never written and
+    // does not understand; silently falling through to `value.S` (`undefined`) would leave the
+    // key present with a bogus value instead of surfacing that the record holds something this
+    // seam was never built to read.
+    else throw new Error(`Unsupported DynamoDB attribute type for "${key}": ${JSON.stringify(value)}`);
   }
   return result;
 }

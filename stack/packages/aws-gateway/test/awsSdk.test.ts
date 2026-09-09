@@ -38,6 +38,29 @@ describe('AwsSdkGateway dynamoDb', () => {
     expect(command.input).toEqual({ TableName: 'physical-orgs', Key: { pk: { S: 'org#1' } } });
   });
 
+  it('rejects marshaling an unsupported attribute value instead of coercing it', async () => {
+    const send = vi.fn();
+    const gateway = new AwsSdkGateway(
+      { region: 'us-east-1', dynamoTableNames: { orgs: 'physical-orgs' } },
+      { dynamoDb: { send } as never },
+    );
+
+    await expect(gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'org#1', tags: ['a'] } }))
+      .rejects.toThrow(/Unsupported DynamoDB attribute value/);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('rejects unmarshaling a real DynamoDB attribute type this seam has never written (e.g. NULL)', async () => {
+    const send = vi.fn().mockResolvedValue({ Item: { pk: { S: 'org#1' }, deletedAt: { NULL: true } } });
+    const gateway = new AwsSdkGateway(
+      { region: 'us-east-1', dynamoTableNames: { orgs: 'physical-orgs' } },
+      { dynamoDb: { send } as never },
+    );
+
+    await expect(gateway.dynamoDb.getItem({ table: 'orgs', key: { pk: 'org#1' } }))
+      .rejects.toThrow(/Unsupported DynamoDB attribute type/);
+  });
+
   it('maps ConditionalCheckFailedException to ConditionalCheckFailedError', async () => {
     const send = vi.fn().mockRejectedValue(conditionalCheckFailed());
     const gateway = new AwsSdkGateway(
