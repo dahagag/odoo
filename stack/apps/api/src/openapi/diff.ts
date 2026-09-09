@@ -2,8 +2,10 @@
  * Minimal breaking-change detector between two generated OpenAPI documents (this ticket's
  * Implementation Decisions: "CI to fail on a breaking contract change"). Deliberately not a
  * general-purpose OpenAPI diff tool - it checks exactly the shapes of change this contract
- * cares about: a removed path/operation/response, a newly required request field, or a removed
- * response field a consumer may already read.
+ * cares about: a removed path/operation/response, a newly required request field, a removed
+ * response field a consumer may already read, or a security scheme an operation stops
+ * accepting (docs/adr/0036 - an org token or SigV4 caller that could authenticate before can no
+ * longer authenticate at all).
  */
 
 interface JsonSchema {
@@ -19,6 +21,7 @@ interface MediaTypeObject {
 interface OperationObject {
   requestBody?: { content?: Record<string, MediaTypeObject> };
   responses?: Record<string, { content?: Record<string, MediaTypeObject> }>;
+  security?: Array<Record<string, string[]>>;
 }
 
 export interface OpenApiDocument {
@@ -37,6 +40,17 @@ function resolveSchema(doc: OpenApiDocument, schema: JsonSchema | undefined): Js
 
 function jsonSchemaOf(doc: OpenApiDocument, content: Record<string, MediaTypeObject> | undefined): JsonSchema {
   return resolveSchema(doc, content?.['application/json']?.schema);
+}
+
+/** The named security schemes an operation accepts (docs/adr/0036 assigns a distinct scheme to
+ * each surface - `orgToken` vs `sigv4`). Flattens OpenAPI's `security` array-of-requirement-
+ * objects, since this contract never combines two schemes into one AND'd requirement. */
+function securitySchemesOf(operation: OperationObject): Set<string> {
+  const schemes = new Set<string>();
+  for (const requirement of operation.security ?? []) {
+    for (const name of Object.keys(requirement)) schemes.add(name);
+  }
+  return schemes;
 }
 
 const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
@@ -68,6 +82,17 @@ export function findBreakingChanges(previous: OpenApiDocument, current: OpenApiD
       for (const status of Object.keys(previousOp.responses ?? {})) {
         if (!(currentOp.responses ?? {})[status]) {
           issues.push(`removed response ${status} for ${label}`);
+        }
+      }
+
+      const previousSchemes = securitySchemesOf(previousOp);
+      const currentSchemes = securitySchemesOf(currentOp);
+      for (const scheme of previousSchemes) {
+        if (!currentSchemes.has(scheme)) {
+          // An existing caller credentialed for `scheme` (e.g. an org token, docs/adr/0036)
+          // can no longer authenticate against this operation at all - as breaking as removing
+          // the operation itself.
+          issues.push(`removed security scheme "${scheme}" for ${label}`);
         }
       }
 

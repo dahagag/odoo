@@ -50,6 +50,14 @@ writes no org records itself (Out of Scope: "Trial Org and Client Org lifecycle 
    write could race two concurrent seat creations past the cap, where the transactional
    increment cannot.
 
+   The condition's threshold (`seatsTotal - 1` above) is a value the *caller* supplies per call,
+   not something `AwsGateway` reads off the item itself - the seam only knows "increment this
+   attribute if it is currently `<=` this number," not "the org's own cap." A caller that
+   derives the threshold from a stale or wrong `seatsTotal` still race-safely enforces *that*
+   threshold; it does not race-safely enforce the org's actual cap. Reading the org's current
+   `seatsTotal` and deriving the threshold from it as one logical operation is the lifecycle
+   port's (#196) job, not this seam's.
+
 ## What this ticket does not decide
 
 Whether patterns 2-4 above use three separate GSIs or fewer, wide-projection GSIs (DynamoDB

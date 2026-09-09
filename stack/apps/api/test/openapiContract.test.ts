@@ -79,6 +79,20 @@ describe('findBreakingChanges', () => {
     expect(findBreakingChanges(previous, current)).toContain('removed response field "b" (200) for GET /v1/x');
   });
 
+  it('flags a removed security scheme (an org token/SigV4 caller loses access, docs/adr/0036)', () => {
+    const previous = { paths: { '/v1/x': { get: { security: [{ orgToken: [] }], responses: { 200: {} } } } } };
+    const current = { paths: { '/v1/x': { get: { security: [{ sigv4: [] }], responses: { 200: {} } } } } };
+    expect(findBreakingChanges(previous, current)).toContain('removed security scheme "orgToken" for GET /v1/x');
+  });
+
+  it('does not flag adding a second accepted security scheme', () => {
+    const previous = { paths: { '/v1/x': { get: { security: [{ orgToken: [] }], responses: { 200: {} } } } } };
+    const current = {
+      paths: { '/v1/x': { get: { security: [{ orgToken: [] }, { sigv4: [] }], responses: { 200: {} } } } },
+    };
+    expect(findBreakingChanges(previous, current)).toEqual([]);
+  });
+
   it('does not flag a purely additive change', () => {
     const previous = { paths: { '/v1/x': { get: { responses: { 200: {} } } } } };
     const current = {

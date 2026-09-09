@@ -1,11 +1,14 @@
 import type { AwsGateway } from '@stack/aws-gateway';
-import Fastify, { type FastifyInstance } from 'fastify';
+import { OrgIdSchema } from '@stack/domain';
+import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { requireAdminPrincipal } from './auth/admin';
 import { forbidCrossOrgAccess, requireOrgToken, type OrgTokenStore } from './auth/orgToken';
 import type { Env } from './config/env';
 import { requireIdempotencyKey } from './idempotency/middleware';
 import type { IdempotencyStore } from './idempotency/store';
+import { OrgRegistrationSchema } from './openapi/registry';
 import { readOrgRegistration } from './orgRegistration';
+import { problem } from './problem';
 
 export interface ServerDeps {
   env: Env;
@@ -16,8 +19,17 @@ export interface ServerDeps {
   idempotencyStore: IdempotencyStore;
 }
 
-function problem(status: number, title: string, detail?: string) {
-  return { type: 'about:blank', title, status, detail };
+/** Every path takes `orgId` through this, rather than trusting the raw path segment, so a
+ * malformed id 404s here instead of reaching `readOrgRegistration` with something that was
+ * never going to match a `pk`. Returns the validated id, or sends 400 and returns `undefined`
+ * for the caller to bail out on. */
+function parseOrgIdParam(rawOrgId: string, reply: FastifyReply): string | undefined {
+  const result = OrgIdSchema.safeParse(rawOrgId);
+  if (!result.success) {
+    reply.code(400).send(problem(400, 'Malformed orgId', 'orgId must be a UUID.'));
+    return undefined;
+  }
+  return result.data;
 }
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
@@ -49,17 +61,23 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     '/v1/org/:orgId/registration',
     { preHandler: requireOrgToken(deps.orgTokenStore) },
     async (request, reply) => {
-      const forbidden = forbidCrossOrgAccess(request, request.params.orgId);
+      const orgId = parseOrgIdParam(request.params.orgId, reply);
+      if (!orgId) return undefined;
+
+      const forbidden = forbidCrossOrgAccess(request, orgId);
       if (forbidden) {
         reply.code(403);
         return forbidden;
       }
-      const registration = await readOrgRegistration(deps.awsGateway, request.params.orgId);
+      const registration = await readOrgRegistration(deps.awsGateway, orgId);
       if (!registration) {
         reply.code(404);
         return problem(404, 'No such org');
       }
-      return registration;
+      // Validated against the same schema the OpenAPI document is generated from
+      // (openapi/registry.ts), so this response and that document cannot silently drift apart
+      // (docs/adr/0036: "cannot drift from what the server actually accepts").
+      return OrgRegistrationSchema.parse(registration);
     },
   );
 
@@ -67,12 +85,15 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     '/v1/admin/orgs/:orgId',
     { preHandler: requireAdminPrincipal },
     async (request, reply) => {
-      const registration = await readOrgRegistration(deps.awsGateway, request.params.orgId);
+      const orgId = parseOrgIdParam(request.params.orgId, reply);
+      if (!orgId) return undefined;
+
+      const registration = await readOrgRegistration(deps.awsGateway, orgId);
       if (!registration) {
         reply.code(404);
         return problem(404, 'No such org');
       }
-      return registration;
+      return OrgRegistrationSchema.parse(registration);
     },
   );
 

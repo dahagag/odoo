@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { problem } from '../problem';
 
 /**
  * The administration surface authenticates with SigV4 (docs/adr/0036), verified by the front
@@ -30,12 +31,7 @@ declare module 'fastify' {
 export async function requireAdminPrincipal(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const header = request.headers[ADMIN_PRINCIPAL_HEADER];
   if (!header || Array.isArray(header)) {
-    await reply.code(401).send({
-      type: 'about:blank',
-      title: 'Missing admin principal',
-      status: 401,
-      detail: 'This endpoint requires SigV4 authentication at the front door.',
-    });
+    await reply.code(401).send(problem(401, 'Missing admin principal', 'This endpoint requires SigV4 authentication at the front door.'));
     return;
   }
   request.adminPrincipal = { arn: header };

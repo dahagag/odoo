@@ -13,8 +13,7 @@
     "build": "npm run build --workspaces --if-present",
     "openapi:generate": "npm run openapi:generate --workspace apps/api",
     "openapi:check": "npm run openapi:generate && git diff --exit-code -- apps/api/openapi/openapi.json",
-    "openapi:breaking-check": "npm run openapi:breaking-check --workspace apps/api",
-    "api-client:generate": "npm run generate --workspace packages/api-client"
+    "openapi:breaking-check": "npm run openapi:breaking-check --workspace apps/api"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

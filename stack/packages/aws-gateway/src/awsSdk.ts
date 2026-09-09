@@ -99,14 +99,19 @@ function compileCondition(condition: DynamoCondition | undefined): {
 class AwsSdkDynamoDbGateway implements DynamoDbGateway {
   private client: import('@aws-sdk/client-dynamodb').DynamoDBClient | undefined;
 
-  constructor(private readonly config: AwsSdkGatewayConfig) {}
+  /** `client` mirrors `AwsProvisioner.__init__`'s `client=None` parameter
+   * (custom_addons/hosting_admin/models/provisioner.py): a test injects a fake/mock client
+   * without needing the real AWS SDK to be reachable, or even instantiable, in a test run. */
+  constructor(private readonly config: AwsSdkGatewayConfig, client?: import('@aws-sdk/client-dynamodb').DynamoDBClient) {
+    this.client = client;
+  }
 
   private async getClient() {
     if (!this.client) {
       // Lazy so importing this module never requires the AWS SDK to be installed/reachable at
       // all in a test run (mirrors the lazy `import boto3` in
       // custom_addons/hosting_admin/models/provisioner.py's AwsProvisioner.client).
-      const { DynamoDBClient } = await import('@aws-sdk/client-dynamodb'); // eslint-disable-line import/no-extraneous-dependencies
+      const { DynamoDBClient } = await import('@aws-sdk/client-dynamodb');
       this.client = new DynamoDBClient({ region: this.config.region });
     }
     return this.client;
@@ -227,7 +232,9 @@ class AwsSdkDynamoDbGateway implements DynamoDbGateway {
 class AwsSdkStepFunctionsGateway implements StepFunctionsGateway {
   private client: import('@aws-sdk/client-sfn').SFNClient | undefined;
 
-  constructor(private readonly config: AwsSdkGatewayConfig) {}
+  constructor(private readonly config: AwsSdkGatewayConfig, client?: import('@aws-sdk/client-sfn').SFNClient) {
+    this.client = client;
+  }
 
   private async getClient() {
     if (!this.client) {
@@ -309,6 +316,10 @@ class AwsSdkStepFunctionsGateway implements StepFunctionsGateway {
 class AwsSdkCostExplorerGateway implements CostExplorerGateway {
   private client: import('@aws-sdk/client-cost-explorer').CostExplorerClient | undefined;
 
+  constructor(client?: import('@aws-sdk/client-cost-explorer').CostExplorerClient) {
+    this.client = client;
+  }
+
   private async getClient() {
     if (!this.client) {
       const { CostExplorerClient } = await import('@aws-sdk/client-cost-explorer');
@@ -342,7 +353,9 @@ class AwsSdkCostExplorerGateway implements CostExplorerGateway {
 class AwsSdkEc2Gateway implements Ec2Gateway {
   private client: import('@aws-sdk/client-ec2').EC2Client | undefined;
 
-  constructor(private readonly config: AwsSdkGatewayConfig) {}
+  constructor(private readonly config: AwsSdkGatewayConfig, client?: import('@aws-sdk/client-ec2').EC2Client) {
+    this.client = client;
+  }
 
   private async getClient() {
     if (!this.client) {
@@ -374,6 +387,16 @@ class AwsSdkEc2Gateway implements Ec2Gateway {
   }
 }
 
+/** Test-only injection point, one field per sub-gateway's own AWS SDK client type - lets a test
+ * exercise `AwsSdkGateway`'s marshaling/error-mapping against a mock `send()` without either
+ * touching live AWS or having to import the lazy dynamic-import machinery itself. */
+export interface AwsSdkGatewayClients {
+  dynamoDb?: import('@aws-sdk/client-dynamodb').DynamoDBClient;
+  stepFunctions?: import('@aws-sdk/client-sfn').SFNClient;
+  costExplorer?: import('@aws-sdk/client-cost-explorer').CostExplorerClient;
+  ec2?: import('@aws-sdk/client-ec2').EC2Client;
+}
+
 /** Real `AwsGateway`: reaches AWS through ADR-0019's narrow cross-account role. Every AWS SDK
  * import is lazy (per sub-gateway, above) so constructing this class - and importing this
  * module - never requires the AWS SDK packages to be resolvable at all; only actually calling a
@@ -384,10 +407,10 @@ export class AwsSdkGateway implements AwsGateway {
   readonly costExplorer: CostExplorerGateway;
   readonly ec2: Ec2Gateway;
 
-  constructor(config: AwsSdkGatewayConfig) {
-    this.dynamoDb = new AwsSdkDynamoDbGateway(config);
-    this.stepFunctions = new AwsSdkStepFunctionsGateway(config);
-    this.costExplorer = new AwsSdkCostExplorerGateway();
-    this.ec2 = new AwsSdkEc2Gateway(config);
+  constructor(config: AwsSdkGatewayConfig, clients: AwsSdkGatewayClients = {}) {
+    this.dynamoDb = new AwsSdkDynamoDbGateway(config, clients.dynamoDb);
+    this.stepFunctions = new AwsSdkStepFunctionsGateway(config, clients.stepFunctions);
+    this.costExplorer = new AwsSdkCostExplorerGateway(clients.costExplorer);
+    this.ec2 = new AwsSdkEc2Gateway(config, clients.ec2);
   }
 }

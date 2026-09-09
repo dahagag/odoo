@@ -25,6 +25,5 @@ const OUTPUT_PATH = path.join(__dirname, '..', '..', 'openapi', 'openapi.json');
 if (require.main === module) {
   const document = generateOpenApiDocument();
   writeFileSync(OUTPUT_PATH, `${JSON.stringify(document, null, 2)}\n`);
-  // eslint-disable-next-line no-console
   console.log(`Wrote ${OUTPUT_PATH}`);
 }

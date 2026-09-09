@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { IDEMPOTENCY_KEY_HEADER } from '@stack/domain';
+import { problem } from '../problem';
 import type { IdempotencyRecord, IdempotencyStore } from './store';
 
 /** Every state-changing endpoint calls this instead of writing its response directly (this
@@ -33,12 +34,7 @@ export function requireIdempotencyKey(request: FastifyRequest, reply: FastifyRep
   }
   const key = request.headers[IDEMPOTENCY_KEY_HEADER.toLowerCase()];
   if (!key || Array.isArray(key)) {
-    reply.code(400).send({
-      type: 'about:blank',
-      title: 'Missing Idempotency-Key',
-      status: 400,
-      detail: `Every ${request.method} request must carry a unique ${IDEMPOTENCY_KEY_HEADER} header.`,
-    });
+    reply.code(400).send(problem(400, 'Missing Idempotency-Key', `Every ${request.method} request must carry a unique ${IDEMPOTENCY_KEY_HEADER} header.`));
     return;
   }
   (request as FastifyRequest & { idempotencyKey: string }).idempotencyKey = key;
