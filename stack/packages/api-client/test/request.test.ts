@@ -38,4 +38,12 @@ describe('StackApiClient.request - defensive response parsing', () => {
     expect(error).toBeInstanceOf(StackApiError);
     expect((error as StackApiError).problem).toEqual({ type: 'about:blank', title: 'Bad Gateway', status: 502 });
   });
+
+  it('rejects rather than silently returning undefined for malformed JSON on a 200', async () => {
+    const client = new StackApiClient({
+      baseUrl: 'https://stack.example',
+      fetchImpl: fakeFetch({ status: 200, body: '{not valid json' }),
+    });
+    await expect(client.request('GET', '/v1/x')).rejects.toThrow();
+  });
 });

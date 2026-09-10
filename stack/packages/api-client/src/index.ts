@@ -62,7 +62,8 @@ export class StackApiClient {
     let payload: unknown;
     try {
       payload = text.length > 0 ? JSON.parse(text) : undefined;
-    } catch {
+    } catch (error) {
+      if (response.ok) throw error;
       payload = undefined;
     }
 
