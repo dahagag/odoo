@@ -62,10 +62,12 @@ run "verify_ecr_push_branch_scoping" {
       statement.Action == "sts:AssumeRoleWithWebIdentity"
       && contains(flatten([statement.Principal.Federated]), aws_iam_openid_connect_provider.github_actions.arn)
       && statement.Condition.StringEquals["token.actions.githubusercontent.com:aud"] == "sts.amazonaws.com"
-      && contains(flatten([statement.Condition.StringEquals["token.actions.githubusercontent.com:sub"]]), "repo:dahagag/odoo:ref:refs/heads/dev/19.0")
-      && contains(flatten([statement.Condition.StringEquals["token.actions.githubusercontent.com:sub"]]), "repo:dahagag/odoo:ref:refs/heads/main/19.0")
+      && toset(flatten([statement.Condition.StringEquals["token.actions.githubusercontent.com:sub"]])) == toset([
+        "repo:dahagag/odoo:ref:refs/heads/dev/19.0",
+        "repo:dahagag/odoo:ref:refs/heads/main/19.0",
+      ])
     ])
-    error_message = "ecr_push's trust policy must allow sts:AssumeRoleWithWebIdentity from the GitHub OIDC provider, scoped to both the staging and production branches (image builds run on either)."
+    error_message = "ecr_push's trust policy must allow sts:AssumeRoleWithWebIdentity from the GitHub OIDC provider, scoped to exactly the two configured staging/production branch subjects — no more, no fewer."
   }
 
   # --- isolation proof: neither an arbitrary branch nor a forked repo's OIDC sub claim matches ---
@@ -104,6 +106,21 @@ run "verify_ecr_push_branch_scoping" {
       ])
     ])
     error_message = "ecr_push's EcrPush statement must be scoped to exactly the four ADR-0038 repository ARNs, in the configured platform_account_id — no more, no fewer, and no resource=\"*\"."
+  }
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.ecr_push.json).Statement :
+      statement.Sid == "EcrPush"
+      && toset(flatten([statement.Action])) == toset([
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:CompleteLayerUpload",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart",
+      ])
+    ])
+    error_message = "ecr_push's EcrPush statement must grant exactly the five image-push actions — no ecr:* wildcard, no pull actions (ecr:BatchGetImage), and no repository-management actions (ecr:DeleteRepository/ecr:SetRepositoryPolicy)."
   }
 
   assert {

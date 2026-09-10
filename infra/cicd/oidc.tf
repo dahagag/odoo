@@ -174,9 +174,15 @@ data "aws_iam_policy_document" "ecr_push" {
   }
 
   statement {
-    sid       = "EcrPush"
-    effect    = "Allow"
-    actions   = ["ecr:*"]
+    sid    = "EcrPush"
+    effect = "Allow"
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:CompleteLayerUpload",
+      "ecr:InitiateLayerUpload",
+      "ecr:PutImage",
+      "ecr:UploadLayerPart",
+    ]
     resources = local.ecr_repository_arns
   }
 }

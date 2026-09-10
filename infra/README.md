@@ -26,7 +26,10 @@ infra/
 │                       (ecr_push) added, reversing ADR-0017's self-hosted-runner approach in
 │                       favor of `sts:AssumeRoleWithWebIdentity` — no long-lived AWS keys, no
 │                       runner instance to patch. Each role's trust policy is scoped to this
-│                       repository and its one deploying branch, not merely branch protection.
+│                       repository: the deploy roles each trust their own one branch
+│                       (staging_deploy → staging_branch, production_deploy → production_branch),
+│                       while ecr_push trusts both staging_branch and production_branch (image
+│                       builds run on either). Not merely branch protection.
 │                       Independent of `foundation` (own state key, own `tofu init`/`plan`/
 │                       `apply`); the deploy roles' actual permissions are a deliberate placeholder
 │                       until a later ticket defines what a deploy touches (see oidc.tf) — ecr_push

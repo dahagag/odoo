@@ -42,13 +42,13 @@ run "verify_tofu_runner_pull_grant_is_narrow" {
   }
 
   assert {
-    condition = anytrue([
+    condition = alltrue([
       for statement in jsondecode(data.aws_iam_policy_document.tofu_runner_pull.json).Statement :
-      statement.Effect == "Allow"
-      && contains(flatten([statement.Principal.AWS]), "arn:aws:iam::222222222222:role/hosting-tofu-runner-execution")
-      && length(flatten([statement.Principal.AWS])) == 1
+      statement.Effect != "Allow" || (
+        toset(flatten([statement.Principal.AWS])) == toset(["arn:aws:iam::222222222222:role/hosting-tofu-runner-execution"])
+      )
     ])
-    error_message = "tofu_runner's repository policy must grant exactly one principal: the configured Hosting Account execution role ARN, not a wildcard or additional principal."
+    error_message = "Every Allow statement in tofu_runner's repository policy must authorize exactly one principal: the configured Hosting Account execution role ARN, not a wildcard or additional principal."
   }
 
   assert {
