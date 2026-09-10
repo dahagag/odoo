@@ -48,9 +48,15 @@ and carry different risk:
   [#212](https://github.com/dahagag/odoo/issues/212)'s staging/production deploy roles. This
   mirrors [#153](https://github.com/dahagag/odoo/issues/153)'s discipline — a PR-time image-build
   job gets only the permission it needs, never deploy-adjacent access it doesn't. The role's IAM
-  policy grants `ecr:*` actions scoped to the four repos by ARN pattern
+  policy grants only the push actions a build needs — `ecr:BatchCheckLayerAvailability`,
+  `ecr:BatchGetImage`, `ecr:PutImage`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`,
+  `ecr:CompleteLayerUpload` — scoped to the four repos by ARN pattern
   (`arn:aws:ecr:<region>:<platform_account_id>:repository/agentic-erp/<image>`); no cross-module
   remote-state lookup is needed since the repo names are already fixed by the topology decision
+  above. `ecr:PutImageTagMutability` is deliberately excluded, and all four repositories are
+  created with `IMMUTABLE` tags, so a pushed content-hash tag can never be silently overwritten.
+  A separate statement grants `ecr:GetAuthorizationToken` on `Resource: "*"` — this action doesn't
+  support resource-level scoping, so it can't be folded into the per-repository ARN statement
   above.
 - **Local-dev pull (developer machines)**: AWS SSO plus `aws ecr get-login-password`. No
   long-lived IAM user credentials are distributed to developer machines, matching
@@ -110,7 +116,9 @@ provider and the `staging_branch`/`production_branch` vars the new role's trust 
 Clean cutover, not a parallel-run transition period: once ECR is proven (a successful build and
 deploy from it), GHCR pushes stop and the existing GHCR images are deleted entirely. Exact timing
 of the deletion (immediate vs. after a brief verification window) is left to the implementation
-issues below.
+issues below. Deletion (#254) is sequenced after both #253 (CI retargeted to ECR) and #255
+(local-dev docs updated) land — every remaining GHCR reference in this repo is gone before the
+images themselves are.
 
 ## Sequencing
 
@@ -120,7 +128,10 @@ so there is no existing GHCR-based work to undo — building them against GHCR n
 immediately after would be wasted effort. The existing `build-prod-image`/`build-image` jobs
 added by [#213](https://github.com/dahagag/odoo/issues/213) are **modified in place** to target
 ECR rather than retired in favor of new jobs — the build steps themselves (Dockerfile, content-hash
-tagging, skip-if-published check) are unchanged, only the push target and its auth action change.
+tagging, skip-if-published check) are unchanged, only the push target and its auth action change:
+both jobs gain `id-token: write` (for OIDC to the new CI-push role) alongside the existing
+`contents: read`, and once the cutover is complete, `packages: write` is dropped — it was
+GHCR-specific and grants no useful access once these jobs no longer push there.
 
 ## Deferred
 
