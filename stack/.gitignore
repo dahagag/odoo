@@ -2,3 +2,11 @@ node_modules/
 dist/
 *.tsbuildinfo
 coverage/
+
+# This directory (docs/adr/0034) is a real JS/TS monorepo, not Odoo's own OWL asset tooling the
+# root .gitignore's blanket ignores exist for - its manifests are checked in like any other
+# project's.
+!/**/package.json
+!/**/package-lock.json
+!/**/tsconfig.json
+!/**/jsconfig.json
