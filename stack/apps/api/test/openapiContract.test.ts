@@ -82,7 +82,22 @@ describe('findBreakingChanges', () => {
   it('flags a removed security scheme (an org token/SigV4 caller loses access, docs/adr/0036)', () => {
     const previous = { paths: { '/v1/x': { get: { security: [{ orgToken: [] }], responses: { 200: {} } } } } };
     const current = { paths: { '/v1/x': { get: { security: [{ sigv4: [] }], responses: { 200: {} } } } } };
-    expect(findBreakingChanges(previous, current)).toContain('removed security scheme "orgToken" for GET /v1/x');
+    expect(findBreakingChanges(previous, current)).toContain('removed security requirement "orgToken" for GET /v1/x');
+  });
+
+  it('flags merging separately-sufficient security alternatives into one AND\'d requirement', () => {
+    // An orgToken-only caller and a sigv4-only caller could each authenticate before; requiring
+    // both together now locks both of them out, even though the flattened scheme set is
+    // unchanged ({orgToken, sigv4} either way).
+    const previous = {
+      paths: { '/v1/x': { get: { security: [{ orgToken: [] }, { sigv4: [] }], responses: { 200: {} } } } },
+    };
+    const current = {
+      paths: { '/v1/x': { get: { security: [{ orgToken: [], sigv4: [] }], responses: { 200: {} } } } },
+    };
+    const issues = findBreakingChanges(previous, current);
+    expect(issues).toContain('removed security requirement "orgToken" for GET /v1/x');
+    expect(issues).toContain('removed security requirement "sigv4" for GET /v1/x');
   });
 
   it('flags newly-required authentication on a previously-open endpoint (e.g. /healthz gaining auth)', () => {

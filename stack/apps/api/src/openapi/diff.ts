@@ -42,15 +42,18 @@ function jsonSchemaOf(doc: OpenApiDocument, content: Record<string, MediaTypeObj
   return resolveSchema(doc, content?.['application/json']?.schema);
 }
 
-/** The named security schemes an operation accepts (docs/adr/0036 assigns a distinct scheme to
- * each surface - `orgToken` vs `sigv4`). Flattens OpenAPI's `security` array-of-requirement-
- * objects, since this contract never combines two schemes into one AND'd requirement. */
-function securitySchemesOf(operation: OperationObject): Set<string> {
-  const schemes = new Set<string>();
-  for (const requirement of operation.security ?? []) {
-    for (const name of Object.keys(requirement)) schemes.add(name);
-  }
-  return schemes;
+/** Each OpenAPI Security Requirement Object in `security` is its own alternative (OR'd against
+ * the others); the scheme names inside one object are AND'd together. Kept as one Set per
+ * alternative (not flattened) so a change that merges separately-sufficient alternatives into
+ * one combined requirement (docs/adr/0036: an orgToken-only or SigV4-only caller losing access)
+ * is still caught as breaking. */
+function securityAlternativesOf(operation: OperationObject): Set<string>[] {
+  return (operation.security ?? []).map((requirement) => new Set(Object.keys(requirement)));
+}
+
+function isSubsetOf(smaller: Set<string>, larger: Set<string>): boolean {
+  for (const scheme of smaller) if (!larger.has(scheme)) return false;
+  return true;
 }
 
 const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
@@ -85,17 +88,18 @@ export function findBreakingChanges(previous: OpenApiDocument, current: OpenApiD
         }
       }
 
-      const previousSchemes = securitySchemesOf(previousOp);
-      const currentSchemes = securitySchemesOf(currentOp);
-      for (const scheme of previousSchemes) {
-        if (!currentSchemes.has(scheme)) {
-          // An existing caller credentialed for `scheme` (e.g. an org token, docs/adr/0036)
-          // can no longer authenticate against this operation at all - as breaking as removing
-          // the operation itself.
-          issues.push(`removed security scheme "${scheme}" for ${label}`);
+      const previousAlternatives = securityAlternativesOf(previousOp);
+      const currentAlternatives = securityAlternativesOf(currentOp);
+      for (const previousAlt of previousAlternatives) {
+        const stillSatisfiable = currentAlternatives.some((currentAlt) => isSubsetOf(currentAlt, previousAlt));
+        if (!stillSatisfiable) {
+          // A caller credentialed for exactly `previousAlt` (e.g. an org token alone,
+          // docs/adr/0036) can no longer satisfy any current alternative - as breaking as
+          // removing the operation itself.
+          issues.push(`removed security requirement "${[...previousAlt].sort().join('+')}" for ${label}`);
         }
       }
-      if (previousSchemes.size === 0 && currentSchemes.size > 0) {
+      if (previousAlternatives.length === 0 && currentAlternatives.length > 0) {
         // The operation accepted anonymous callers before (e.g. /healthz, /readyz today) and
         // now rejects every one of them with a 401 - as breaking, in the other direction, as
         // the removed-scheme case above.
