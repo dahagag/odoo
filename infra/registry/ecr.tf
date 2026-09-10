@@ -40,46 +40,35 @@ resource "aws_ecr_repository" "administration_stack_api" {
 # ---------------------------------------------------------------------------
 # Lifecycle policies. Count-based (not age-based): both images are content-hash tagged and
 # deduped on push, so a deploy pins a specific content-hash tag — age-based expiry risks deleting
-# a tag a stale deploy still references purely because it is old (ADR-0038).
+# a tag a stale deploy still references purely because it is old (ADR-0038). Both repositories'
+# rules are identical in shape, differing only by retention count, so one for_each renders both.
 #
 # tofu-runner and administration-stack-api deliberately get no lifecycle policy yet: neither has
 # a CI build workflow in this repo, so there is no build cadence or tagging scheme to set a rule
 # against (ADR-0038, "Deferred").
 # ---------------------------------------------------------------------------
 
-resource "aws_ecr_lifecycle_policy" "odoo_dev" {
-  repository = aws_ecr_repository.odoo_dev.name
-
-  policy = jsonencode({
-    rules = [
-      {
-        rulePriority = 1
-        description  = "Keep the ${var.odoo_dev_retention_count} most recent images."
-        selection = {
-          tagStatus   = "any"
-          countType   = "imageCountMoreThan"
-          countNumber = var.odoo_dev_retention_count
-        }
-        action = {
-          type = "expire"
-        }
-      }
-    ]
-  })
+locals {
+  ecr_retention_by_repository = {
+    odoo_dev  = { repository_name = aws_ecr_repository.odoo_dev.name, retention_count = var.odoo_dev_retention_count }
+    odoo_prod = { repository_name = aws_ecr_repository.odoo_prod.name, retention_count = var.odoo_prod_retention_count }
+  }
 }
 
-resource "aws_ecr_lifecycle_policy" "odoo_prod" {
-  repository = aws_ecr_repository.odoo_prod.name
+resource "aws_ecr_lifecycle_policy" "retention" {
+  for_each = local.ecr_retention_by_repository
+
+  repository = each.value.repository_name
 
   policy = jsonencode({
     rules = [
       {
         rulePriority = 1
-        description  = "Keep the ${var.odoo_prod_retention_count} most recent images."
+        description  = "Keep the ${each.value.retention_count} most recent images."
         selection = {
           tagStatus   = "any"
           countType   = "imageCountMoreThan"
-          countNumber = var.odoo_prod_retention_count
+          countNumber = each.value.retention_count
         }
         action = {
           type = "expire"
