@@ -136,7 +136,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      id-token: write
     outputs:
       image: ${{ steps.tag.outputs.image }}
     steps:
@@ -147,6 +147,12 @@ jobs:
           echo "odoo_image=$(sed -n -E 's/^ODOO_IMAGE=(.*)$/\1/p' .env.example)" >> "$GITHUB_OUTPUT"
           echo "uid=$(id -u)" >> "$GITHUB_OUTPUT"
           echo "gid=$(id -g)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: ./.github/actions/ecr-login
+        id: ecr-login
+        with:
+          role-arn: ${{ vars.ECR_PUSH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
       - name: Compute the image tag from its content inputs
         # Tag by the hash of everything that actually affects the image's contents
         # (not github.sha), so a PR that only touches custom_addons/ or scripts/
@@ -154,9 +160,7 @@ jobs:
         # hashFiles() only works inside a step's own expression context, not in a
         # job-level env: block, so it's computed here and read via step outputs.
         id: tag
-        run: echo "image=ghcr.io/${{ github.repository }}/odoo-dev:${{ hashFiles('docker/odoo-dev.Dockerfile', 'docker/*.sh', 'requirements.txt', '.env.example') }}" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@v3
-      - uses: ./.github/actions/ghcr-login
+        run: echo "image=${{ steps.ecr-login.outputs.registry }}/agentic-erp/odoo-dev:${{ hashFiles('docker/odoo-dev.Dockerfile', 'docker/*.sh', 'requirements.txt', '.env.example') }}" >> "$GITHUB_OUTPUT"
       - name: Check whether this image tag is already published
         id: existing
         env:
@@ -188,12 +192,18 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - name: Read defaults shared with local dev (.env.example)
         id: defaults
         run: echo "odoo_image=$(sed -n -E 's/^ODOO_IMAGE=(.*)$/\1/p' .env.example)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: ./.github/actions/ecr-login
+        id: ecr-login
+        with:
+          role-arn: ${{ vars.ECR_PUSH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
       - name: Compute the image tag from its content inputs
         # This image bakes in the whole application tree (odoo-bin, odoo/, addons/,
         # custom_addons/), not the small, rarely-changing set of build inputs build-image
@@ -212,9 +222,7 @@ jobs:
               git rev-parse "HEAD:$path"
             done | sha256sum | cut -d' ' -f1
           )
-          echo "image=ghcr.io/${{ github.repository }}/odoo-prod:$content_id" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@v3
-      - uses: ./.github/actions/ghcr-login
+          echo "image=${{ steps.ecr-login.outputs.registry }}/agentic-erp/odoo-prod:$content_id" >> "$GITHUB_OUTPUT"
       - name: Check whether this image tag is already published
         id: existing
         env:

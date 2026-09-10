@@ -1,0 +1,29 @@
+name: Log in to Amazon ECR
+description: >-
+  Assume the github-actions-ecr-push OIDC role (infra/cicd, ADR-0038 / issue #252) via
+  aws-actions/configure-aws-credentials, then log in to the agentic-erp ECR registry with the
+  resulting credentials.
+inputs:
+  role-arn:
+    description: >-
+      ARN of the ecr_push OIDC role to assume. Not a secret (docs/adr/0017: the role ARN isn't
+      sensitive on its own — the trust policy is what restricts who can assume it), so callers
+      should pass a repository/environment variable (`vars.*`), not `secrets.*`.
+    required: true
+  aws-region:
+    description: AWS region the agentic-erp ECR repositories live in.
+    required: true
+outputs:
+  registry:
+    description: This account's ECR registry hostname, as resolved by aws-actions/amazon-ecr-login.
+    value: ${{ steps.login.outputs.registry }}
+runs:
+  using: composite
+  steps:
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.role-arn }}
+        aws-region: ${{ inputs.aws-region }}
+    - name: Log in to Amazon ECR
+      id: login
+      uses: aws-actions/amazon-ecr-login@v2
