@@ -36,8 +36,10 @@ repository that needs it instead of leaking it across a shared policy.
 
 Tags are unchanged — the same content-hash tagging scheme CI already computes (`odoo-dev` hashes
 its Dockerfile/docker-scripts/requirements/`.env.example`; `odoo-prod` hashes the git tree-object
-IDs of the app tree), which also drives the existing "skip build if tag already published" logic
-in `ci.yml`. No new tag scheme is introduced by this migration.
+IDs of the app tree — `odoo-bin`, `odoo`, `addons`, `custom_addons` — plus `.env.example`,
+`requirements.txt`, `docker/odoo-prod.Dockerfile`, `docker/odoo-prod.conf`, and
+`docker/pip-install-requirements.sh`), which also drives the existing "skip build if tag already
+published" logic in `ci.yml`. No new tag scheme is introduced by this migration.
 
 ## Auth model
 
