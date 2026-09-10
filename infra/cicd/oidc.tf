@@ -116,3 +116,73 @@ resource "aws_iam_role_policy" "production_deploy" {
   role   = aws_iam_role.production_deploy.id
   policy = data.aws_iam_policy_document.production_deploy.json
 }
+
+# ---------------------------------------------------------------------------
+# ECR push role (ADR-0038 / issue #252): a third, separate role from the two above — not a reuse
+# of staging_deploy/production_deploy, mirroring #153's discipline that a PR-time image-build job
+# gets only the permission it needs, never deploy-adjacent access it doesn't. Its trust policy
+# reuses the same OIDC provider and is scoped to whichever of staging_branch/production_branch a
+# workflow run is on, since image builds only run on push to those two branches today (a
+# single-valued condition key matches if the token's `sub` equals any value in the list — this is
+# an OR, not a second independent gate).
+# ---------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "ecr_push_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github_actions.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = [local.github_oidc_audience]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values = [
+        "repo:${var.github_repository}:ref:refs/heads/${var.staging_branch}",
+        "repo:${var.github_repository}:ref:refs/heads/${var.production_branch}",
+      ]
+    }
+  }
+}
+
+resource "aws_iam_role" "ecr_push" {
+  name               = "github-actions-ecr-push"
+  assume_role_policy = data.aws_iam_policy_document.ecr_push_trust.json
+}
+
+data "aws_iam_policy_document" "ecr_push" {
+  # ecr:GetAuthorizationToken (the `docker login` step of every ECR push) is not a
+  # resource-level action — ECR only recognizes it against resource "*"; scoping it to the four
+  # repository ARNs below would silently never match, leaving the push flow unable to
+  # authenticate. It carries no confidentiality of its own (the token is still repo-scoped by the
+  # ecr:* grant below, and STS already scopes who can assume this role at all), so granting it
+  # here has no security effect beyond letting the role actually authenticate.
+  statement {
+    sid       = "EcrAuth"
+    effect    = "Allow"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "EcrPush"
+    effect    = "Allow"
+    actions   = ["ecr:*"]
+    resources = local.ecr_repository_arns
+  }
+}
+
+resource "aws_iam_role_policy" "ecr_push" {
+  name   = "github-actions-ecr-push"
+  role   = aws_iam_role.ecr_push.id
+  policy = data.aws_iam_policy_document.ecr_push.json
+}

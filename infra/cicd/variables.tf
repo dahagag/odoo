@@ -22,6 +22,22 @@ variable "production_branch" {
   default     = "main/19.0"
 }
 
+variable "platform_account_id" {
+  type        = string
+  description = "Platform Account id (ADR-0038) — the account infra/registry's four ECR repositories live in. Used only to build the ecr_push role's resource ARN pattern (arn:aws:ecr:<region>:<platform_account_id>:repository/agentic-erp/<image>); no cross-module remote-state lookup, since the repository names are already fixed by ADR-0038's naming decision."
+}
+
+variable "ecr_repository_names" {
+  type        = list(string)
+  description = "ECR repository names (ADR-0038 topology) the ecr_push role's policy is scoped to, by ARN pattern."
+  default = [
+    "agentic-erp/odoo-dev",
+    "agentic-erp/odoo-prod",
+    "agentic-erp/tofu-runner",
+    "agentic-erp/administration-stack-api",
+  ]
+}
+
 variable "github_oidc_thumbprint" {
   type        = string
   description = <<-EOT

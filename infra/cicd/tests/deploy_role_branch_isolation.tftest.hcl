@@ -25,10 +25,11 @@ provider "aws" {
 }
 
 variables {
-  aws_region        = "us-east-1"
-  github_repository = "dahagag/odoo"
-  staging_branch    = "dev/19.0"
-  production_branch = "main/19.0"
+  aws_region          = "us-east-1"
+  github_repository   = "dahagag/odoo"
+  staging_branch      = "dev/19.0"
+  production_branch   = "main/19.0"
+  platform_account_id = "333333333333"
 }
 
 override_resource {
