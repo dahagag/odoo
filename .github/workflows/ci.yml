@@ -17,18 +17,20 @@ jobs:
       docs_build: ${{ steps.check.outputs.docs_build }}
       infra_relevant: ${{ steps.check.outputs.infra_relevant }}
       lint_relevant: ${{ steps.check.outputs.lint_relevant }}
+      stack_relevant: ${{ steps.check.outputs.stack_relevant }}
       release_version_relevant: ${{ steps.check.outputs.release_version_relevant }}
       manifest_version_relevant: ${{ steps.check.outputs.manifest_version_relevant }}
       test_modules: ${{ steps.plan.outputs.modules }}
     steps:
-      # image_relevant, docs_build, infra_relevant, lint_relevant, release_version_relevant,
-      # and manifest_version_relevant are deliberately independent of each other:
-      # docs-build-tests, infra-checks, release-version-tests, and manifest-version-check
-      # run on bare ubuntu-latest and never touch the Odoo dev image, and `ruff`
-      # (lint_relevant) doesn't need it either (see docs/adr/0028) — none of these should
-      # force build-image/test to run, and a docker/**-only or requirements.txt-only change
-      # (image_relevant) shouldn't force lint to run since it can't affect `ruff`'s output.
-      - name: Check for changes affecting the Odoo dev image, lint, docs, tests, or infra
+      # image_relevant, docs_build, infra_relevant, lint_relevant, stack_relevant,
+      # release_version_relevant, and manifest_version_relevant are deliberately independent
+      # of each other: docs-build-tests, infra-checks, stack-checks, release-version-tests,
+      # and manifest-version-check run on bare ubuntu-latest and never touch the Odoo dev
+      # image, and `ruff` (lint_relevant) doesn't need it either (see docs/adr/0028) — none
+      # of these should force build-image/test to run, and a docker/**-only or
+      # requirements.txt-only change (image_relevant) shouldn't force lint, stack-checks, or
+      # release-version-tests to run since it can't affect their output.
+      - name: Check for changes affecting the Odoo dev image, lint, docs, tests, infra, the stack, or release-version derivation
         id: check
         uses: dorny/paths-filter@v3
         with:
@@ -54,6 +56,9 @@ jobs:
               - 'ruff.toml'
               - 'scripts/dev.sh'
               - 'scripts/dev.ps1'
+              - '.github/workflows/ci.yml'
+            stack_relevant:
+              - 'stack/**'
               - '.github/workflows/ci.yml'
             release_version_relevant:
               - 'scripts/release_version/**'
@@ -332,25 +337,77 @@ jobs:
             fi
           done
 
+  stack-checks:
+    name: Stack checks
+    needs: changes
+    if: needs.changes.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        if: needs.changes.outputs.stack_relevant == 'true'
+        with:
+          fetch-depth: 1
+          # This job runs `npm ci` on PR-controlled dependencies; a malicious lifecycle script
+          # must not be able to read a persisted git credential out of local config afterward.
+          persist-credentials: false
+      - name: Fetch the base branch's tip for the OpenAPI breaking-change diff
+        if: needs.changes.outputs.stack_relevant == 'true'
+        # openapi:breaking-check reads the committed document at origin/<base_ref> (git show).
+        # A full fetch-depth: 0 checkout would work too, but clones this repo's entire history
+        # to do it - a shallow, single-commit fetch of just the base branch's tip is enough,
+        # since `git show <ref>:<path>` only needs that one commit's tree.
+        run: git fetch --no-tags --depth=1 origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+      - uses: actions/setup-node@v4
+        if: needs.changes.outputs.stack_relevant == 'true'
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: stack/package-lock.json
+      - name: npm ci
+        if: needs.changes.outputs.stack_relevant == 'true'
+        working-directory: stack
+        run: npm ci
+      - name: Typecheck
+        if: needs.changes.outputs.stack_relevant == 'true'
+        working-directory: stack
+        run: npm run typecheck
+      - name: Test
+        if: needs.changes.outputs.stack_relevant == 'true'
+        working-directory: stack
+        run: npm run test
+      - name: OpenAPI document is committed and matches the validators (docs/adr/0036)
+        if: needs.changes.outputs.stack_relevant == 'true'
+        working-directory: stack
+        run: npm run openapi:check
+      - name: OpenAPI breaking-change gate against the PR's base branch
+        if: needs.changes.outputs.stack_relevant == 'true'
+        working-directory: stack
+        env:
+          OPENAPI_BASE_REF: origin/${{ github.base_ref }}
+        run: npm run openapi:breaking-check
+
   ci-required:
     name: CI required checks (required)
-    needs: [lint, docs-build-tests, infra-checks, release-version-tests, manifest-version-check]
+    needs: [lint, docs-build-tests, infra-checks, stack-checks, release-version-tests, manifest-version-check]
     # if: always() so this still runs (and can fail) even when lint,
-    # docs-build-tests, infra-checks, release-version-tests, or manifest-version-check was
-    # skipped — e.g. because the upstream `changes` job itself errored. GitHub branch
-    # protection treats a skipped required check as passing, so without this
-    # a `changes` failure would let a PR merge without any of them ever
+    # docs-build-tests, infra-checks, stack-checks, release-version-tests, or
+    # manifest-version-check was skipped — e.g. because the upstream `changes` job itself
+    # errored. GitHub branch protection treats a skipped required check as passing, so
+    # without this a `changes` failure would let a PR merge without any of them ever
     # having run.
     if: always()
     runs-on: ubuntu-latest
     permissions: {}
     steps:
-      - name: Require lint, docs-build-tests, infra-checks, release-version-tests, and manifest-version-check to have succeeded
-        if: needs.lint.result != 'success' || needs.docs-build-tests.result != 'success' || needs.infra-checks.result != 'success' || needs.release-version-tests.result != 'success' || needs.manifest-version-check.result != 'success'
+      - name: Require lint, docs-build-tests, infra-checks, stack-checks, release-version-tests, and manifest-version-check to have succeeded
+        if: needs.lint.result != 'success' || needs.docs-build-tests.result != 'success' || needs.infra-checks.result != 'success' || needs.stack-checks.result != 'success' || needs.release-version-tests.result != 'success' || needs.manifest-version-check.result != 'success'
         run: |
           echo "lint: ${{ needs.lint.result }}"
           echo "docs-build-tests: ${{ needs.docs-build-tests.result }}"
           echo "infra-checks: ${{ needs.infra-checks.result }}"
+          echo "stack-checks: ${{ needs.stack-checks.result }}"
           echo "release-version-tests: ${{ needs.release-version-tests.result }}"
           echo "manifest-version-check: ${{ needs.manifest-version-check.result }}"
           exit 1
