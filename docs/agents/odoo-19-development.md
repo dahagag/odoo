@@ -102,7 +102,7 @@ until the same checks CI's `infra-checks` job runs have been run locally first â
 pushing to a PR to discover a formatting or validation failure:
 
 - `tofu fmt -check -recursive infra/` and, per directory (`infra/bootstrap`, `infra/foundation`,
-  `infra/modules/trial_org`, `infra/modules/trial_org/examples/validate`), `tofu init
+  `infra/cicd`, `infra/modules/trial_org`, `infra/modules/trial_org/examples/validate`), `tofu init
   -backend=false -input=false && tofu validate` (see `infra/README.md`'s "Running locally"
   section). If the `tofu` CLI isn't installed in the current environment, say so explicitly
   rather than skipping the check silently â€” CI's own `infra-checks` job is then the first real
