@@ -46,6 +46,7 @@ jobs:
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
             prod_image_relevant:
+              - '.env.example'
               - 'odoo-bin'
               - 'odoo/**'
               - 'addons/**'
@@ -206,7 +207,7 @@ jobs:
         id: tag
         run: |
           content_id=$(
-            for path in odoo-bin odoo addons custom_addons requirements.txt \
+            for path in .env.example odoo-bin odoo addons custom_addons requirements.txt \
               docker/odoo-prod.Dockerfile docker/odoo-prod.conf docker/pip-install-requirements.sh; do
               git rev-parse "HEAD:$path"
             done | sha256sum | cut -d' ' -f1
