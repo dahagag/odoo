@@ -132,7 +132,13 @@ jobs:
   build-image:
     name: Build development image
     needs: changes
-    if: needs.changes.outputs.image_relevant == 'true'
+    # head.repo.full_name == repository excludes a fork's pull_request run: this workflow only
+    # triggers on pull_request (no push trigger), whose OIDC token claims (sub/repository) are
+    # always the base repo regardless of whether the PR's head branch lives here or in a fork
+    # (see infra/cicd/oidc.tf's ecr_push_trust comment) -- ecr_push's IAM trust policy alone
+    # cannot tell the two apart, so this check is the actual gate keeping a fork's PR from ever
+    # reaching the ecr-login step below.
+    if: needs.changes.outputs.image_relevant == 'true' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -188,7 +194,9 @@ jobs:
   build-prod-image:
     name: Build and publish production image
     needs: changes
-    if: needs.changes.outputs.prod_image_relevant == 'true'
+    # See build-image's identical guard above: excludes a fork's pull_request run, which
+    # ecr_push's IAM trust policy alone cannot distinguish from this repo's own.
+    if: needs.changes.outputs.prod_image_relevant == 'true' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: read
