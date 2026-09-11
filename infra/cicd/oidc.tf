@@ -59,31 +59,26 @@ resource "aws_iam_role" "staging_deploy" {
 }
 
 # ---------------------------------------------------------------------------
-# Issue #215: staging_deploy's policy stays a deploy-permission placeholder for the app deploy
-# workflow #202/#216 defers to a later ticket (see the module-level comment above), but it now
-# carries a second, real, narrow purpose — applying infra/cicd and infra/registry themselves on a
-# push to staging_branch — since #215's acceptance criteria call for "a merge... applies the plan
-# using the corresponding branch-scoped role," reusing these two roles rather than adding a third
-# pair. Two statement groups below are that grant: OpenTofu S3-backend state read/write + DynamoDB
-# lock, and management of the exact resource shapes infra/cicd (its own OIDC provider + these three
-# roles) and infra/registry (the four ECR repositories) create — nothing broader.
+# Issue #215: staging_deploy's and production_deploy's policies stay a deploy-permission
+# placeholder for the app deploy workflow #202/#216 defers to a later ticket (see the module-level
+# comment above), but they now carry a second, real, narrow purpose — applying infra/cicd and
+# infra/registry themselves, staging_deploy on a push to staging_branch and production_deploy on a
+# push to production_branch — since #215's acceptance criteria call for "a merge... applies the
+# plan using the corresponding branch-scoped role," reusing these two roles rather than adding a
+# third pair. infra_management_statements below is that grant, shared verbatim between both roles
+# via source_policy_documents (not copy-pasted per role): OpenTofu S3-backend state read/write +
+# DynamoDB lock, and management of the exact resource shapes infra/cicd (its own OIDC provider +
+# these four roles) and infra/registry (the four ECR repositories) create — nothing broader.
 #
-# Self-management tradeoff, called out deliberately rather than left implicit: this grants
-# staging_deploy the ability to modify its own (and production_deploy's) trust policy and inline
-# policy via a `tofu apply` from staging_branch. That is not a new escalation path — anyone who can
-# merge to staging_branch can already edit oidc.tf itself and have this same effect on the next
-# apply — but it does mean the blast radius of a compromised staging_branch merge extends to these
-# IAM resources directly, not just to whatever staging_deploy's policy said at merge time.
+# Self-management tradeoff, called out deliberately rather than left implicit: this grants each
+# role the ability to modify its own (and the other's) trust policy and inline policy via a
+# `tofu apply` from its own branch. That is not a new escalation path — anyone who can merge to
+# either branch can already edit oidc.tf itself and have this same effect on the next apply — but
+# it does mean the blast radius of a compromised branch merge extends to these IAM resources
+# directly, not just to whatever the role's policy said at merge time.
 # ---------------------------------------------------------------------------
 
-data "aws_iam_policy_document" "staging_deploy" {
-  statement {
-    sid       = "PlaceholderCallerIdentity"
-    effect    = "Allow"
-    actions   = ["sts:GetCallerIdentity"]
-    resources = ["*"]
-  }
-
+data "aws_iam_policy_document" "infra_management_statements" {
   statement {
     sid    = "TofuStateBackend"
     effect = "Allow"
@@ -151,6 +146,17 @@ data "aws_iam_policy_document" "staging_deploy" {
       "ecr:ListTagsForResource",
     ]
     resources = local.ecr_repository_arns
+  }
+}
+
+data "aws_iam_policy_document" "staging_deploy" {
+  source_policy_documents = [data.aws_iam_policy_document.infra_management_statements.json]
+
+  statement {
+    sid       = "PlaceholderCallerIdentity"
+    effect    = "Allow"
+    actions   = ["sts:GetCallerIdentity"]
+    resources = ["*"]
   }
 }
 
@@ -189,85 +195,18 @@ resource "aws_iam_role" "production_deploy" {
   assume_role_policy = data.aws_iam_policy_document.production_deploy_trust.json
 }
 
-# See staging_deploy's identical statement group above (issue #215) for the full rationale —
-# production_deploy carries the same infra-management/backend grant, scoped identically, so a push
-# to production_branch can apply infra/cicd and infra/registry too.
+# See infra_management_statements above (issue #215) for the full rationale — production_deploy
+# carries the same infra-management/backend grant, so a push to production_branch can apply
+# infra/cicd and infra/registry too.
 
 data "aws_iam_policy_document" "production_deploy" {
+  source_policy_documents = [data.aws_iam_policy_document.infra_management_statements.json]
+
   statement {
     sid       = "PlaceholderCallerIdentity"
     effect    = "Allow"
     actions   = ["sts:GetCallerIdentity"]
     resources = ["*"]
-  }
-
-  statement {
-    sid    = "TofuStateBackend"
-    effect = "Allow"
-    actions = [
-      "s3:GetObject",
-      "s3:PutObject",
-    ]
-    resources = local.managed_state_object_arns
-  }
-
-  statement {
-    sid    = "TofuStateLock"
-    effect = "Allow"
-    actions = [
-      "dynamodb:GetItem",
-      "dynamodb:PutItem",
-      "dynamodb:DeleteItem",
-    ]
-    resources = [var.tofu_state_lock_table_arn]
-  }
-
-  statement {
-    sid    = "ManageCicdOidcAndRoles"
-    effect = "Allow"
-    actions = [
-      "iam:GetOpenIDConnectProvider",
-      "iam:CreateOpenIDConnectProvider",
-      "iam:UpdateOpenIDConnectProviderThumbprint",
-      "iam:TagOpenIDConnectProvider",
-      "iam:GetRole",
-      "iam:CreateRole",
-      "iam:UpdateRole",
-      "iam:UpdateAssumeRolePolicy",
-      "iam:DeleteRole",
-      "iam:TagRole",
-      "iam:PutRolePolicy",
-      "iam:GetRolePolicy",
-      "iam:DeleteRolePolicy",
-      "iam:ListRolePolicies",
-      "iam:ListAttachedRolePolicies",
-      "iam:ListInstanceProfilesForRole",
-    ]
-    resources = [
-      local.managed_oidc_provider_arn,
-      local.managed_role_name_pattern,
-    ]
-  }
-
-  statement {
-    sid    = "ManageRegistryRepositories"
-    effect = "Allow"
-    actions = [
-      "ecr:CreateRepository",
-      "ecr:DescribeRepositories",
-      "ecr:DeleteRepository",
-      "ecr:PutLifecyclePolicy",
-      "ecr:GetLifecyclePolicy",
-      "ecr:DeleteLifecyclePolicy",
-      "ecr:SetRepositoryPolicy",
-      "ecr:GetRepositoryPolicy",
-      "ecr:DeleteRepositoryPolicy",
-      "ecr:PutImageTagMutability",
-      "ecr:PutImageScanningConfiguration",
-      "ecr:TagResource",
-      "ecr:ListTagsForResource",
-    ]
-    resources = local.ecr_repository_arns
   }
 }
 

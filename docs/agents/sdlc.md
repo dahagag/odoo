@@ -87,15 +87,27 @@ which cover issue triage, not PR review.
 
 The workflow itself triggers on every PR targeting either `dev/19.0`
 (regular feature work) or `main/19.0` (release PRs promoting `dev/19.0` to
-the demo instance) — no path filter at the trigger level. A preliminary
-`changes` job diffs the PR against its base for `custom_addons/**`,
-`docker/**`, `scripts/dev.sh`, `scripts/dev.ps1`, `scripts/docs_build/**`,
-`requirements.txt`, `compose.yaml`, `infra/**`, `ruff.toml`, `odoo-bin`,
-`odoo/**`, `addons/**`, or the workflow file itself, and the other jobs
-read its `image_relevant`, `prod_image_relevant`, `docs_build`,
-`infra_relevant`, and `lint_relevant` outputs to decide whether to actually
-do anything. There is no separate deploy workflow — Render's native branch
-auto-deploy handles promotion once a release PR merges.
+the demo instance) — no path filter at the trigger level. Since issue #215
+it also triggers on a **push** to either branch (i.e. a PR merge), so that
+`infra-apply` (below) can gate on the same commit's `infra-checks` result
+via a same-workflow `needs:`, rather than reconstructing that gate in a
+second workflow file — the pre-existing PR-only jobs guard on
+`github.event.pull_request...`, which is simply absent on a push event, so
+they resolve to `skipped` rather than erroring. A preliminary `changes` job
+diffs the run against its base (the PR's base branch, or the pre-push SHA
+on a push) for `custom_addons/**`, `docker/**`, `scripts/dev.sh`,
+`scripts/dev.ps1`, `scripts/docs_build/**`, `requirements.txt`,
+`compose.yaml`, `infra/**`, `ruff.toml`, `odoo-bin`, `odoo/**`,
+`addons/**`, or the workflow file itself, and the other jobs read its
+`image_relevant`, `prod_image_relevant`, `docs_build`, `infra_relevant`,
+and `lint_relevant` outputs to decide whether to actually do anything.
+There is no separate deploy workflow for the Odoo application — Render's
+native branch auto-deploy handles promotion once a release PR merges.
+`infra/cicd` and `infra/registry` are the one exception (issue #215): CI
+plans them on PR and applies them on merge — see `infra/README.md`'s
+"`tofu apply` is a deliberate human/ops action" section and
+[ADR-0039](../adr/0039-infra-plan-on-pr-apply-on-merge.md) for what that
+does and does not cover.
 
 This replaced an earlier design where the whole workflow was gated by a
 `paths:` filter on the trigger itself: docs-only PRs (regular feature PRs

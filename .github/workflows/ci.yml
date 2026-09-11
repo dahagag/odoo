@@ -83,6 +83,7 @@ jobs:
             infra_relevant:
               - 'infra/**'
               - '.github/workflows/ci.yml'
+              - '.github/actions/infra-tofu/**'
             lint_relevant:
               - 'custom_addons/**'
               - 'ruff.toml'
@@ -453,7 +454,7 @@ jobs:
           done
 
   infra-plan:
-    name: Infra plan (cicd, registry)
+    name: Infra plan (${{ matrix.dir }})
     # Issue #215: a real `tofu plan` (not an empty-state one) needs read credentials, so this
     # depends on infra-checks succeeding first (fmt/validate/test/lint) even though nothing here
     # consumes its output — a broken module shouldn't get a plan attempt against real state.
@@ -463,6 +464,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [infra/cicd, infra/registry]
     steps:
       - uses: actions/checkout@v4
       - uses: opentofu/setup-opentofu@v1
@@ -476,44 +481,20 @@ jobs:
           # production_deploy, which stay push-only/branch-scoped for the apply job below.
           role-to-assume: ${{ vars.INFRA_PLAN_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-      - name: Plan infra/cicd and infra/registry, posted to the job summary for review
-        run: |
-          for dir in infra/cicd infra/registry; do
-            case "$dir" in
-              infra/cicd)
-                extra_vars=(
-                  -var "platform_account_id=${{ vars.PLATFORM_ACCOUNT_ID }}"
-                  -var "tofu_state_bucket_arn=${{ vars.TOFU_STATE_BUCKET_ARN }}"
-                  -var "tofu_state_lock_table_arn=${{ vars.TOFU_STATE_LOCK_TABLE_ARN }}"
-                )
-                ;;
-              infra/registry)
-                extra_vars=(
-                  -var "hosting_account_ecs_task_execution_role_arn=${{ vars.HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN }}"
-                )
-                ;;
-            esac
-            echo "## \`tofu plan\` — $dir" >> "$GITHUB_STEP_SUMMARY"
-            (
-              cd "$dir"
-              tofu init -input=false \
-                -backend-config="bucket=${{ vars.TOFU_STATE_BUCKET }}" \
-                -backend-config="region=${{ vars.AWS_REGION }}" \
-                -backend-config="dynamodb_table=${{ vars.TOFU_STATE_LOCK_TABLE }}"
-              # -lock=false: infra_plan is deliberately read-only (no DynamoDB write grant) — see
-              # oidc.tf's infra_plan comment for the accepted tradeoff (a small race window against
-              # a concurrent real apply, acceptable for a plan whose only purpose is human review).
-              tofu plan -input=false -lock=false -no-color -out=tfplan "${extra_vars[@]}"
-              {
-                echo '```'
-                tofu show -no-color tfplan
-                echo '```'
-              } >> "$GITHUB_STEP_SUMMARY"
-            )
-          done
+      - uses: ./.github/actions/infra-tofu
+        with:
+          dir: ${{ matrix.dir }}
+          command: plan
+          bucket: ${{ vars.TOFU_STATE_BUCKET }}
+          region: ${{ vars.AWS_REGION }}
+          dynamodb_table: ${{ vars.TOFU_STATE_LOCK_TABLE }}
+          platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
+          tofu_state_bucket_arn: ${{ vars.TOFU_STATE_BUCKET_ARN }}
+          tofu_state_lock_table_arn: ${{ vars.TOFU_STATE_LOCK_TABLE_ARN }}
+          hosting_account_ecs_task_execution_role_arn: ${{ vars.HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN }}
 
   infra-apply:
-    name: Infra apply (cicd, registry)
+    name: Infra apply (${{ matrix.dir }})
     # Existing infra-checks (fmt/validate/test/lint) gates this apply, per #215's acceptance
     # criteria — a merge whose own infra-checks run failed must never reach `tofu apply`.
     needs: [changes, infra-checks]
@@ -522,6 +503,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [infra/cicd, infra/registry]
     steps:
       - uses: actions/checkout@v4
       - uses: opentofu/setup-opentofu@v1
@@ -542,39 +527,17 @@ jobs:
         with:
           role-to-assume: ${{ steps.role.outputs.role_arn }}
           aws-region: ${{ vars.AWS_REGION }}
-      - name: Apply infra/cicd and infra/registry
-        # No `continue-on-error`, no `|| true`, no `if: always()` swallowing a failure here —
-        # #215's acceptance criteria require an apply failure to fail this workflow loudly rather
-        # than leave a partial, ambiguous state. GitHub Actions' default `bash -eo pipefail` for
-        # `run:` steps already turns the first failing `tofu` command into a failed step, and nothing
-        # downstream depends on this job succeeding, so there is nothing to mask that failure.
-        run: |
-          for dir in infra/cicd infra/registry; do
-            case "$dir" in
-              infra/cicd)
-                extra_vars=(
-                  -var "platform_account_id=${{ vars.PLATFORM_ACCOUNT_ID }}"
-                  -var "tofu_state_bucket_arn=${{ vars.TOFU_STATE_BUCKET_ARN }}"
-                  -var "tofu_state_lock_table_arn=${{ vars.TOFU_STATE_LOCK_TABLE_ARN }}"
-                )
-                ;;
-              infra/registry)
-                extra_vars=(
-                  -var "hosting_account_ecs_task_execution_role_arn=${{ vars.HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN }}"
-                )
-                ;;
-            esac
-            echo "::group::tofu apply $dir"
-            (
-              cd "$dir"
-              tofu init -input=false \
-                -backend-config="bucket=${{ vars.TOFU_STATE_BUCKET }}" \
-                -backend-config="region=${{ vars.AWS_REGION }}" \
-                -backend-config="dynamodb_table=${{ vars.TOFU_STATE_LOCK_TABLE }}"
-              tofu apply -input=false -auto-approve -no-color "${extra_vars[@]}"
-            )
-            echo "::endgroup::"
-          done
+      - uses: ./.github/actions/infra-tofu
+        with:
+          dir: ${{ matrix.dir }}
+          command: apply
+          bucket: ${{ vars.TOFU_STATE_BUCKET }}
+          region: ${{ vars.AWS_REGION }}
+          dynamodb_table: ${{ vars.TOFU_STATE_LOCK_TABLE }}
+          platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
+          tofu_state_bucket_arn: ${{ vars.TOFU_STATE_BUCKET_ARN }}
+          tofu_state_lock_table_arn: ${{ vars.TOFU_STATE_LOCK_TABLE_ARN }}
+          hosting_account_ecs_task_execution_role_arn: ${{ vars.HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN }}
 
   stack-checks:
     name: Stack checks

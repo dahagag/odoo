@@ -1,0 +1,90 @@
+name: Plan or apply an infra root module
+description: >-
+  Runs `tofu init` against the shared OpenTofu state backend for one `infra/` root module (`dir`),
+  then either `tofu plan` (posting the rendered diff to the job summary for review) or
+  `tofu apply -auto-approve`, per `command`. Shared by ci.yml's infra-plan and infra-apply jobs
+  (issue #215) so the per-module `-var` wiring and backend-config aren't duplicated across both.
+inputs:
+  dir:
+    description: Path to the infra/ root module to plan/apply — infra/cicd or infra/registry.
+    required: true
+  command:
+    description: "plan or apply."
+    required: true
+  bucket:
+    description: infra/bootstrap's state_bucket_name output.
+    required: true
+  region:
+    description: infra/bootstrap's aws_region output.
+    required: true
+  dynamodb_table:
+    description: infra/bootstrap's state_lock_table_name output.
+    required: true
+  platform_account_id:
+    description: infra/cicd's platform_account_id input (only used when dir is infra/cicd).
+    required: true
+  tofu_state_bucket_arn:
+    description: infra/cicd's tofu_state_bucket_arn input (only used when dir is infra/cicd).
+    required: true
+  tofu_state_lock_table_arn:
+    description: infra/cicd's tofu_state_lock_table_arn input (only used when dir is infra/cicd).
+    required: true
+  hosting_account_ecs_task_execution_role_arn:
+    description: infra/registry's same-named input (only used when dir is infra/registry).
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: tofu init, then plan or apply ${{ inputs.dir }}
+      shell: bash
+      run: |
+        case "${{ inputs.dir }}" in
+          infra/cicd)
+            extra_vars=(
+              -var "platform_account_id=${{ inputs.platform_account_id }}"
+              -var "tofu_state_bucket_arn=${{ inputs.tofu_state_bucket_arn }}"
+              -var "tofu_state_lock_table_arn=${{ inputs.tofu_state_lock_table_arn }}"
+            )
+            ;;
+          infra/registry)
+            extra_vars=(
+              -var "hosting_account_ecs_task_execution_role_arn=${{ inputs.hosting_account_ecs_task_execution_role_arn }}"
+            )
+            ;;
+          *)
+            echo "Unknown infra dir '${{ inputs.dir }}' — add its required -var wiring above." >&2
+            exit 1
+            ;;
+        esac
+
+        cd "${{ inputs.dir }}"
+        tofu init -input=false \
+          -backend-config="bucket=${{ inputs.bucket }}" \
+          -backend-config="region=${{ inputs.region }}" \
+          -backend-config="dynamodb_table=${{ inputs.dynamodb_table }}"
+
+        case "${{ inputs.command }}" in
+          plan)
+            # -lock=false: the read-only infra_plan role that runs this has no DynamoDB write
+            # grant, by design (infra/cicd/oidc.tf's infra_plan comment) — a small, accepted race
+            # window against a concurrent real apply, for a plan whose only purpose is a
+            # human-reviewable diff, never a state mutation.
+            tofu plan -input=false -lock=false -no-color -out=tfplan "${extra_vars[@]}"
+            {
+              echo "## \`tofu plan\` — ${{ inputs.dir }}"
+              echo '```'
+              tofu show -no-color tfplan
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            ;;
+          apply)
+            # No `continue-on-error`, no `|| true` — a failure here must fail the calling job
+            # loudly (issue #215's acceptance criteria), and GitHub Actions' default
+            # `bash -eo pipefail` for `run:` steps already does that.
+            tofu apply -input=false -auto-approve -no-color "${extra_vars[@]}"
+            ;;
+          *)
+            echo "Unknown command '${{ inputs.command }}' — must be plan or apply." >&2
+            exit 1
+            ;;
+        esac
