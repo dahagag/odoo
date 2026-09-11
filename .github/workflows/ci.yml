@@ -363,10 +363,10 @@ jobs:
       - name: tofu fmt -check
         if: needs.changes.outputs.infra_relevant == 'true'
         run: tofu fmt -check -recursive infra/
-      - name: tofu validate (bootstrap, foundation, cicd, trial_org, and its validate fixture)
+      - name: tofu validate (bootstrap, foundation, cicd, registry, trial_org, and its validate fixture)
         if: needs.changes.outputs.infra_relevant == 'true'
         run: |
-          for dir in infra/bootstrap infra/foundation infra/cicd infra/modules/trial_org infra/modules/trial_org/examples/validate; do
+          for dir in infra/bootstrap infra/foundation infra/cicd infra/registry infra/modules/trial_org infra/modules/trial_org/examples/validate; do
             echo "::group::tofu validate $dir"
             (cd "$dir" && tofu init -backend=false -input=false && tofu validate)
             echo "::endgroup::"
@@ -377,10 +377,16 @@ jobs:
           cd infra/foundation
           tofu init -backend=false -input=false
           tofu test
-      - name: tofu test (cicd — issue #212 OIDC deploy-role branch isolation, no live AWS account needed)
+      - name: tofu test (cicd — issue #212/#252 OIDC deploy/push-role branch and repository isolation, no live AWS account needed)
         if: needs.changes.outputs.infra_relevant == 'true'
         run: |
           cd infra/cicd
+          tofu init -backend=false -input=false
+          tofu test
+      - name: tofu test (registry — issue #252 tofu-runner cross-account repository policy isolation, no live AWS account needed)
+        if: needs.changes.outputs.infra_relevant == 'true'
+        run: |
+          cd infra/registry
           tofu init -backend=false -input=false
           tofu test
       - uses: actions/setup-python@v5

@@ -21,15 +21,30 @@ infra/
 │                       stale-lock and snapshot-cleanup rules, and the shared log-forwarding,
 │                       auto-destroy-snapshot, and snapshot-cleanup Lambdas.
 │                       Applied once (and on foundation changes), not per Trial Org.
-├── cicd/               Root module. The GitHub Actions OIDC identity provider and the two
-│                       branch-scoped deploy roles (staging, production) issue #212 added,
-│                       reversing ADR-0017's self-hosted-runner approach in favor of
-│                       `sts:AssumeRoleWithWebIdentity` — no long-lived AWS keys, no runner
-│                       instance to patch. Each role's trust policy is scoped to this repository
-│                       and its one deploying branch, not merely branch protection. Independent of
-│                       `foundation` (own state key, own `tofu init`/`plan`/`apply`); its actual
-│                       deploy permissions are a deliberate placeholder until a later ticket
-│                       defines what a deploy touches (see oidc.tf).
+├── cicd/               Root module. The GitHub Actions OIDC identity provider and three
+│                       branch-scoped roles issue #212 (staging/production deploy) and #252
+│                       (ecr_push) added, reversing ADR-0017's self-hosted-runner approach in
+│                       favor of `sts:AssumeRoleWithWebIdentity` — no long-lived AWS keys, no
+│                       runner instance to patch. Each role's trust policy is scoped to this
+│                       repository: the deploy roles each trust their own one branch
+│                       (staging_deploy → staging_branch, production_deploy → production_branch),
+│                       while ecr_push trusts both staging_branch and production_branch (image
+│                       builds run on either). Not merely branch protection.
+│                       Independent of `foundation` (own state key, own `tofu init`/`plan`/
+│                       `apply`); the deploy roles' actual permissions are a deliberate placeholder
+│                       until a later ticket defines what a deploy touches (see oidc.tf) — ecr_push
+│                       is already scoped for real, to the four `infra/registry` repositories.
+├── registry/           Root module (ADR-0038, Platform-Account-scoped). The four ECR
+│                       repositories the fork's images move to (`agentic-erp/odoo-dev`,
+│                       `agentic-erp/odoo-prod`, `agentic-erp/tofu-runner`,
+│                       `agentic-erp/administration-stack-api`): topology, count-based lifecycle
+│                       policies on the two images with an existing build cadence, AES-256
+│                       encryption on all four, and `tofu-runner`'s cross-account repository
+│                       policy granting pull-only access to the Hosting Account's ECS task
+│                       execution role (`infra/foundation`). Independent of `foundation` and
+│                       `cicd` (own state key); no cross-module remote-state lookup — repository
+│                       names are fixed by ADR-0038, and the Hosting Account role ARN is supplied
+│                       as a plain variable at apply time.
 └── modules/
     └── trial_org/       Reusable module (not a root module — nothing here runs `tofu` against it
                           directly). Declares one Trial Org's own infrastructure: one EC2
