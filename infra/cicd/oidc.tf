@@ -122,16 +122,26 @@ resource "aws_iam_role_policy" "production_deploy" {
 # of staging_deploy/production_deploy, mirroring #153's discipline that a PR-time image-build job
 # gets only the permission it needs, never deploy-adjacent access it doesn't.
 #
-# Its trust condition matches this repo's `pull_request` OIDC subject
-# (`repo:<owner>/<repo>:pull_request`), not `ref:refs/heads/<branch>` (issue #259): ci.yml's
-# build-image/build-prod-image jobs only ever run on a `pull_request` event (ci.yml has no `push`
-# trigger), and GitHub mints a `pull_request`-shaped `sub` claim for that event regardless of
-# which branch the PR targets — a `ref:refs/heads/<branch>` condition, as staging_deploy/
-# production_deploy above use, can never match it. This still excludes a fork's pull_request run:
-# a fork PR's token carries the fork's own `owner/repo` in `sub` (e.g.
-# `repo:someone-else/odoo:pull_request`), not this repo's, so `var.github_repository` alone is
-# still the isolating value, same guarantee as the two roles above — just without a branch
-# component, since one isn't present in this claim shape to isolate on.
+# Its trust condition matches this repo's own `repository` claim, not `sub`'s
+# `ref:refs/heads/<branch>` shape (issue #259): ci.yml's build-image/build-prod-image jobs only
+# ever run on a `pull_request` event (ci.yml has no `push` trigger), whose `sub` carries no branch
+# component at all — a `ref:refs/heads/<branch>` condition, as staging_deploy/production_deploy
+# above use, can never match it. (`sub` for this event is also not the plain
+# `repo:<owner>/<repo>:pull_request` shape GitHub's own docs show as the generic example — an
+# account/repo with ID-qualified claims enabled gets `repo:<owner>@<owner_id>/<repo>@<repo_id>:pull_request`
+# instead, confirmed by decoding an actual token; `repository` is the stable, plain-name claim
+# GitHub issues alongside it, so this condition uses that one instead of trying to keep numeric
+# IDs in sync.)
+#
+# IMPORTANT — this condition alone does NOT exclude a fork's pull_request run: for `pull_request`
+# (not `pull_request_target`), GitHub always executes the job using the *base* repository's own
+# workflow file and permissions, so `repository`/`repository_owner`/`sub` in the token are the
+# base repo (dahagag/odoo) regardless of whether the PR's head branch lives in this repo or a
+# fork of it — there is no OIDC claim this trigger type exposes that distinguishes the two. The
+# actual fork exclusion is `ci.yml`'s own `github.event.pull_request.head.repo.full_name ==
+# github.repository` job-level guard (added alongside this fix), checked before the job ever
+# requests an OIDC token — this trust condition only narrows "some pull_request against this
+# repo" down from "any GitHub Actions run anywhere with this OIDC provider."
 # ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "ecr_push_trust" {
@@ -152,8 +162,8 @@ data "aws_iam_policy_document" "ecr_push_trust" {
 
     condition {
       test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:pull_request"]
+      variable = "token.actions.githubusercontent.com:repository"
+      values   = [var.github_repository]
     }
   }
 }
