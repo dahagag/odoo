@@ -199,6 +199,14 @@ data "aws_iam_policy_document" "ecr_push" {
     effect = "Allow"
     actions = [
       "ecr:BatchCheckLayerAvailability",
+      # Not a pull grant despite the name: docker/build-push-action's underlying BuildKit
+      # exporter calls BatchGetImage during push itself, to check whether the manifest it's about
+      # to write already exists (skip re-pushing an identical one) — confirmed on issue #259's
+      # PR #258 run, which failed at exactly this call once OIDC auth itself started working:
+      # "denied: ... not authorized to perform: ecr:BatchGetImage ... because no identity-based
+      # policy allows the ecr:BatchGetImage action". Omitting it (the original ADR-0038 intent,
+      # "no pull actions") breaks every push, not just a hypothetical pull path.
+      "ecr:BatchGetImage",
       "ecr:CompleteLayerUpload",
       "ecr:InitiateLayerUpload",
       "ecr:PutImage",

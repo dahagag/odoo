@@ -112,13 +112,14 @@ run "verify_ecr_push_repo_scoping" {
       statement.Sid == "EcrPush"
       && toset(flatten([statement.Action])) == toset([
         "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
         "ecr:CompleteLayerUpload",
         "ecr:InitiateLayerUpload",
         "ecr:PutImage",
         "ecr:UploadLayerPart",
       ])
     ])
-    error_message = "ecr_push's EcrPush statement must grant exactly the five image-push actions — no ecr:* wildcard, no pull actions (ecr:BatchGetImage), and no repository-management actions (ecr:DeleteRepository/ecr:SetRepositoryPolicy)."
+    error_message = "ecr_push's EcrPush statement must grant exactly the six push-flow actions (BatchGetImage included — BuildKit's push exporter calls it to check for an existing manifest, confirmed on a live run) — no ecr:* wildcard, and no repository-management actions (ecr:DeleteRepository/ecr:SetRepositoryPolicy)."
   }
 
   assert {
