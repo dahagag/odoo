@@ -58,7 +58,144 @@ resource "aws_iam_role" "staging_deploy" {
   assume_role_policy = data.aws_iam_policy_document.staging_deploy_trust.json
 }
 
+# ---------------------------------------------------------------------------
+# Issue #215: staging_deploy's and production_deploy's policies stay a deploy-permission
+# placeholder for the app deploy workflow #202/#216 defers to a later ticket (see the module-level
+# comment above), but they now carry a second, real, narrow purpose — applying infra/cicd and
+# infra/registry themselves, staging_deploy on a push to staging_branch and production_deploy on a
+# push to production_branch — since #215's acceptance criteria call for "a merge... applies the
+# plan using the corresponding branch-scoped role," reusing these two roles rather than adding a
+# third pair. infra_management_statements below is that grant, shared verbatim between both roles
+# via source_policy_documents (not copy-pasted per role): OpenTofu S3-backend state read/write +
+# DynamoDB lock, management of the shared GitHub Actions OIDC provider, and management of the four
+# ADR-0038 ECR repositories infra/registry creates — nothing broader.
+#
+# Deliberately NOT self-managing each other's role: each role's own IAM-role write access
+# (Create/Update/Delete/PutRolePolicy/etc.) is scoped to its own literal role ARN only
+# (manage_own_role_staging_deploy / manage_own_role_production_deploy below), so a compromised
+# staging_branch merge cannot modify production_deploy's trust or inline policy, or create some
+# other arbitrarily-named github-actions-* role, and vice versa. Each role keeps read-only access
+# to the *other* role (Get/List only) because a `tofu apply` of this shared root module still
+# refreshes both roles' state even when only one is being written to.
+# ---------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "infra_management_statements" {
+  statement {
+    sid    = "TofuStateBackend"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = local.managed_state_object_arns
+  }
+
+  # The S3 backend also needs a bucket-level ListBucket (OpenTofu's own docs) — GetObject/PutObject/
+  # DeleteObject above are object-level and don't cover it. Scoped to the bucket ARN, not the state
+  # objects above, since ListBucket is a bucket-level action.
+  statement {
+    sid       = "TofuStateBackendListBucket"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = [var.tofu_state_bucket_arn]
+  }
+
+  statement {
+    sid    = "TofuStateLock"
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:DescribeTable",
+    ]
+    resources = [var.tofu_state_lock_table_arn]
+  }
+
+  # OIDC provider management stays shared: it's one resource both roles' applies must be able to
+  # refresh/update (e.g. a thumbprint rotation), not a role identity boundary — unlike the
+  # per-role IAM-role statements below, sharing it grants no cross-role escalation.
+  statement {
+    sid    = "ManageCicdOidc"
+    effect = "Allow"
+    actions = [
+      "iam:GetOpenIDConnectProvider",
+      "iam:CreateOpenIDConnectProvider",
+      "iam:UpdateOpenIDConnectProviderThumbprint",
+      "iam:TagOpenIDConnectProvider",
+    ]
+    resources = [local.managed_oidc_provider_arn]
+  }
+
+  statement {
+    sid    = "ManageRegistryRepositories"
+    effect = "Allow"
+    actions = [
+      "ecr:CreateRepository",
+      "ecr:DescribeRepositories",
+      "ecr:DeleteRepository",
+      "ecr:PutLifecyclePolicy",
+      "ecr:GetLifecyclePolicy",
+      "ecr:DeleteLifecyclePolicy",
+      "ecr:SetRepositoryPolicy",
+      "ecr:GetRepositoryPolicy",
+      "ecr:DeleteRepositoryPolicy",
+      "ecr:PutImageTagMutability",
+      "ecr:PutImageScanningConfiguration",
+      "ecr:TagResource",
+      "ecr:ListTagsForResource",
+    ]
+    resources = local.ecr_repository_arns
+  }
+}
+
+# Own-role write access, scoped to this role's own literal ARN — not the other deploy role's, and
+# not a github-actions-* wildcard pattern (which would also let this role create some other,
+# arbitrarily-named role matching that pattern). Read-only access to the other deploy role's ARN is
+# still needed: a `tofu apply` of this shared module refreshes both roles' state even when only
+# one is being written to.
+data "aws_iam_policy_document" "manage_own_role_staging_deploy" {
+  statement {
+    sid    = "ManageOwnRole"
+    effect = "Allow"
+    actions = [
+      "iam:GetRole",
+      "iam:CreateRole",
+      "iam:UpdateRole",
+      "iam:UpdateAssumeRolePolicy",
+      "iam:DeleteRole",
+      "iam:TagRole",
+      "iam:PutRolePolicy",
+      "iam:GetRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+    ]
+    resources = [aws_iam_role.staging_deploy.arn]
+  }
+
+  statement {
+    sid    = "ReadOtherDeployRole"
+    effect = "Allow"
+    actions = [
+      "iam:GetRole",
+      "iam:GetRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+    ]
+    resources = [aws_iam_role.production_deploy.arn]
+  }
+}
+
 data "aws_iam_policy_document" "staging_deploy" {
+  source_policy_documents = [
+    data.aws_iam_policy_document.infra_management_statements.json,
+    data.aws_iam_policy_document.manage_own_role_staging_deploy.json,
+  ]
+
   statement {
     sid       = "PlaceholderCallerIdentity"
     effect    = "Allow"
@@ -102,7 +239,52 @@ resource "aws_iam_role" "production_deploy" {
   assume_role_policy = data.aws_iam_policy_document.production_deploy_trust.json
 }
 
+# See infra_management_statements above (issue #215) for the full rationale — production_deploy
+# carries the same infra-management/backend grant, so a push to production_branch can apply
+# infra/cicd and infra/registry too.
+
+# Mirrors manage_own_role_staging_deploy above, own/other roles swapped.
+data "aws_iam_policy_document" "manage_own_role_production_deploy" {
+  statement {
+    sid    = "ManageOwnRole"
+    effect = "Allow"
+    actions = [
+      "iam:GetRole",
+      "iam:CreateRole",
+      "iam:UpdateRole",
+      "iam:UpdateAssumeRolePolicy",
+      "iam:DeleteRole",
+      "iam:TagRole",
+      "iam:PutRolePolicy",
+      "iam:GetRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+    ]
+    resources = [aws_iam_role.production_deploy.arn]
+  }
+
+  statement {
+    sid    = "ReadOtherDeployRole"
+    effect = "Allow"
+    actions = [
+      "iam:GetRole",
+      "iam:GetRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+    ]
+    resources = [aws_iam_role.staging_deploy.arn]
+  }
+}
+
 data "aws_iam_policy_document" "production_deploy" {
+  source_policy_documents = [
+    data.aws_iam_policy_document.infra_management_statements.json,
+    data.aws_iam_policy_document.manage_own_role_production_deploy.json,
+  ]
+
   statement {
     sid       = "PlaceholderCallerIdentity"
     effect    = "Allow"
@@ -232,4 +414,110 @@ resource "aws_iam_role_policy" "ecr_push" {
   name   = "github-actions-ecr-push"
   role   = aws_iam_role.ecr_push.id
   policy = data.aws_iam_policy_document.ecr_push.json
+}
+
+# ---------------------------------------------------------------------------
+# infra_plan (issue #215): a fourth, separate, read-only role — a `tofu plan` on a pull request
+# needs real credentials to show a meaningful diff (not just an empty-state "everything would be
+# created"), but staging_deploy/production_deploy's trust conditions are deliberately scoped to a
+# `push` event's `ref:refs/heads/<branch>` `sub` claim (see above), which a `pull_request` run's
+# token never carries — so neither can ever be assumed at PR time, by design.
+#
+# This can't reuse ecr_push's trust condition pattern to become "the PR-time staging_deploy" or
+# "the PR-time production_deploy" either: `job_workflow_ref` (the one condition a `pull_request`
+# token exposes that AWS's IAM validation accepts — see ecr_push_trust's comment) carries no branch
+# information at all, only the workflow file and PR-merge ref. A trust condition built from it
+# can't distinguish "a PR targeting staging_branch" from "a PR targeting production_branch" — so
+# splitting a PR-time role in two by branch would be a false isolation guarantee, granting either
+# role to any PR regardless of its base. One shared, read-only role for both is the honest scoping:
+# read access carries no isolation risk to share, and `apply`'s real branch isolation still lives
+# entirely in staging_deploy/production_deploy's push-time trust conditions above, untouched by
+# this role's existence.
+#
+# `-lock=false` on the `tofu plan` step this role runs (ci.yml) is deliberate too, not an oversight:
+# it lets this role stay read-only (no DynamoDB write grant, unlike staging_deploy/production_deploy's
+# TofuStateLock statement), at the cost of a small race window against a concurrent real apply —
+# acceptable for a plan whose only purpose is showing a diff for human review, never mutating state.
+# ---------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "infra_plan_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github_actions.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = [local.github_oidc_audience]
+    }
+
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:job_workflow_ref"
+      values   = ["${var.github_repository}/.github/workflows/ci.yml@refs/pull/*/merge"]
+    }
+  }
+}
+
+resource "aws_iam_role" "infra_plan" {
+  name               = "github-actions-infra-plan"
+  assume_role_policy = data.aws_iam_policy_document.infra_plan_trust.json
+}
+
+data "aws_iam_policy_document" "infra_plan" {
+  statement {
+    sid       = "TofuStateBackendRead"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = local.managed_state_object_arns
+  }
+
+  # See infra_management_statements' TofuStateBackendListBucket comment above — same bucket-level
+  # gap, needed here too for `tofu plan`'s own backend init.
+  statement {
+    sid       = "TofuStateBackendReadListBucket"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = [var.tofu_state_bucket_arn]
+  }
+
+  statement {
+    sid    = "ReadCicdOidcAndRoles"
+    effect = "Allow"
+    actions = [
+      "iam:GetOpenIDConnectProvider",
+      "iam:GetRole",
+      "iam:GetRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+    ]
+    resources = [
+      local.managed_oidc_provider_arn,
+      local.managed_role_name_pattern,
+    ]
+  }
+
+  statement {
+    sid    = "ReadRegistryRepositories"
+    effect = "Allow"
+    actions = [
+      "ecr:DescribeRepositories",
+      "ecr:GetLifecyclePolicy",
+      "ecr:GetRepositoryPolicy",
+      "ecr:ListTagsForResource",
+    ]
+    resources = local.ecr_repository_arns
+  }
+}
+
+resource "aws_iam_role_policy" "infra_plan" {
+  name   = "github-actions-infra-plan"
+  role   = aws_iam_role.infra_plan.id
+  policy = data.aws_iam_policy_document.infra_plan.json
 }

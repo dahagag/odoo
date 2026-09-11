@@ -38,6 +38,29 @@ variable "ecr_repository_names" {
   ]
 }
 
+variable "tofu_state_bucket_arn" {
+  type        = string
+  description = <<-EOT
+    ARN of the S3 bucket holding OpenTofu remote state (`infra/bootstrap`'s `state_bucket_name`
+    output, as an ARN). Not looked up via remote state (this module has no data dependency on
+    bootstrap's own state), supplied at apply time same as `platform_account_id` — used only to
+    scope the deploy roles' backend-read/write statements (issue #215) to the exact state objects
+    `infra/cicd` and `infra/registry` own (`cicd/terraform.tfstate`, `registry/terraform.tfstate`),
+    not the whole bucket.
+  EOT
+}
+
+variable "tofu_state_lock_table_arn" {
+  type        = string
+  description = <<-EOT
+    ARN of the DynamoDB table backing OpenTofu's S3-backend state lock (`infra/bootstrap`'s
+    `state_lock_table_name` output, as an ARN). Supplied at apply time, same convention as
+    `tofu_state_bucket_arn` above — used only to let the deploy roles acquire/release the lock
+    during a real `tofu apply` (issue #215); no per-item (`LockID`) condition, since every root
+    module sharing this table already trusts each other's own state key naming.
+  EOT
+}
+
 variable "github_oidc_thumbprint" {
   type        = string
   description = <<-EOT
