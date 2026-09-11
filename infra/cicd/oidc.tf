@@ -13,12 +13,18 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
 # ---------------------------------------------------------------------------
 # Two separate, narrow roles (issue #212 / #202: "CI must not hold one role that can deploy
 # anywhere"). Each trust policy is scoped to this exact repository AND the one branch that
-# deploys through it, via the `sub` claim GitHub's OIDC token carries
-# (repo:<owner>/<repo>:ref:refs/heads/<branch>) — a workflow run on an arbitrary branch, or a
-# fork's pull_request run (which carries a different repo in its own `sub` claim entirely),
-# cannot assume either role. Branch protection on staging_branch/production_branch is a
-# separate, independent control; this trust policy is the actual gate (#202's Implementation
+# deploys through it, via the `sub` claim GitHub's OIDC token carries — a workflow run on an
+# arbitrary branch, or a fork's pull_request run (which carries a different repo in its own `sub`
+# claim entirely), cannot assume either role. Branch protection on staging_branch/production_branch
+# is a separate, independent control; this trust policy is the actual gate (#202's Implementation
 # Decisions: "Branch protection alone is not the control; the trust policy is.").
+#
+# The `sub` value is repo:${var.github_repository_immutable_subject}:ref:refs/heads/<branch> —
+# NOT the plain repo:<owner>/<repo>:ref:refs/heads/<branch> form the acceptance criteria's own
+# wording suggests — because this account has GitHub's "immutable subject" OIDC customization
+# enabled (see that variable's description). Issue #266: the first real push-triggered
+# infra-apply failed AssumeRoleWithWebIdentity against the plain, unqualified form, because it
+# never matches what GitHub actually issues here.
 #
 # Permissions on both roles are a deliberate placeholder. #202 puts the staging environment (and
 # so, the concrete AWS resources a deploy touches — ECR push, ECS service update, etc.) out of
@@ -48,7 +54,7 @@ data "aws_iam_policy_document" "staging_deploy_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:ref:refs/heads/${var.staging_branch}"]
+      values   = ["repo:${var.github_repository_immutable_subject}:ref:refs/heads/${var.staging_branch}"]
     }
   }
 }
@@ -229,7 +235,7 @@ data "aws_iam_policy_document" "production_deploy_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:ref:refs/heads/${var.production_branch}"]
+      values   = ["repo:${var.github_repository_immutable_subject}:ref:refs/heads/${var.production_branch}"]
     }
   }
 }
