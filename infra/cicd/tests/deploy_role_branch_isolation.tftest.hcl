@@ -25,11 +25,20 @@ provider "aws" {
 }
 
 variables {
-  aws_region          = "us-east-1"
-  github_repository   = "dahagag/odoo"
-  staging_branch      = "dev/19.0"
-  production_branch   = "main/19.0"
-  platform_account_id = "333333333333"
+  aws_region                = "us-east-1"
+  github_repository         = "dahagag/odoo"
+  staging_branch            = "dev/19.0"
+  production_branch         = "main/19.0"
+  platform_account_id       = "333333333333"
+  tofu_state_bucket_arn     = "arn:aws:s3:::hosting-tofu-state"
+  tofu_state_lock_table_arn = "arn:aws:dynamodb:us-east-1:111111111111:table/hosting-tofu-state-lock"
+}
+
+override_data {
+  target = data.aws_caller_identity.current
+  values = {
+    account_id = "111111111111"
+  }
 }
 
 override_resource {

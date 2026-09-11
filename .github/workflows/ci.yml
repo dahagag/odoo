@@ -3,10 +3,22 @@ name: CI
 on:
   pull_request:
     branches: [dev/19.0, main/19.0]
+  # Issue #215: a merge to either branch re-runs this workflow so infra-checks gates infra-apply
+  # below on the same commit (not just on the PR's merge-ref simulation) — `needs:` can only
+  # reference a job in this same workflow run, so infra-apply's gate on infra-checks only works if
+  # both trigger from the same `on:` block. The pre-existing pull_request-only jobs (build-image,
+  # test, ...) each already guard on `github.event.pull_request...`, which is simply absent on a
+  # push event, so they resolve to skipped rather than erroring.
+  push:
+    branches: [dev/19.0, main/19.0]
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a push-triggered run mid-flight: infra-apply below may be applying real
+  # infrastructure, and cancelling that partway is exactly the "partial, ambiguous state" issue
+  # #215 requires this workflow not to leave behind. Pull-request runs keep the previous
+  # superseded-by-a-new-push behavior.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
@@ -23,6 +35,12 @@ jobs:
       manifest_version_relevant: ${{ steps.check.outputs.manifest_version_relevant }}
       test_modules: ${{ steps.plan.outputs.modules }}
     steps:
+      # Issue #215: checked out before the paths-filter step below (not after, as before this
+      # change) because this job now also runs on `push` (dorny/paths-filter needs a local
+      # checkout to diff against the pre-push SHA on a push event; a pull_request event doesn't
+      # need it — that path uses the GitHub REST API instead — but checking out unconditionally
+      # earlier is a no-op for that case, not a behavior change).
+      - uses: actions/checkout@v4
       # image_relevant, prod_image_relevant, docs_build, infra_relevant, lint_relevant,
       # stack_relevant, release_version_relevant, and manifest_version_relevant are
       # deliberately independent of each other: docs-build-tests, infra-checks,
@@ -81,7 +99,6 @@ jobs:
               - 'custom_addons/**'
               - 'scripts/release_version/**'
               - '.github/workflows/ci.yml'
-      - uses: actions/checkout@v4
       - name: Build per-module change filters
         run: |
           {
@@ -433,6 +450,130 @@ jobs:
               python3 -m unittest discover -s "$dir" -p "test_*.py" -v
               echo "::endgroup::"
             fi
+          done
+
+  infra-plan:
+    name: Infra plan (cicd, registry)
+    # Issue #215: a real `tofu plan` (not an empty-state one) needs read credentials, so this
+    # depends on infra-checks succeeding first (fmt/validate/test/lint) even though nothing here
+    # consumes its output — a broken module shouldn't get a plan attempt against real state.
+    needs: [changes, infra-checks]
+    if: github.event_name == 'pull_request' && needs.changes.outputs.infra_relevant == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.5
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # infra_plan (infra/cicd/oidc.tf, issue #215): read-only, shared across both branches'
+          # PRs — job_workflow_ref carries no branch information to isolate a PR-time role by (see
+          # oidc.tf's infra_plan comment), so this is deliberately not staging_deploy/
+          # production_deploy, which stay push-only/branch-scoped for the apply job below.
+          role-to-assume: ${{ vars.INFRA_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Plan infra/cicd and infra/registry, posted to the job summary for review
+        run: |
+          for dir in infra/cicd infra/registry; do
+            case "$dir" in
+              infra/cicd)
+                extra_vars=(
+                  -var "platform_account_id=${{ vars.PLATFORM_ACCOUNT_ID }}"
+                  -var "tofu_state_bucket_arn=${{ vars.TOFU_STATE_BUCKET_ARN }}"
+                  -var "tofu_state_lock_table_arn=${{ vars.TOFU_STATE_LOCK_TABLE_ARN }}"
+                )
+                ;;
+              infra/registry)
+                extra_vars=(
+                  -var "hosting_account_ecs_task_execution_role_arn=${{ vars.HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN }}"
+                )
+                ;;
+            esac
+            echo "## \`tofu plan\` — $dir" >> "$GITHUB_STEP_SUMMARY"
+            (
+              cd "$dir"
+              tofu init -input=false \
+                -backend-config="bucket=${{ vars.TOFU_STATE_BUCKET }}" \
+                -backend-config="region=${{ vars.AWS_REGION }}" \
+                -backend-config="dynamodb_table=${{ vars.TOFU_STATE_LOCK_TABLE }}"
+              # -lock=false: infra_plan is deliberately read-only (no DynamoDB write grant) — see
+              # oidc.tf's infra_plan comment for the accepted tradeoff (a small race window against
+              # a concurrent real apply, acceptable for a plan whose only purpose is human review).
+              tofu plan -input=false -lock=false -no-color -out=tfplan "${extra_vars[@]}"
+              {
+                echo '```'
+                tofu show -no-color tfplan
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+            )
+          done
+
+  infra-apply:
+    name: Infra apply (cicd, registry)
+    # Existing infra-checks (fmt/validate/test/lint) gates this apply, per #215's acceptance
+    # criteria — a merge whose own infra-checks run failed must never reach `tofu apply`.
+    needs: [changes, infra-checks]
+    if: github.event_name == 'push' && needs.changes.outputs.infra_relevant == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.5
+      - name: Select the branch-scoped deploy role for this push (issue #212's roles — dev/19.0 assumes staging_deploy, main/19.0 assumes production_deploy)
+        id: role
+        run: |
+          case "${{ github.ref_name }}" in
+            dev/19.0) echo "role_arn=${{ vars.STAGING_DEPLOY_ROLE_ARN }}" >> "$GITHUB_OUTPUT" ;;
+            main/19.0) echo "role_arn=${{ vars.PRODUCTION_DEPLOY_ROLE_ARN }}" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "No deploy role mapped for branch '${{ github.ref_name }}' — this job's trigger (on.push.branches above) must stay in sync with this case statement." >&2
+              exit 1
+              ;;
+          esac
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.role.outputs.role_arn }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Apply infra/cicd and infra/registry
+        # No `continue-on-error`, no `|| true`, no `if: always()` swallowing a failure here —
+        # #215's acceptance criteria require an apply failure to fail this workflow loudly rather
+        # than leave a partial, ambiguous state. GitHub Actions' default `bash -eo pipefail` for
+        # `run:` steps already turns the first failing `tofu` command into a failed step, and nothing
+        # downstream depends on this job succeeding, so there is nothing to mask that failure.
+        run: |
+          for dir in infra/cicd infra/registry; do
+            case "$dir" in
+              infra/cicd)
+                extra_vars=(
+                  -var "platform_account_id=${{ vars.PLATFORM_ACCOUNT_ID }}"
+                  -var "tofu_state_bucket_arn=${{ vars.TOFU_STATE_BUCKET_ARN }}"
+                  -var "tofu_state_lock_table_arn=${{ vars.TOFU_STATE_LOCK_TABLE_ARN }}"
+                )
+                ;;
+              infra/registry)
+                extra_vars=(
+                  -var "hosting_account_ecs_task_execution_role_arn=${{ vars.HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN }}"
+                )
+                ;;
+            esac
+            echo "::group::tofu apply $dir"
+            (
+              cd "$dir"
+              tofu init -input=false \
+                -backend-config="bucket=${{ vars.TOFU_STATE_BUCKET }}" \
+                -backend-config="region=${{ vars.AWS_REGION }}" \
+                -backend-config="dynamodb_table=${{ vars.TOFU_STATE_LOCK_TABLE }}"
+              tofu apply -input=false -auto-approve -no-color "${extra_vars[@]}"
+            )
+            echo "::endgroup::"
           done
 
   stack-checks:

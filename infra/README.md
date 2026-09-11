@@ -21,19 +21,24 @@ infra/
 │                       stale-lock and snapshot-cleanup rules, and the shared log-forwarding,
 │                       auto-destroy-snapshot, and snapshot-cleanup Lambdas.
 │                       Applied once (and on foundation changes), not per Trial Org.
-├── cicd/               Root module. The GitHub Actions OIDC identity provider and three
-│                       branch-scoped roles issue #212 (staging/production deploy) and #252
-│                       (ecr_push) added, reversing ADR-0017's self-hosted-runner approach in
-│                       favor of `sts:AssumeRoleWithWebIdentity` — no long-lived AWS keys, no
-│                       runner instance to patch. Each role's trust policy is scoped to this
-│                       repository: the deploy roles each trust their own one branch
-│                       (staging_deploy → staging_branch, production_deploy → production_branch),
-│                       while ecr_push trusts both staging_branch and production_branch (image
-│                       builds run on either). Not merely branch protection.
+├── cicd/               Root module. The GitHub Actions OIDC identity provider and four
+│                       branch-scoped/repo-scoped roles issue #212 (staging/production deploy),
+│                       #252 (ecr_push), and #215 (infra_plan) added, reversing ADR-0017's
+│                       self-hosted-runner approach in favor of `sts:AssumeRoleWithWebIdentity` —
+│                       no long-lived AWS keys, no runner instance to patch. Each role's trust
+│                       policy is scoped to this repository: the deploy roles each trust their own
+│                       one branch (staging_deploy → staging_branch, production_deploy →
+│                       production_branch), while ecr_push and infra_plan trust any pull_request
+│                       run against this repo's ci.yml (image builds and infra plans both happen at
+│                       PR time, on either branch). Not merely branch protection.
 │                       Independent of `foundation` (own state key, own `tofu init`/`plan`/
-│                       `apply`); the deploy roles' actual permissions are a deliberate placeholder
-│                       until a later ticket defines what a deploy touches (see oidc.tf) — ecr_push
-│                       is already scoped for real, to the four `infra/registry` repositories.
+│                       `apply`); the deploy roles' app-deploy permissions are still a deliberate
+│                       placeholder until #216/#217 define what a deploy touches (see oidc.tf), but
+│                       they are scoped for real for a second, narrower purpose (issue #215):
+│                       applying `infra/cicd` and `infra/registry` themselves, plan-on-PR (via the
+│                       read-only infra_plan role) and apply-on-merge (via themselves) — see
+│                       `.github/workflows/ci.yml`'s infra-plan/infra-apply jobs and the "`tofu
+│                       apply` is a deliberate human/ops action" section below.
 ├── registry/           Root module (ADR-0038, Platform-Account-scoped). The four ECR
 │                       repositories the fork's images move to (`agentic-erp/odoo-dev`,
 │                       `agentic-erp/odoo-prod`, `agentic-erp/tofu-runner`,
@@ -44,7 +49,8 @@ infra/
 │                       execution role (`infra/foundation`). Independent of `foundation` and
 │                       `cicd` (own state key); no cross-module remote-state lookup — repository
 │                       names are fixed by ADR-0038, and the Hosting Account role ARN is supplied
-│                       as a plain variable at apply time.
+│                       as a plain variable at apply time. Plans and applies from CI the same way
+│                       `cicd` does (issue #215).
 └── modules/
     └── trial_org/       Reusable module (not a root module — nothing here runs `tofu` against it
                           directly). Declares one Trial Org's own infrastructure: one EC2
@@ -82,15 +88,50 @@ tofu plan   # will fail past the provider-auth step without real AWS credentials
 module), so `tofu validate` there needs a thin example root to instantiate it against. See
 `infra/modules/trial_org/README.md` for how later tickets are expected to invoke it.
 
-## `tofu apply` is a deliberate human/ops action
+## `tofu apply` is a deliberate human/ops action — for `bootstrap` and `foundation`
 
-**Nothing in this repository runs `tofu apply` or `tofu destroy` against real AWS, automatically
-or otherwise.** No CI workflow and no agent working in this repo is authorized to apply this code.
-Applying the `bootstrap` and `foundation` root modules against the real Hosting Account is a
+**Nothing in this repository runs `tofu apply` or `tofu destroy` against `bootstrap` or
+`foundation`, automatically or otherwise.** No CI workflow and no agent working in this repo is
+authorized to apply either. Applying these two root modules against the real Hosting Account is a
 manual, credentialed step performed by a human operator, tracked as its own follow-up ticket under
 #106 (this ticket, #113, is code-only). Per-Trial-Org applies of `modules/trial_org` happen later,
 automatically, but only via the state machine's ECS task running inside AWS itself — never from a
 developer machine or CI runner.
+
+**`cicd` and `registry` are the exception** (issue #215, under #202): CI plans them on every pull
+request that touches either (posted to the job summary for review) and applies on a merge to
+`dev/19.0`/`main/19.0`, using the branch-scoped `staging_deploy`/`production_deploy` roles
+`infra/cicd/oidc.tf` defines, gated by the existing `infra-checks` job. `bootstrap` and
+`foundation` were deliberately left out of that automation: `foundation` is the shared AWS
+backbone every Trial Org and the hosting product depend on (VPC, ECS cluster, DNS, the Trial Org
+state machine), and `bootstrap` has no remote backend of its own (it creates the backend), so
+applying it from CI is a chicken-and-egg problem regardless. Revisit including `foundation` once
+the deploy roles' permissions cover more than infra/cicd + infra/registry's own resources.
+
+### Repository variables the infra-plan/infra-apply CI jobs need
+
+Bootstrapping `cicd`'s own roles/OIDC provider and `infra/bootstrap`'s state backend is still a
+manual, credentialed first apply (chicken-and-egg — nothing can assume a role that doesn't exist
+yet, or write to a backend that doesn't exist yet). Once that first apply has happened, a human
+operator sets these as plain repository variables (`vars.*`, not `secrets.*` — none of these are
+sensitive on their own; ADR-0017's reasoning that a role ARN's confidentiality doesn't matter,
+only its trust policy does, applies the same way here) for `.github/workflows/ci.yml`'s
+`infra-plan`/`infra-apply` jobs to use:
+
+| Variable | Source |
+| --- | --- |
+| `STAGING_DEPLOY_ROLE_ARN` | `infra/cicd`'s `staging_deploy_role_arn` output |
+| `PRODUCTION_DEPLOY_ROLE_ARN` | `infra/cicd`'s `production_deploy_role_arn` output |
+| `INFRA_PLAN_ROLE_ARN` | `infra/cicd`'s `infra_plan_role_arn` output |
+| `TOFU_STATE_BUCKET` | `infra/bootstrap`'s `state_bucket_name` output |
+| `TOFU_STATE_BUCKET_ARN` | `arn:aws:s3:::<state_bucket_name>` |
+| `TOFU_STATE_LOCK_TABLE` | `infra/bootstrap`'s `state_lock_table_name` output |
+| `TOFU_STATE_LOCK_TABLE_ARN` | `arn:aws:dynamodb:<region>:<account_id>:table/<state_lock_table_name>` |
+| `PLATFORM_ACCOUNT_ID` | `infra/cicd`'s `platform_account_id` input (the Platform Account `infra/registry` lives in) |
+| `HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN` | `infra/registry`'s `hosting_account_ecs_task_execution_role_arn` input |
+
+`AWS_REGION` already exists from #212/#252's wiring and is reused as-is for the backend's `region`
+too (`infra/bootstrap` and `infra/cicd` live in the same account/region).
 
 After `foundation`'s first apply, the operator must also **delegate `var.root_domain` to the
 zone's name servers** (the `route53_name_servers` output) at the domain's registrar or parent
