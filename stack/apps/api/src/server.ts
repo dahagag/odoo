@@ -42,7 +42,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   app.addHook('preHandler', requireIdempotencyKey);
 
-  app.get('/healthz', async () => ({ status: 'ok' as const }));
+  app.get('/healthz', async () => ({ status: 'ok' as const, release: deps.env.RELEASE_VERSION }));
 
   app.get('/readyz', async (_request, reply) => {
     try {

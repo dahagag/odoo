@@ -1,0 +1,35 @@
+name: Resolve the current release tag
+description: >-
+  Fetches this repo's v* release tags and resolves the latest one by version sort — the same
+  "current release" resolution ci.yml's manifest-version-check job uses (issue #214), reused here
+  (issue #216) by infra-plan-platform and deploy-administration-stack-staging so the two don't
+  each carry their own copy of this shell block.
+outputs:
+  tag:
+    description: The latest v<major>.<minor>.<patch> tag, e.g. "v1.2.3".
+    value: ${{ steps.tag.outputs.tag }}
+runs:
+  using: composite
+  steps:
+    - name: Fetch release tags
+      # Shallow, refspec-scoped fetch of just the v* tag refs (and the single commit each points
+      # at) — not a full-history clone, which would walk this whole (huge) repo's history just to
+      # find a tag name.
+      shell: bash
+      run: git fetch --no-tags --depth=1 origin 'refs/tags/v*:refs/tags/v*'
+    - name: Resolve the latest v* tag by version sort
+      # Not `git describe` (which needs the ancestry graph between HEAD and the tag — exactly the
+      # history walk the shallow fetch above avoids). This repo cuts one release tag at a time off
+      # its release branches, so "latest by version" and "nearest reachable ancestor" agree in
+      # practice.
+      id: tag
+      shell: bash
+      run: |
+        tag=$(git tag --list 'v*' --sort=-v:refname |
+          grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' |
+          head -n1)
+        if [[ -z "$tag" ]]; then
+          echo "No v* release tag found" >&2
+          exit 1
+        fi
+        echo "tag=$tag" >> "$GITHUB_OUTPUT"

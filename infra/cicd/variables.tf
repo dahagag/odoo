@@ -70,6 +70,24 @@ variable "tofu_state_bucket_arn" {
   EOT
 }
 
+variable "administration_stack_ecs_cluster_name" {
+  type        = string
+  description = "infra/platform's var.ecs_cluster_name default (\"platform\") — fixed here too (issue #216) so staging_deploy's ECS deploy permissions can be scoped to this exact cluster's ARN rather than a bare \"*\", the same convention ecr_repository_names uses for the ECR repositories' fixed names."
+  default     = "platform"
+}
+
+variable "administration_stack_task_family" {
+  type        = string
+  description = "infra/platform's aws_ecs_task_definition.administration_stack_api family default (\"platform-administration-stack-api\", infra/platform/ecs_task.tf) — fixed here so staging_deploy's RegisterTaskDefinition/DescribeTaskDefinition grant can be scoped to this exact family, not every task family in the account."
+  default     = "platform-administration-stack-api"
+}
+
+variable "administration_stack_ecs_service_name" {
+  type        = string
+  description = "infra/platform's aws_ecs_service.administration_stack_api name default (same \"platform-administration-stack-api\" convention) — fixed here so staging_deploy's service-update grant can be scoped to this exact service's ARN."
+  default     = "platform-administration-stack-api"
+}
+
 variable "tofu_state_lock_table_arn" {
   type        = string
   description = <<-EOT

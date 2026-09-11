@@ -19,6 +19,12 @@ const BaseEnvSchema = z.object({
   AWS_REGION: z.string().default('us-east-1'),
   DYNAMO_TABLE_ORGS: z.string().default('orgs'),
   DYNAMO_TABLE_LOCKS: z.string().default('locks'),
+  /** The release tag (e.g. "v1.2.3") this process's image was deployed under, injected as a
+   * task-definition environment variable at deploy time (infra/platform) — not baked into the
+   * image itself, since the image is built and pushed at PR time (by content-hash tag) before a
+   * release tag naming it exists. `/healthz` surfaces this so "what's running in staging" is
+   * answerable without cross-referencing ECR or ECS directly (issue #216). */
+  RELEASE_VERSION: z.string().default('unknown'),
 });
 
 /** A production process must not be able to start "successfully" against dev/test defaults -

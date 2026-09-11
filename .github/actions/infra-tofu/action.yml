@@ -32,6 +32,14 @@ inputs:
   hosting_account_ecs_task_execution_role_arn:
     description: infra/registry's same-named input (only used when dir is infra/registry).
     required: true
+  administration_stack_api_repository_url:
+    description: infra/platform's same-named input (only used when dir is infra/platform) — infra/registry's administration_stack_api_repository_url output.
+    required: false
+    default: ""
+  administration_stack_image_tag:
+    description: infra/platform's same-named input (only used when dir is infra/platform) — the release version this apply deploys (issue #216).
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -49,6 +57,12 @@ runs:
           infra/registry)
             extra_vars=(
               -var "hosting_account_ecs_task_execution_role_arn=${{ inputs.hosting_account_ecs_task_execution_role_arn }}"
+            )
+            ;;
+          infra/platform)
+            extra_vars=(
+              -var "administration_stack_api_repository_url=${{ inputs.administration_stack_api_repository_url }}"
+              -var "administration_stack_image_tag=${{ inputs.administration_stack_image_tag }}"
             )
             ;;
           *)

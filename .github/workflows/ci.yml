@@ -30,6 +30,7 @@ jobs:
       docs_build: ${{ steps.check.outputs.docs_build }}
       infra_relevant: ${{ steps.check.outputs.infra_relevant }}
       infra_cicd_registry_relevant: ${{ steps.check.outputs.infra_cicd_registry_relevant }}
+      infra_platform_relevant: ${{ steps.check.outputs.infra_platform_relevant }}
       lint_relevant: ${{ steps.check.outputs.lint_relevant }}
       stack_relevant: ${{ steps.check.outputs.stack_relevant }}
       release_version_relevant: ${{ steps.check.outputs.release_version_relevant }}
@@ -94,6 +95,14 @@ jobs:
             infra_cicd_registry_relevant:
               - 'infra/cicd/**'
               - 'infra/registry/**'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/infra-tofu/**'
+            # Issue #216: infra-plan-platform/deploy-administration-stack-staging below only ever
+            # touch infra/platform — narrower than infra_relevant, same reasoning as
+            # infra_cicd_registry_relevant above (a PR touching only infra/foundation or
+            # infra/modules/trial_org shouldn't assume infra_plan's AWS credentials for this).
+            infra_platform_relevant:
+              - 'infra/platform/**'
               - '.github/workflows/ci.yml'
               - '.github/actions/infra-tofu/**'
             lint_relevant:
@@ -283,6 +292,52 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  build-stack-image:
+    name: Build and publish administration-stack API image
+    needs: changes
+    # Same fork-exclusion guard as build-image/build-prod-image (ecr_push's IAM trust policy
+    # alone can't tell a fork's pull_request run from this repo's own).
+    if: needs.changes.outputs.stack_relevant == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: ./.github/actions/ecr-login
+        id: ecr-login
+        with:
+          role-arn: ${{ vars.ECR_PUSH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Compute the image tag from its content inputs
+        # Content-hash tagged, same convention as build-image/build-prod-image — this is not the
+        # tag deploy-administration-stack-staging deploys under (that's the release version,
+        # issue #216); it retags this same, already-pushed image afterward, so the bytes a
+        # staging deploy ships are exactly what this job built and (non-blocking `test` job
+        # aside) nothing rebuilds them.
+        id: tag
+        run: echo "image=${{ steps.ecr-login.outputs.registry }}/agentic-erp/administration-stack-api:${{ hashFiles('stack/**') }}" >> "$GITHUB_OUTPUT"
+      - name: Check whether this image tag is already published
+        id: existing
+        env:
+          STACK_IMAGE: ${{ steps.tag.outputs.image }}
+        run: |
+          if docker buildx imagetools inspect "$STACK_IMAGE" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/build-push-action@v6
+        if: steps.existing.outputs.exists != 'true'
+        with:
+          context: stack
+          file: stack/apps/api/Dockerfile
+          push: true
+          tags: ${{ steps.tag.outputs.image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   lint:
     name: Lint
     needs: changes
@@ -409,10 +464,10 @@ jobs:
       - name: tofu fmt -check
         if: needs.changes.outputs.infra_relevant == 'true'
         run: tofu fmt -check -recursive infra/
-      - name: tofu validate (bootstrap, foundation, cicd, registry, trial_org, and its validate fixture)
+      - name: tofu validate (bootstrap, foundation, cicd, registry, platform, trial_org, and its validate fixture)
         if: needs.changes.outputs.infra_relevant == 'true'
         run: |
-          for dir in infra/bootstrap infra/foundation infra/cicd infra/registry infra/modules/trial_org infra/modules/trial_org/examples/validate; do
+          for dir in infra/bootstrap infra/foundation infra/cicd infra/registry infra/platform infra/modules/trial_org infra/modules/trial_org/examples/validate; do
             echo "::group::tofu validate $dir"
             (cd "$dir" && tofu init -backend=false -input=false && tofu validate)
             echo "::endgroup::"
@@ -433,6 +488,12 @@ jobs:
         if: needs.changes.outputs.infra_relevant == 'true'
         run: |
           cd infra/registry
+          tofu init -backend=false -input=false
+          tofu test
+      - name: tofu test (platform — issue #216 administration-stack API no-public-ingress boundary, no live AWS account needed)
+        if: needs.changes.outputs.infra_relevant == 'true'
+        run: |
+          cd infra/platform
           tofu init -backend=false -input=false
           tofu test
       - uses: actions/setup-python@v5
@@ -550,6 +611,121 @@ jobs:
           tofu_state_bucket_arn: ${{ vars.TOFU_STATE_BUCKET_ARN }}
           tofu_state_lock_table_arn: ${{ vars.TOFU_STATE_LOCK_TABLE_ARN }}
           hosting_account_ecs_task_execution_role_arn: ${{ vars.HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN }}
+
+  infra-plan-platform:
+    name: Infra plan (infra/platform)
+    # See infra-plan's identical reasoning above for depending on infra-checks first.
+    needs: [changes, infra-checks]
+    if: github.event_name == 'pull_request' && needs.changes.outputs.infra_platform_relevant == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/resolve-release-tag
+        # This plan's own preview of the image tag a deploy would use, not a requirement that one
+        # already exists in ECR (a `tofu plan` never validates that the image tag it renders
+        # actually exists).
+        id: tag
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.5
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # Same shared, read-only infra_plan role as infra-plan above — its trust condition
+          # carries no branch information to isolate by, and this ticket's real staging-only
+          # write access lives on staging_deploy instead (infra/cicd/oidc.tf's
+          # administration_stack_deploy document, issue #216).
+          role-to-assume: ${{ vars.INFRA_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: ./.github/actions/infra-tofu
+        with:
+          dir: infra/platform
+          command: plan
+          bucket: ${{ vars.TOFU_STATE_BUCKET }}
+          region: ${{ vars.AWS_REGION }}
+          dynamodb_table: ${{ vars.TOFU_STATE_LOCK_TABLE }}
+          platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
+          tofu_state_bucket_arn: ${{ vars.TOFU_STATE_BUCKET_ARN }}
+          tofu_state_lock_table_arn: ${{ vars.TOFU_STATE_LOCK_TABLE_ARN }}
+          hosting_account_ecs_task_execution_role_arn: ${{ vars.HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN }}
+          administration_stack_api_repository_url: ${{ vars.ADMINISTRATION_STACK_API_REPOSITORY_URL }}
+          administration_stack_image_tag: ${{ steps.tag.outputs.tag }}
+
+  deploy-administration-stack-staging:
+    name: Deploy administration-stack API (staging)
+    # Same infra-checks gate as infra-apply above — a merge whose own infra-checks failed must
+    # never reach a real ECR retag or `tofu apply` (issue #216's acceptance criteria: "a failed
+    # step stops the workflow rather than leaving a partial deploy").
+    needs: [changes, infra-checks]
+    # dev/19.0 hardcoded, matching infra-apply's own branch case statement above — this repo's
+    # branch names are literal strings in ci.yml throughout (on.push.branches, infra-apply's role
+    # selection), never a repository variable.
+    if: github.event_name == 'push' && github.ref_name == 'dev/19.0'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/resolve-release-tag
+        # This is "the current release's derived version" issue #216's acceptance criteria
+        # deploys under.
+        id: tag
+      - name: Compute the content-hash tag build-stack-image published this commit's image under
+        id: content_tag
+        run: echo "tag=${{ hashFiles('stack/**') }}" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.STAGING_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Retag the PR-built image with the release version
+        # No rebuild: the bytes this deploys are exactly what build-stack-image (PR-time,
+        # ecr_push role) already pushed under its content-hash tag — this only adds a second tag
+        # to the same image manifest (staging_deploy's own narrow RetagAdministrationStackImage
+        # grant, infra/cicd/oidc.tf), so the image a staging deploy ships is always something a PR
+        # already tested.
+        env:
+          CONTENT_HASH_TAG: ${{ steps.content_tag.outputs.tag }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          manifest=$(aws ecr batch-get-image \
+            --repository-name agentic-erp/administration-stack-api \
+            --image-ids imageTag="$CONTENT_HASH_TAG" \
+            --query 'images[0].imageManifest' --output text)
+          if [[ -z "$manifest" || "$manifest" == "None" ]]; then
+            echo "No agentic-erp/administration-stack-api image found for content-hash tag $CONTENT_HASH_TAG — did build-stack-image run for this commit's stack/** tree?" >&2
+            exit 1
+          fi
+          aws ecr put-image \
+            --repository-name agentic-erp/administration-stack-api \
+            --image-tag "$RELEASE_TAG" \
+            --image-manifest "$manifest"
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.5
+      - uses: ./.github/actions/infra-tofu
+        with:
+          dir: infra/platform
+          command: apply
+          bucket: ${{ vars.TOFU_STATE_BUCKET }}
+          region: ${{ vars.AWS_REGION }}
+          dynamodb_table: ${{ vars.TOFU_STATE_LOCK_TABLE }}
+          platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
+          tofu_state_bucket_arn: ${{ vars.TOFU_STATE_BUCKET_ARN }}
+          tofu_state_lock_table_arn: ${{ vars.TOFU_STATE_LOCK_TABLE_ARN }}
+          hosting_account_ecs_task_execution_role_arn: ${{ vars.HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN }}
+          administration_stack_api_repository_url: ${{ vars.ADMINISTRATION_STACK_API_REPOSITORY_URL }}
+          administration_stack_image_tag: ${{ steps.tag.outputs.tag }}
+      - name: Record which release is now running in staging
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          {
+            echo "## Deployed to staging"
+            echo "Release \`$RELEASE_TAG\` is now running in the administration-stack API's ECS service (\`aws ecs describe-services --cluster platform --services platform-administration-stack-api --include TAGS\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   stack-checks:
     name: Stack checks
