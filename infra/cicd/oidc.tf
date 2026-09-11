@@ -279,10 +279,38 @@ data "aws_iam_policy_document" "administration_stack_deploy" {
       "ec2:CreateRouteTable",
       "ec2:DescribeSecurityGroups",
       "ec2:CreateSecurityGroup",
-      "ec2:CreateTags",
       "ec2:DescribeTags",
     ]
     resources = ["*"]
+  }
+
+  # ec2:CreateTags kept out of the statement above and conditioned on ec2:CreateAction: unrestricted,
+  # it would let staging_deploy tag an unrelated, pre-existing EC2 resource with TofuModule=platform
+  # and then use ManageAdministrationStackNetworkingScoped's own ec2:ResourceTag condition below to
+  # delete/modify that resource — an escalation the resource-tag scoping was supposed to prevent, not
+  # enable. ec2:CreateAction only evaluates true when CreateTags is invoked as part of one of these
+  # specific resource-creating calls' own tag-on-create parameters, never as a same-role follow-up
+  # call against something that already exists.
+  statement {
+    sid    = "TagAdministrationStackNetworkingOnCreate"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateTags",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:CreateAction"
+      values = [
+        "CreateVpc",
+        "CreateSubnet",
+        "CreateInternetGateway",
+        "CreateNatGateway",
+        "AllocateAddress",
+        "CreateRouteTable",
+        "CreateSecurityGroup",
+      ]
+    }
   }
 
   # Same networking surface as above, but every write action that acts on a resource this module
