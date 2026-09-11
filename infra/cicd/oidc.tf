@@ -231,12 +231,21 @@ data "aws_iam_policy_document" "staging_deploy" {
 # yet (that's #217's own ticket to define, possibly against a different infra/platform instance
 # or var.environment).
 #
-# VPC/subnet/security-group/NAT/route-table/EIP actions are granted with resource "*": unlike an
-# IAM role name or an ECR repository name, none of these carry a name known before creation (only
-# an opaque, provider-assigned id), so — the same reasoning infra/foundation/iam.tf's own
-# DescribeEc2 statement gives for read-only EC2 calls — AWS's IAM reference offers no resource-
-# level ARN to scope create/manage calls to ahead of time. Isolation instead comes from role
-# separation: no other role this state manages holds any ec2:* grant at all.
+# VPC/subnet/security-group/NAT/route-table/EIP *creation* and read-only Describe* calls are
+# granted with resource "*": unlike an IAM role name or an ECR repository name, none of these
+# carry a name known before creation (only an opaque, provider-assigned id), so — the same
+# reasoning infra/foundation/iam.tf's own DescribeEc2 statement gives for read-only EC2 calls —
+# AWS's IAM reference offers no resource-level ARN to scope create calls to ahead of time.
+#
+# Every other write action here — Delete/Modify/Authorize/Revoke, plus Attach/DetachInternetGateway,
+# Associate/DisassociateRouteTable, and CreateRoute (adds a route to an already-created,
+# already-tagged route table) — acts only on resources that already exist and are already tagged
+# (via this module's own default_tags) by the time they're called, so those are scoped below to
+# this module's own resources via the ec2:ResourceTag condition key, rather than "*" — narrowing
+# blast radius if staging_deploy's credentials were ever compromised. This is on top of, not
+# instead of, role separation: infra_plan is the only other role this state manages with any
+# ec2:* grant at all, and it is read-only (ReadAdministrationStackNetworking below, Describe*
+# actions only).
 # ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "administration_stack_deploy" {
@@ -257,43 +266,60 @@ data "aws_iam_policy_document" "administration_stack_deploy" {
     actions = [
       "ec2:DescribeVpcs",
       "ec2:CreateVpc",
-      "ec2:DeleteVpc",
-      "ec2:ModifyVpcAttribute",
       "ec2:DescribeVpcAttribute",
       "ec2:DescribeSubnets",
       "ec2:CreateSubnet",
-      "ec2:DeleteSubnet",
-      "ec2:ModifySubnetAttribute",
       "ec2:DescribeInternetGateways",
       "ec2:CreateInternetGateway",
-      "ec2:DeleteInternetGateway",
-      "ec2:AttachInternetGateway",
-      "ec2:DetachInternetGateway",
       "ec2:DescribeNatGateways",
       "ec2:CreateNatGateway",
-      "ec2:DeleteNatGateway",
       "ec2:DescribeAddresses",
       "ec2:AllocateAddress",
-      "ec2:ReleaseAddress",
       "ec2:DescribeRouteTables",
       "ec2:CreateRouteTable",
+      "ec2:DescribeSecurityGroups",
+      "ec2:CreateSecurityGroup",
+      "ec2:CreateTags",
+      "ec2:DescribeTags",
+    ]
+    resources = ["*"]
+  }
+
+  # Same networking surface as above, but every write action that acts on a resource this module
+  # already created (and tagged) earlier in the same apply — unlike the create/describe statement
+  # above, a resource-level ARN isn't the only option here; ec2:ResourceTag lets us scope to
+  # exactly this module's own resources instead of the whole account.
+  statement {
+    sid    = "ManageAdministrationStackNetworkingScoped"
+    effect = "Allow"
+    actions = [
+      "ec2:DeleteVpc",
+      "ec2:ModifyVpcAttribute",
+      "ec2:DeleteSubnet",
+      "ec2:ModifySubnetAttribute",
+      "ec2:AttachInternetGateway",
+      "ec2:DetachInternetGateway",
+      "ec2:DeleteInternetGateway",
+      "ec2:DeleteNatGateway",
+      "ec2:ReleaseAddress",
+      "ec2:AssociateRouteTable",
+      "ec2:DisassociateRouteTable",
       "ec2:DeleteRouteTable",
       "ec2:CreateRoute",
       "ec2:DeleteRoute",
-      "ec2:AssociateRouteTable",
-      "ec2:DisassociateRouteTable",
-      "ec2:DescribeSecurityGroups",
-      "ec2:CreateSecurityGroup",
       "ec2:DeleteSecurityGroup",
       "ec2:AuthorizeSecurityGroupEgress",
       "ec2:RevokeSecurityGroupEgress",
       "ec2:AuthorizeSecurityGroupIngress",
       "ec2:RevokeSecurityGroupIngress",
-      "ec2:CreateTags",
       "ec2:DeleteTags",
-      "ec2:DescribeTags",
     ]
     resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/TofuModule"
+      values   = ["platform"]
+    }
   }
 
   statement {
