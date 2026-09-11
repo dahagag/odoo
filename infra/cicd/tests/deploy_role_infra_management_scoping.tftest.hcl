@@ -61,6 +61,25 @@ override_resource {
   }
 }
 
+# manage_own_role_staging_deploy/manage_own_role_production_deploy's ReadOtherManagedRoles
+# statement (issue #266's follow-up fix) also references ecr_push/infra_plan's ARNs — this same
+# infra/cicd state manages all four roles, not just the two deploy roles — so both need a
+# stand-in ARN here too, or targeting either deploy role's policy document would try to create
+# these for real.
+override_resource {
+  target = aws_iam_role.ecr_push
+  values = {
+    arn = "arn:aws:iam::111111111111:role/github-actions-ecr-push"
+  }
+}
+
+override_resource {
+  target = aws_iam_role.infra_plan
+  values = {
+    arn = "arn:aws:iam::111111111111:role/github-actions-infra-plan"
+  }
+}
+
 run "verify_deploy_role_infra_management_scoping" {
   command = apply
 
@@ -69,6 +88,8 @@ run "verify_deploy_role_infra_management_scoping" {
       aws_iam_openid_connect_provider.github_actions,
       aws_iam_role.staging_deploy,
       aws_iam_role.production_deploy,
+      aws_iam_role.ecr_push,
+      aws_iam_role.infra_plan,
       data.aws_iam_policy_document.staging_deploy,
       data.aws_iam_policy_document.production_deploy,
     ]
@@ -97,11 +118,15 @@ run "verify_deploy_role_infra_management_scoping" {
   assert {
     condition = anytrue([
       for statement in jsondecode(data.aws_iam_policy_document.staging_deploy.json).Statement :
-      statement.Sid == "ReadOtherDeployRole"
-      && toset(flatten([statement.Resource])) == toset(["arn:aws:iam::111111111111:role/github-actions-production-deploy"])
+      statement.Sid == "ReadOtherManagedRoles"
+      && toset(flatten([statement.Resource])) == toset([
+        "arn:aws:iam::111111111111:role/github-actions-production-deploy",
+        "arn:aws:iam::111111111111:role/github-actions-ecr-push",
+        "arn:aws:iam::111111111111:role/github-actions-infra-plan",
+      ])
       && alltrue([for action in flatten([statement.Action]) : can(regex("^iam:(Get|List).*$", action))])
     ])
-    error_message = "staging_deploy's ReadOtherDeployRole statement must grant only read-only actions against exactly production_deploy's ARN."
+    error_message = "staging_deploy's ReadOtherManagedRoles statement must grant only read-only actions against exactly the other three roles this state manages (production_deploy, ecr_push, infra_plan) — not itself, not a wildcard."
   }
 
   assert {
@@ -116,11 +141,15 @@ run "verify_deploy_role_infra_management_scoping" {
   assert {
     condition = anytrue([
       for statement in jsondecode(data.aws_iam_policy_document.production_deploy.json).Statement :
-      statement.Sid == "ReadOtherDeployRole"
-      && toset(flatten([statement.Resource])) == toset(["arn:aws:iam::111111111111:role/github-actions-staging-deploy"])
+      statement.Sid == "ReadOtherManagedRoles"
+      && toset(flatten([statement.Resource])) == toset([
+        "arn:aws:iam::111111111111:role/github-actions-staging-deploy",
+        "arn:aws:iam::111111111111:role/github-actions-ecr-push",
+        "arn:aws:iam::111111111111:role/github-actions-infra-plan",
+      ])
       && alltrue([for action in flatten([statement.Action]) : can(regex("^iam:(Get|List).*$", action))])
     ])
-    error_message = "production_deploy's ReadOtherDeployRole statement must grant only read-only actions against exactly staging_deploy's ARN."
+    error_message = "production_deploy's ReadOtherManagedRoles statement must grant only read-only actions against exactly the other three roles this state manages (staging_deploy, ecr_push, infra_plan) — not itself, not a wildcard."
   }
 
   # --- cross-role isolation proof: neither role's policy grants a write action against the
