@@ -81,7 +81,7 @@ runs:
             # No `continue-on-error`, no `|| true` — a failure here must fail the calling job
             # loudly (issue #215's acceptance criteria), and GitHub Actions' default
             # `bash -eo pipefail` for `run:` steps already does that.
-            tofu apply -input=false -auto-approve -no-color "${extra_vars[@]}"
+            tofu apply -input=false -auto-approve -no-color -lock-timeout=10m "${extra_vars[@]}"
             ;;
           *)
             echo "Unknown command '${{ inputs.command }}' — must be plan or apply." >&2

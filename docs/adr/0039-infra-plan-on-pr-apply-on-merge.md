@@ -77,27 +77,37 @@ read-only) are scoped to exactly the resource shapes `infra/cicd` and `infra/reg
 - The OpenTofu S3-backend state objects these two modules own (`cicd/terraform.tfstate`,
   `registry/terraform.tfstate`) and the DynamoDB lock table (apply roles only — plan skips locking
   entirely, see above).
-- IAM actions against this account's GitHub Actions OIDC provider and the `github-actions-*` role
-  name pattern (the OIDC provider plus these four roles themselves).
+- IAM actions against this account's GitHub Actions OIDC provider (shared — both roles' applies
+  must be able to refresh it), each deploy role's own literal role ARN (write), and the *other*
+  deploy role's literal ARN (read-only, needed only because a `tofu apply` of this shared module
+  refreshes both roles' state even when only one is being written to).
 - ECR actions against the four ADR-0038 repository ARNs `infra/registry` manages.
 
 `staging_deploy`/`production_deploy`'s app-deploy permissions (#216/#217's concern) remain the
 placeholder `sts:GetCallerIdentity`-only statement #212 left them with — this ticket only adds the
 infra-management statements above alongside it.
 
-### Accepted tradeoff: self-management
+### Deliberately not self-managing: no cross-role IAM mutation
 
-Granting `staging_deploy`/`production_deploy` `iam:PutRolePolicy`/`iam:UpdateAssumeRolePolicy`
-against the `github-actions-*` pattern means each role can modify its own (and each other's) trust
-policy and inline policy via a `tofu apply` from its own branch. This is not a new escalation path:
-anyone who can merge to `staging_branch`/`production_branch` can already edit `oidc.tf` directly and
-have this same effect on the next apply — merge access to a protected branch already implies
-"whatever CI's identity can do." But it does mean a compromised branch merge's blast radius now
-extends to these IAM resources directly at apply time, not just to whatever the role's policy said
-at merge time. Accepted for the same reason the two-separate-roles design was accepted in #212: the
-alternative (a third, narrower, non-self-managing identity dedicated only to applying `infra/cicd`)
-adds a role this repo would then need to bootstrap and maintain for marginal isolation benefit,
-given branch-merge access is already the real trust boundary.
+An earlier version of this design granted `staging_deploy`/`production_deploy`
+`iam:PutRolePolicy`/`iam:UpdateAssumeRolePolicy` against a `github-actions-*` *wildcard* pattern,
+so each role could modify its own **and each other's** trust policy and inline policy via a
+`tofu apply` from its own branch, and could create some other, arbitrarily-named role matching that
+same pattern. Both were real escalation paths beyond "branch-merge access already implies whatever
+CI's identity can do" — a compromised `dev/19.0` merge could rewrite `production_deploy`'s trust
+policy (not just staging's own), or mint a brand-new role with an arbitrary trust/permissions
+combination the ADR's threat model never accounted for.
+
+Fixed by scoping each role's IAM-role write actions
+(`Create`/`Update`/`Delete`/`PutRolePolicy`/etc.) to its own literal role ARN only
+(`manage_own_role_staging_deploy`/`manage_own_role_production_deploy` in `oidc.tf`), not a wildcard
+pattern and not the other role's ARN. Each role keeps read-only access (`Get`/`List` only) to the
+*other* deploy role's ARN, since `tofu apply` still needs to refresh that role's state as part of
+applying the shared `infra/cicd` module — but it can no longer write to it. This costs nothing
+functionally (both roles' names are static Terraform literals, known before either is created) and
+closes both the cross-role-mutation and arbitrary-new-role paths in one change. A dedicated policy
+test (`infra/cicd/tests/deploy_role_infra_management_scoping.tftest.hcl`) asserts the isolation
+directly: neither role's policy grants any write action against the other's ARN.
 
 ## CI wiring
 

@@ -67,15 +67,16 @@ resource "aws_iam_role" "staging_deploy" {
 # plan using the corresponding branch-scoped role," reusing these two roles rather than adding a
 # third pair. infra_management_statements below is that grant, shared verbatim between both roles
 # via source_policy_documents (not copy-pasted per role): OpenTofu S3-backend state read/write +
-# DynamoDB lock, and management of the exact resource shapes infra/cicd (its own OIDC provider +
-# these four roles) and infra/registry (the four ECR repositories) create — nothing broader.
+# DynamoDB lock, management of the shared GitHub Actions OIDC provider, and management of the four
+# ADR-0038 ECR repositories infra/registry creates — nothing broader.
 #
-# Self-management tradeoff, called out deliberately rather than left implicit: this grants each
-# role the ability to modify its own (and the other's) trust policy and inline policy via a
-# `tofu apply` from its own branch. That is not a new escalation path — anyone who can merge to
-# either branch can already edit oidc.tf itself and have this same effect on the next apply — but
-# it does mean the blast radius of a compromised branch merge extends to these IAM resources
-# directly, not just to whatever the role's policy said at merge time.
+# Deliberately NOT self-managing each other's role: each role's own IAM-role write access
+# (Create/Update/Delete/PutRolePolicy/etc.) is scoped to its own literal role ARN only
+# (manage_own_role_staging_deploy / manage_own_role_production_deploy below), so a compromised
+# staging_branch merge cannot modify production_deploy's trust or inline policy, or create some
+# other arbitrarily-named github-actions-* role, and vice versa. Each role keeps read-only access
+# to the *other* role (Get/List only) because a `tofu apply` of this shared root module still
+# refreshes both roles' state even when only one is being written to.
 # ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "infra_management_statements" {
@@ -85,8 +86,19 @@ data "aws_iam_policy_document" "infra_management_statements" {
     actions = [
       "s3:GetObject",
       "s3:PutObject",
+      "s3:DeleteObject",
     ]
     resources = local.managed_state_object_arns
+  }
+
+  # The S3 backend also needs a bucket-level ListBucket (OpenTofu's own docs) — GetObject/PutObject/
+  # DeleteObject above are object-level and don't cover it. Scoped to the bucket ARN, not the state
+  # objects above, since ListBucket is a bucket-level action.
+  statement {
+    sid       = "TofuStateBackendListBucket"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = [var.tofu_state_bucket_arn]
   }
 
   statement {
@@ -96,35 +108,24 @@ data "aws_iam_policy_document" "infra_management_statements" {
       "dynamodb:GetItem",
       "dynamodb:PutItem",
       "dynamodb:DeleteItem",
+      "dynamodb:DescribeTable",
     ]
     resources = [var.tofu_state_lock_table_arn]
   }
 
+  # OIDC provider management stays shared: it's one resource both roles' applies must be able to
+  # refresh/update (e.g. a thumbprint rotation), not a role identity boundary — unlike the
+  # per-role IAM-role statements below, sharing it grants no cross-role escalation.
   statement {
-    sid    = "ManageCicdOidcAndRoles"
+    sid    = "ManageCicdOidc"
     effect = "Allow"
     actions = [
       "iam:GetOpenIDConnectProvider",
       "iam:CreateOpenIDConnectProvider",
       "iam:UpdateOpenIDConnectProviderThumbprint",
       "iam:TagOpenIDConnectProvider",
-      "iam:GetRole",
-      "iam:CreateRole",
-      "iam:UpdateRole",
-      "iam:UpdateAssumeRolePolicy",
-      "iam:DeleteRole",
-      "iam:TagRole",
-      "iam:PutRolePolicy",
-      "iam:GetRolePolicy",
-      "iam:DeleteRolePolicy",
-      "iam:ListRolePolicies",
-      "iam:ListAttachedRolePolicies",
-      "iam:ListInstanceProfilesForRole",
     ]
-    resources = [
-      local.managed_oidc_provider_arn,
-      local.managed_role_name_pattern,
-    ]
+    resources = [local.managed_oidc_provider_arn]
   }
 
   statement {
@@ -149,8 +150,51 @@ data "aws_iam_policy_document" "infra_management_statements" {
   }
 }
 
+# Own-role write access, scoped to this role's own literal ARN — not the other deploy role's, and
+# not a github-actions-* wildcard pattern (which would also let this role create some other,
+# arbitrarily-named role matching that pattern). Read-only access to the other deploy role's ARN is
+# still needed: a `tofu apply` of this shared module refreshes both roles' state even when only
+# one is being written to.
+data "aws_iam_policy_document" "manage_own_role_staging_deploy" {
+  statement {
+    sid    = "ManageOwnRole"
+    effect = "Allow"
+    actions = [
+      "iam:GetRole",
+      "iam:CreateRole",
+      "iam:UpdateRole",
+      "iam:UpdateAssumeRolePolicy",
+      "iam:DeleteRole",
+      "iam:TagRole",
+      "iam:PutRolePolicy",
+      "iam:GetRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+    ]
+    resources = [aws_iam_role.staging_deploy.arn]
+  }
+
+  statement {
+    sid    = "ReadOtherDeployRole"
+    effect = "Allow"
+    actions = [
+      "iam:GetRole",
+      "iam:GetRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+    ]
+    resources = [aws_iam_role.production_deploy.arn]
+  }
+}
+
 data "aws_iam_policy_document" "staging_deploy" {
-  source_policy_documents = [data.aws_iam_policy_document.infra_management_statements.json]
+  source_policy_documents = [
+    data.aws_iam_policy_document.infra_management_statements.json,
+    data.aws_iam_policy_document.manage_own_role_staging_deploy.json,
+  ]
 
   statement {
     sid       = "PlaceholderCallerIdentity"
@@ -199,8 +243,47 @@ resource "aws_iam_role" "production_deploy" {
 # carries the same infra-management/backend grant, so a push to production_branch can apply
 # infra/cicd and infra/registry too.
 
+# Mirrors manage_own_role_staging_deploy above, own/other roles swapped.
+data "aws_iam_policy_document" "manage_own_role_production_deploy" {
+  statement {
+    sid    = "ManageOwnRole"
+    effect = "Allow"
+    actions = [
+      "iam:GetRole",
+      "iam:CreateRole",
+      "iam:UpdateRole",
+      "iam:UpdateAssumeRolePolicy",
+      "iam:DeleteRole",
+      "iam:TagRole",
+      "iam:PutRolePolicy",
+      "iam:GetRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+    ]
+    resources = [aws_iam_role.production_deploy.arn]
+  }
+
+  statement {
+    sid    = "ReadOtherDeployRole"
+    effect = "Allow"
+    actions = [
+      "iam:GetRole",
+      "iam:GetRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+    ]
+    resources = [aws_iam_role.staging_deploy.arn]
+  }
+}
+
 data "aws_iam_policy_document" "production_deploy" {
-  source_policy_documents = [data.aws_iam_policy_document.infra_management_statements.json]
+  source_policy_documents = [
+    data.aws_iam_policy_document.infra_management_statements.json,
+    data.aws_iam_policy_document.manage_own_role_production_deploy.json,
+  ]
 
   statement {
     sid       = "PlaceholderCallerIdentity"
@@ -392,6 +475,15 @@ data "aws_iam_policy_document" "infra_plan" {
     effect    = "Allow"
     actions   = ["s3:GetObject"]
     resources = local.managed_state_object_arns
+  }
+
+  # See infra_management_statements' TofuStateBackendListBucket comment above — same bucket-level
+  # gap, needed here too for `tofu plan`'s own backend init.
+  statement {
+    sid       = "TofuStateBackendReadListBucket"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = [var.tofu_state_bucket_arn]
   }
 
   statement {

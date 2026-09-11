@@ -29,6 +29,7 @@ jobs:
       prod_image_relevant: ${{ steps.check.outputs.prod_image_relevant }}
       docs_build: ${{ steps.check.outputs.docs_build }}
       infra_relevant: ${{ steps.check.outputs.infra_relevant }}
+      infra_cicd_registry_relevant: ${{ steps.check.outputs.infra_cicd_registry_relevant }}
       lint_relevant: ${{ steps.check.outputs.lint_relevant }}
       stack_relevant: ${{ steps.check.outputs.stack_relevant }}
       release_version_relevant: ${{ steps.check.outputs.release_version_relevant }}
@@ -82,6 +83,17 @@ jobs:
               - 'custom_addons/crm_methodology/static/docs/**/*.html'
             infra_relevant:
               - 'infra/**'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/infra-tofu/**'
+            # Issue #215/#262: infra-plan and infra-apply below only ever touch infra/cicd and
+            # infra/registry (their matrix is hardcoded to those two dirs) — narrower than
+            # infra_relevant above, which infra-checks (fmt/validate/test/lint) legitimately keeps
+            # broad across every infra/** root module. Without this, a PR touching only
+            # infra/foundation or infra/modules/trial_org would still assume infra_plan's AWS
+            # credentials and run a pointless tofu plan against cicd/registry state.
+            infra_cicd_registry_relevant:
+              - 'infra/cicd/**'
+              - 'infra/registry/**'
               - '.github/workflows/ci.yml'
               - '.github/actions/infra-tofu/**'
             lint_relevant:
@@ -459,7 +471,7 @@ jobs:
     # depends on infra-checks succeeding first (fmt/validate/test/lint) even though nothing here
     # consumes its output — a broken module shouldn't get a plan attempt against real state.
     needs: [changes, infra-checks]
-    if: github.event_name == 'pull_request' && needs.changes.outputs.infra_relevant == 'true'
+    if: github.event_name == 'pull_request' && needs.changes.outputs.infra_cicd_registry_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -498,7 +510,7 @@ jobs:
     # Existing infra-checks (fmt/validate/test/lint) gates this apply, per #215's acceptance
     # criteria — a merge whose own infra-checks run failed must never reach `tofu apply`.
     needs: [changes, infra-checks]
-    if: github.event_name == 'push' && needs.changes.outputs.infra_relevant == 'true'
+    if: github.event_name == 'push' && needs.changes.outputs.infra_cicd_registry_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read

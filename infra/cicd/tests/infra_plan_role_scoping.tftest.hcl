@@ -132,4 +132,14 @@ run "verify_infra_plan_trust_and_read_only_scoping" {
     ])
     error_message = "infra_plan's TofuStateBackendRead statement must be scoped to exactly infra/cicd and infra/registry's own state objects — not the whole state bucket."
   }
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.infra_plan.json).Statement :
+      statement.Sid == "TofuStateBackendReadListBucket"
+      && flatten([statement.Action]) == ["s3:ListBucket"]
+      && flatten([statement.Resource]) == ["arn:aws:s3:::hosting-tofu-state"]
+    ])
+    error_message = "infra_plan's TofuStateBackendReadListBucket statement must grant exactly read-only s3:ListBucket on the state bucket ARN itself — no write action, no DynamoDB (this role runs tofu plan -lock=false)."
+  }
 }
