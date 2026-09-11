@@ -10,6 +10,26 @@ variable "github_repository" {
   default     = "dahagag/odoo"
 }
 
+variable "github_repository_immutable_subject" {
+  type        = string
+  description = <<-EOT
+    The ID-qualified "owner@owner_id/repo@repo_id" form GitHub embeds in a token's `sub` claim for
+    this repository, because this account has GitHub's "immutable subject" OIDC customization
+    enabled (`gh api repos/<repo>/actions/oidc/customization/sub` confirms
+    sub_claim_prefix = "repo:dahagag@2604865/odoo@1351561791" — not the plain "repo:dahagag/odoo"
+    var.github_repository holds). staging_deploy_trust/production_deploy_trust's `sub` condition
+    must match this exact qualified form, or sts:AssumeRoleWithWebIdentity is denied — found the
+    hard way when the first real push-triggered infra-apply failed against the plain,
+    unqualified form (issue #266). Not looked up dynamically (no GitHub provider/token wired into
+    this module) — supplied as a default here, same convention as github_oidc_thumbprint above,
+    since it's a fixed fact about this specific repository rather than a per-environment input.
+    job_workflow_ref (ecr_push_trust's and infra_plan_trust's condition) is unaffected — confirmed
+    elsewhere in oidc.tf that it stays plain owner/repo even with this setting enabled; only `sub`
+    is ID-qualified.
+  EOT
+  default     = "dahagag@2604865/odoo@1351561791"
+}
+
 variable "staging_branch" {
   type        = string
   description = "Branch whose workflow runs may assume staging_deploy (docs/agents/sdlc.md's default/staging branch)."
