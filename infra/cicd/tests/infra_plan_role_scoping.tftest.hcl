@@ -98,10 +98,12 @@ run "verify_infra_plan_trust_and_read_only_scoping" {
       for statement in jsondecode(data.aws_iam_policy_document.infra_plan.json).Statement :
       alltrue([
         for action in flatten([statement.Action]) :
-        # Every action infra_plan grants must be a read-only IAM/ECR/S3 verb — Get*, List*,
-        # Describe*, or ecr:GetLifecyclePolicy/GetRepositoryPolicy (also read-only despite not
-        # matching the Get*/List*/Describe* prefixes below).
-        can(regex("^(iam|ecr|s3):(Get|List|Describe).*$", action))
+        # Every action infra_plan grants must be a read-only IAM/ECR/S3/EC2/ECS/Logs verb — Get*,
+        # List*, Describe*, or ecr:GetLifecyclePolicy/GetRepositoryPolicy (also read-only despite
+        # not matching the Get*/List*/Describe* prefixes below). EC2/ECS/Logs were added by issue
+        # #216 so a PR touching infra/platform gets a real plan too (see this document's own
+        # ReadAdministrationStack* statements).
+        can(regex("^(iam|ecr|s3|ec2|ecs|logs):(Get|List|Describe).*$", action))
       ])
     ])
     error_message = "infra_plan's policy must grant only read-only (Get*/List*/Describe*) actions — no iam:Create*/Put*/Update*/Delete*, no ecr:Create*/Put*/Delete*, no s3:PutObject."

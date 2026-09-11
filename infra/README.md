@@ -51,6 +51,18 @@ infra/
 │                       names are fixed by ADR-0038, and the Hosting Account role ARN is supplied
 │                       as a plain variable at apply time. Plans and applies from CI the same way
 │                       `cicd` does (issue #215).
+├── platform/           Root module (Platform Account). The administration-stack API's own
+│                       compute: a dedicated VPC (private subnets + one NAT, no public ingress —
+│                       epic #193 story 18), an ECS cluster/service/task definition running
+│                       `stack/apps/api`'s image, its two IAM roles, and its log group. No load
+│                       balancer yet — issue #216's "first end-to-end proof" of the deploy
+│                       pipeline, not a production-shaped deployment. Independent of `cicd` and
+│                       `registry` (own state key); the ECR repository URL and the image tag to
+│                       deploy are supplied as plain variables at apply time (same no-remote-
+│                       state convention as `registry`). Plans on PRs touching it via the shared,
+│                       read-only `infra_plan` role; applies only on a push to `dev/19.0`, via
+│                       `staging_deploy`'s narrow `administration_stack_deploy` permissions
+│                       (`infra/cicd/oidc.tf`) — `production_deploy` has none of this yet (#217).
 └── modules/
     └── trial_org/       Reusable module (not a root module — nothing here runs `tofu` against it
                           directly). Declares one Trial Org's own infrastructure: one EC2
@@ -108,6 +120,13 @@ state machine), and `bootstrap` has no remote backend of its own (it creates the
 applying it from CI is a chicken-and-egg problem regardless. Revisit including `foundation` once
 the deploy roles' permissions cover more than infra/cicd + infra/registry's own resources.
 
+**`platform` also applies from CI (issue #216), but staging-only so far**: `infra-plan-platform`
+plans it on any pull request touching it (`infra_plan`, same as `cicd`/`registry`), and
+`deploy-administration-stack-staging` applies it on a push to `dev/19.0` only, using
+`staging_deploy`'s narrow `administration_stack_deploy` permissions. There is no
+`main/19.0`-triggered apply of `platform` yet — `production_deploy` carries none of these
+permissions until #217 defines what a production deploy of the administration stack touches.
+
 ### Repository variables the infra-plan/infra-apply CI jobs need
 
 Bootstrapping `cicd`'s own roles/OIDC provider and `infra/bootstrap`'s state backend is still a
@@ -129,6 +148,7 @@ only its trust policy does, applies the same way here) for `.github/workflows/ci
 | `TOFU_STATE_LOCK_TABLE_ARN` | `arn:aws:dynamodb:<region>:<account_id>:table/<state_lock_table_name>` |
 | `PLATFORM_ACCOUNT_ID` | `infra/cicd`'s `platform_account_id` input (the Platform Account `infra/registry` lives in) |
 | `HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN` | `infra/registry`'s `hosting_account_ecs_task_execution_role_arn` input |
+| `ADMINISTRATION_STACK_API_REPOSITORY_URL` | `infra/registry`'s `administration_stack_api_repository_url` output |
 
 `AWS_REGION` already exists from #212/#252's wiring and is reused as-is for the backend's `region`
 too (`infra/bootstrap` and `infra/cicd` live in the same account/region).

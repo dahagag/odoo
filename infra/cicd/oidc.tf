@@ -208,12 +208,267 @@ data "aws_iam_policy_document" "staging_deploy" {
   source_policy_documents = [
     data.aws_iam_policy_document.infra_management_statements.json,
     data.aws_iam_policy_document.manage_own_role_staging_deploy.json,
+    data.aws_iam_policy_document.administration_stack_deploy.json,
   ]
 
+  # Not a security boundary on its own (sts:GetCallerIdentity is implicitly allowed to any
+  # assumed role regardless of policy) — kept as a named, visible statement rather than removed,
+  # since aws-actions/configure-aws-credentials' own post-assume validation step calls it.
   statement {
-    sid       = "PlaceholderCallerIdentity"
+    sid       = "CallerIdentity"
     effect    = "Allow"
     actions   = ["sts:GetCallerIdentity"]
+    resources = ["*"]
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Issue #216: staging_deploy's real app-deploy permission set — the placeholder comment above
+# (and ADR-0039) named this as the thing #216/#217 would fill in. Scoped to exactly the resource
+# shapes infra/platform creates (a dedicated VPC/subnets/security-group, one ECS cluster/service/
+# task-definition family, its two IAM roles, its own log group) plus a narrow ECR retag grant on
+# the one repository this deploy tags — nothing broader, and production_deploy gets none of this
+# yet (that's #217's own ticket to define, possibly against a different infra/platform instance
+# or var.environment).
+#
+# VPC/subnet/security-group/NAT/route-table/EIP *creation* and read-only Describe* calls are
+# granted with resource "*": unlike an IAM role name or an ECR repository name, none of these
+# carry a name known before creation (only an opaque, provider-assigned id), so — the same
+# reasoning infra/foundation/iam.tf's own DescribeEc2 statement gives for read-only EC2 calls —
+# AWS's IAM reference offers no resource-level ARN to scope create calls to ahead of time.
+#
+# Every other write action here — Delete/Modify/Authorize/Revoke, plus Attach/DetachInternetGateway,
+# Associate/DisassociateRouteTable, and CreateRoute (adds a route to an already-created,
+# already-tagged route table) — acts only on resources that already exist and are already tagged
+# (via this module's own default_tags) by the time they're called, so those are scoped below to
+# this module's own resources via the ec2:ResourceTag condition key, rather than "*" — narrowing
+# blast radius if staging_deploy's credentials were ever compromised. This is on top of, not
+# instead of, role separation: infra_plan is the only other role this state manages with any
+# ec2:* grant at all, and it is read-only (ReadAdministrationStackNetworking below, Describe*
+# actions only).
+# ---------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "administration_stack_deploy" {
+  statement {
+    sid    = "TofuStateBackendPlatform"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = [local.administration_stack_platform_state_object_arn]
+  }
+
+  statement {
+    sid    = "ManageAdministrationStackNetworking"
+    effect = "Allow"
+    actions = [
+      "ec2:DescribeVpcs",
+      "ec2:CreateVpc",
+      "ec2:DescribeVpcAttribute",
+      "ec2:DescribeSubnets",
+      "ec2:CreateSubnet",
+      "ec2:DescribeInternetGateways",
+      "ec2:CreateInternetGateway",
+      "ec2:DescribeNatGateways",
+      "ec2:CreateNatGateway",
+      "ec2:DescribeAddresses",
+      "ec2:AllocateAddress",
+      "ec2:DescribeRouteTables",
+      "ec2:CreateRouteTable",
+      "ec2:DescribeSecurityGroups",
+      "ec2:CreateSecurityGroup",
+      "ec2:DescribeTags",
+    ]
+    resources = ["*"]
+  }
+
+  # ec2:CreateTags kept out of the statement above and conditioned on ec2:CreateAction: unrestricted,
+  # it would let staging_deploy tag an unrelated, pre-existing EC2 resource with TofuModule=platform
+  # and then use ManageAdministrationStackNetworkingScoped's own ec2:ResourceTag condition below to
+  # delete/modify that resource — an escalation the resource-tag scoping was supposed to prevent, not
+  # enable. ec2:CreateAction only evaluates true when CreateTags is invoked as part of one of these
+  # specific resource-creating calls' own tag-on-create parameters, never as a same-role follow-up
+  # call against something that already exists.
+  statement {
+    sid    = "TagAdministrationStackNetworkingOnCreate"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateTags",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:CreateAction"
+      values = [
+        "CreateVpc",
+        "CreateSubnet",
+        "CreateInternetGateway",
+        "CreateNatGateway",
+        "AllocateAddress",
+        "CreateRouteTable",
+        "CreateSecurityGroup",
+      ]
+    }
+  }
+
+  # Same networking surface as above, but every write action that acts on a resource this module
+  # already created (and tagged) earlier in the same apply — unlike the create/describe statement
+  # above, a resource-level ARN isn't the only option here; ec2:ResourceTag lets us scope to
+  # exactly this module's own resources instead of the whole account.
+  statement {
+    sid    = "ManageAdministrationStackNetworkingScoped"
+    effect = "Allow"
+    actions = [
+      "ec2:DeleteVpc",
+      "ec2:ModifyVpcAttribute",
+      "ec2:DeleteSubnet",
+      "ec2:ModifySubnetAttribute",
+      "ec2:AttachInternetGateway",
+      "ec2:DetachInternetGateway",
+      "ec2:DeleteInternetGateway",
+      "ec2:DeleteNatGateway",
+      "ec2:ReleaseAddress",
+      "ec2:AssociateRouteTable",
+      "ec2:DisassociateRouteTable",
+      "ec2:DeleteRouteTable",
+      "ec2:CreateRoute",
+      "ec2:DeleteRoute",
+      "ec2:DeleteSecurityGroup",
+      "ec2:AuthorizeSecurityGroupEgress",
+      "ec2:RevokeSecurityGroupEgress",
+      "ec2:AuthorizeSecurityGroupIngress",
+      "ec2:RevokeSecurityGroupIngress",
+      "ec2:DeleteTags",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/TofuModule"
+      values   = ["platform"]
+    }
+  }
+
+  statement {
+    sid    = "ManageAdministrationStackEcs"
+    effect = "Allow"
+    actions = [
+      "ecs:DescribeClusters",
+      "ecs:CreateCluster",
+      "ecs:DeleteCluster",
+      "ecs:PutClusterCapacityProviders",
+      "ecs:TagResource",
+    ]
+    resources = [local.administration_stack_ecs_cluster_arn]
+  }
+
+  # RegisterTaskDefinition/DeregisterTaskDefinition don't accept a resource-level ARN in AWS's own
+  # ECS IAM reference (they operate on a family name, not yet a specific revision ARN) — scoped to
+  # "*" the same way; DescribeTaskDefinition does accept one, scoped to this family's every
+  # revision.
+  statement {
+    sid    = "RegisterAdministrationStackTaskDefinition"
+    effect = "Allow"
+    actions = [
+      "ecs:RegisterTaskDefinition",
+      "ecs:DeregisterTaskDefinition",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "ReadAdministrationStackTaskDefinition"
+    effect    = "Allow"
+    actions   = ["ecs:DescribeTaskDefinition"]
+    resources = [local.administration_stack_task_family_arn]
+  }
+
+  statement {
+    sid    = "DeployAdministrationStackService"
+    effect = "Allow"
+    actions = [
+      "ecs:CreateService",
+      "ecs:UpdateService",
+      "ecs:DeleteService",
+      "ecs:DescribeServices",
+      "ecs:TagResource",
+    ]
+    resources = [local.administration_stack_service_arn]
+  }
+
+  statement {
+    sid    = "ManageAdministrationStackTaskRoles"
+    effect = "Allow"
+    actions = [
+      "iam:GetRole",
+      "iam:CreateRole",
+      "iam:UpdateRole",
+      "iam:DeleteRole",
+      "iam:TagRole",
+      "iam:PutRolePolicy",
+      "iam:GetRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:AttachRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+    ]
+    resources = [local.administration_stack_task_role_arn_pattern]
+  }
+
+  # So ECS can actually assume the two roles it registers into the task definition/service —
+  # scoped to ecs-tasks.amazonaws.com as the only passed-to service, the same PassRole-narrowing
+  # pattern infra/foundation/iam.tf's PassTrialOrgInstanceRole statement uses.
+  statement {
+    sid       = "PassAdministrationStackTaskRoles"
+    effect    = "Allow"
+    actions   = ["iam:PassRole"]
+    resources = [local.administration_stack_task_role_arn_pattern]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ecs-tasks.amazonaws.com"]
+    }
+  }
+
+  statement {
+    sid    = "ManageAdministrationStackLogGroup"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:DeleteLogGroup",
+      "logs:PutRetentionPolicy",
+      "logs:TagResource",
+      "logs:DescribeLogGroups",
+    ]
+    resources = [
+      local.administration_stack_log_group_arn,
+      "${local.administration_stack_log_group_arn}:*",
+    ]
+  }
+
+  # Retags the image ecr_push already pushed at PR time (content-hash tag) with the current
+  # release version, so the deployed task definition can reference it by that tag — this role
+  # never pushes new image content (ecr_push, PR-time only, keeps that job).
+  statement {
+    sid    = "RetagAdministrationStackImage"
+    effect = "Allow"
+    actions = [
+      "ecr:BatchGetImage",
+      "ecr:PutImage",
+    ]
+    resources = [local.administration_stack_api_repository_arn]
+  }
+
+  # ecr:GetAuthorizationToken is not a resource-level action (see ecr_push's own identical
+  # statement above) — needed here too, since the retag step above authenticates as this role,
+  # not ecr_push.
+  statement {
+    sid       = "EcrAuthForRetag"
+    effect    = "Allow"
+    actions   = ["ecr:GetAuthorizationToken"]
     resources = ["*"]
   }
 }
@@ -531,6 +786,70 @@ data "aws_iam_policy_document" "infra_plan" {
       "ecr:ListTagsForResource",
     ]
     resources = local.ecr_repository_arns
+  }
+
+  # Issue #216: a PR touching infra/platform needs a real (not empty-state) `tofu plan` too, the
+  # same reasoning this role exists for cicd/registry above — read-only, shared regardless of
+  # branch (this role's trust condition carries no branch information to isolate by anyway; see
+  # this document's own module comment). Granting read access here carries no isolation risk to
+  # weigh against staging_deploy's real write/deploy grant in administration_stack_deploy above.
+  statement {
+    sid       = "TofuStateBackendReadPlatform"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = [local.administration_stack_platform_state_object_arn]
+  }
+
+  statement {
+    sid    = "ReadAdministrationStackNetworking"
+    effect = "Allow"
+    actions = [
+      "ec2:DescribeVpcs",
+      "ec2:DescribeVpcAttribute",
+      "ec2:DescribeSubnets",
+      "ec2:DescribeInternetGateways",
+      "ec2:DescribeNatGateways",
+      "ec2:DescribeAddresses",
+      "ec2:DescribeRouteTables",
+      "ec2:DescribeSecurityGroups",
+      "ec2:DescribeTags",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "ReadAdministrationStackEcs"
+    effect = "Allow"
+    actions = [
+      "ecs:DescribeClusters",
+      "ecs:DescribeServices",
+      "ecs:DescribeTaskDefinition",
+    ]
+    resources = [
+      local.administration_stack_ecs_cluster_arn,
+      local.administration_stack_service_arn,
+      local.administration_stack_task_family_arn,
+    ]
+  }
+
+  statement {
+    sid    = "ReadAdministrationStackTaskRoles"
+    effect = "Allow"
+    actions = [
+      "iam:GetRole",
+      "iam:GetRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+    ]
+    resources = [local.administration_stack_task_role_arn_pattern]
+  }
+
+  statement {
+    sid       = "ReadAdministrationStackLogGroup"
+    effect    = "Allow"
+    actions   = ["logs:DescribeLogGroups"]
+    resources = [local.administration_stack_log_group_arn]
   }
 }
 

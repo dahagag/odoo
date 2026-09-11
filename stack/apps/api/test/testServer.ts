@@ -4,12 +4,12 @@ import { loadEnv } from '../src/config/env';
 import { InMemoryIdempotencyStore } from '../src/idempotency/store';
 import { buildServer } from '../src/server';
 
-export function buildTestServer() {
+export function buildTestServer(envOverrides: Partial<Record<string, string>> = {}) {
   const awsGateway = new InMemoryAwsGateway();
   const orgTokenStore = new InMemoryOrgTokenStore();
   const idempotencyStore = new InMemoryIdempotencyStore();
   const app = buildServer({
-    env: loadEnv({ NODE_ENV: 'test', LOG_LEVEL: 'silent' } as NodeJS.ProcessEnv),
+    env: loadEnv({ NODE_ENV: 'test', LOG_LEVEL: 'silent', ...envOverrides } as NodeJS.ProcessEnv),
     awsGateway,
     orgTokenStore,
     idempotencyStore,
