@@ -689,8 +689,10 @@ jobs:
         env:
           CONTENT_HASH_TAG: ${{ steps.content_tag.outputs.tag }}
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          PLATFORM_ACCOUNT_ID: ${{ vars.PLATFORM_ACCOUNT_ID }}
         run: |
           manifest=$(aws ecr batch-get-image \
+            --registry-id "$PLATFORM_ACCOUNT_ID" \
             --repository-name agentic-erp/administration-stack-api \
             --image-ids imageTag="$CONTENT_HASH_TAG" \
             --query 'images[0].imageManifest' --output text)
@@ -698,10 +700,31 @@ jobs:
             echo "No agentic-erp/administration-stack-api image found for content-hash tag $CONTENT_HASH_TAG — did build-stack-image run for this commit's stack/** tree?" >&2
             exit 1
           fi
-          aws ecr put-image \
+          # Idempotent: a re-run for a commit whose release tag was already retagged must not fail
+          # the job — neither "the tag already points at this manifest" nor a concurrent retag
+          # racing this one (ImageAlreadyExistsException) is a real deploy failure.
+          existing=$(aws ecr batch-get-image \
+            --registry-id "$PLATFORM_ACCOUNT_ID" \
+            --repository-name agentic-erp/administration-stack-api \
+            --image-ids imageTag="$RELEASE_TAG" \
+            --query 'images[0].imageManifest' --output text 2>/dev/null || true)
+          if [[ "$existing" == "$manifest" ]]; then
+            echo "Release tag $RELEASE_TAG already points at this manifest — nothing to retag."
+            exit 0
+          fi
+          if ! aws ecr put-image \
+            --registry-id "$PLATFORM_ACCOUNT_ID" \
             --repository-name agentic-erp/administration-stack-api \
             --image-tag "$RELEASE_TAG" \
-            --image-manifest "$manifest"
+            --image-manifest "$manifest" 2> put-image.err; then
+            if grep -q ImageAlreadyExistsException put-image.err; then
+              cat put-image.err >&2
+              echo "Concurrent retag already created $RELEASE_TAG — treating as success."
+            else
+              cat put-image.err >&2
+              exit 1
+            fi
+          fi
       - uses: opentofu/setup-opentofu@v1
         with:
           tofu_version: 1.8.5
