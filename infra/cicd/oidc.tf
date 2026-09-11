@@ -120,11 +120,18 @@ resource "aws_iam_role_policy" "production_deploy" {
 # ---------------------------------------------------------------------------
 # ECR push role (ADR-0038 / issue #252): a third, separate role from the two above — not a reuse
 # of staging_deploy/production_deploy, mirroring #153's discipline that a PR-time image-build job
-# gets only the permission it needs, never deploy-adjacent access it doesn't. Its trust policy
-# reuses the same OIDC provider and is scoped to whichever of staging_branch/production_branch a
-# workflow run is on, since image builds only run on push to those two branches today (a
-# single-valued condition key matches if the token's `sub` equals any value in the list — this is
-# an OR, not a second independent gate).
+# gets only the permission it needs, never deploy-adjacent access it doesn't.
+#
+# Its trust condition matches this repo's `pull_request` OIDC subject
+# (`repo:<owner>/<repo>:pull_request`), not `ref:refs/heads/<branch>` (issue #259): ci.yml's
+# build-image/build-prod-image jobs only ever run on a `pull_request` event (ci.yml has no `push`
+# trigger), and GitHub mints a `pull_request`-shaped `sub` claim for that event regardless of
+# which branch the PR targets — a `ref:refs/heads/<branch>` condition, as staging_deploy/
+# production_deploy above use, can never match it. This still excludes a fork's pull_request run:
+# a fork PR's token carries the fork's own `owner/repo` in `sub` (e.g.
+# `repo:someone-else/odoo:pull_request`), not this repo's, so `var.github_repository` alone is
+# still the isolating value, same guarantee as the two roles above — just without a branch
+# component, since one isn't present in this claim shape to isolate on.
 # ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "ecr_push_trust" {
@@ -146,10 +153,7 @@ data "aws_iam_policy_document" "ecr_push_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values = [
-        "repo:${var.github_repository}:ref:refs/heads/${var.staging_branch}",
-        "repo:${var.github_repository}:ref:refs/heads/${var.production_branch}",
-      ]
+      values   = ["repo:${var.github_repository}:pull_request"]
     }
   }
 }

@@ -1,11 +1,12 @@
 # Issue #252 / ADR-0038: ecr_push is a third, separate role from staging_deploy/production_deploy
 # — not a reuse of either, mirroring #153's discipline that a PR-time image-build job gets only
 # the permission it needs. This proves both halves of that narrowness: (1) the trust policy's
-# branch scoping — matching either staging_branch or production_branch (image builds only run on
-# push to those two), same isolation proof as deploy_role_branch_isolation.tftest.hcl — and (2)
-# the permission policy's repository scoping — ecr:* is granted only against the four configured
-# repository ARNs, with ecr:GetAuthorizationToken carved out into its own resource="*" statement
-# since ECR does not support resource-level permissions for that action.
+# repository scoping — matching this repo's own `pull_request` OIDC subject and no other repo's
+# (issue #259: ci.yml's build-image/build-prod-image jobs only ever run on `pull_request`, whose
+# `sub` claim carries no branch component to scope on, unlike deploy_role_branch_isolation.tftest.hcl's
+# push-shaped roles) — and (2) the permission policy's repository scoping — ecr:* is granted only
+# against the four configured repository ARNs, with ecr:GetAuthorizationToken carved out into its
+# own resource="*" statement since ECR does not support resource-level permissions for that action.
 #
 # No live AWS account is wired into this repo's CI (infra-checks only runs `tofu fmt`/`validate`/
 # `test`/lint — .github/workflows/ci.yml), so this uses OpenTofu's own native test framework: it
@@ -44,7 +45,7 @@ override_resource {
   }
 }
 
-run "verify_ecr_push_branch_scoping" {
+run "verify_ecr_push_repo_scoping" {
   command = apply
 
   plan_options {
@@ -63,14 +64,13 @@ run "verify_ecr_push_branch_scoping" {
       && contains(flatten([statement.Principal.Federated]), aws_iam_openid_connect_provider.github_actions.arn)
       && statement.Condition.StringEquals["token.actions.githubusercontent.com:aud"] == "sts.amazonaws.com"
       && toset(flatten([statement.Condition.StringEquals["token.actions.githubusercontent.com:sub"]])) == toset([
-        "repo:dahagag/odoo:ref:refs/heads/dev/19.0",
-        "repo:dahagag/odoo:ref:refs/heads/main/19.0",
+        "repo:dahagag/odoo:pull_request",
       ])
     ])
-    error_message = "ecr_push's trust policy must allow sts:AssumeRoleWithWebIdentity from the GitHub OIDC provider, scoped to exactly the two configured staging/production branch subjects — no more, no fewer."
+    error_message = "ecr_push's trust policy must allow sts:AssumeRoleWithWebIdentity from the GitHub OIDC provider, scoped to exactly this repo's pull_request subject — no more, no fewer."
   }
 
-  # --- isolation proof: neither an arbitrary branch nor a forked repo's OIDC sub claim matches ---
+  # --- isolation proof: neither a push-shaped sub nor a forked repo's OIDC sub claim matches ---
 
   assert {
     condition = !contains(
@@ -78,9 +78,9 @@ run "verify_ecr_push_branch_scoping" {
         [for statement in jsondecode(data.aws_iam_policy_document.ecr_push_trust.json).Statement : statement][0]
         .Condition.StringEquals["token.actions.githubusercontent.com:sub"]
       ]),
-      "repo:dahagag/odoo:ref:refs/heads/some-other-branch"
+      "repo:dahagag/odoo:ref:refs/heads/dev/19.0"
     )
-    error_message = "ecr_push's trust policy sub condition must not match a different branch of this same repo."
+    error_message = "ecr_push's trust policy sub condition must not match a push-triggered run's OIDC token — ci.yml has no push trigger, so this shape must never authenticate."
   }
 
   assert {
@@ -89,9 +89,9 @@ run "verify_ecr_push_branch_scoping" {
         [for statement in jsondecode(data.aws_iam_policy_document.ecr_push_trust.json).Statement : statement][0]
         .Condition.StringEquals["token.actions.githubusercontent.com:sub"]
       ]),
-      "repo:someone-else/odoo:ref:refs/heads/dev/19.0"
+      "repo:someone-else/odoo:pull_request"
     )
-    error_message = "ecr_push's trust policy sub condition must not match a forked repository's OIDC token, even on an identically-named branch."
+    error_message = "ecr_push's trust policy sub condition must not match a forked repository's pull_request OIDC token."
   }
 
   assert {
