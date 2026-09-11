@@ -122,26 +122,33 @@ resource "aws_iam_role_policy" "production_deploy" {
 # of staging_deploy/production_deploy, mirroring #153's discipline that a PR-time image-build job
 # gets only the permission it needs, never deploy-adjacent access it doesn't.
 #
-# Its trust condition matches this repo's own `repository` claim, not `sub`'s
-# `ref:refs/heads/<branch>` shape (issue #259): ci.yml's build-image/build-prod-image jobs only
-# ever run on a `pull_request` event (ci.yml has no `push` trigger), whose `sub` carries no branch
-# component at all — a `ref:refs/heads/<branch>` condition, as staging_deploy/production_deploy
-# above use, can never match it. (`sub` for this event is also not the plain
-# `repo:<owner>/<repo>:pull_request` shape GitHub's own docs show as the generic example — an
-# account/repo with ID-qualified claims enabled gets `repo:<owner>@<owner_id>/<repo>@<repo_id>:pull_request`
-# instead, confirmed by decoding an actual token; `repository` is the stable, plain-name claim
-# GitHub issues alongside it, so this condition uses that one instead of trying to keep numeric
-# IDs in sync.)
+# Its trust condition matches `job_workflow_ref`, not `sub` (issue #259). Two things ruled out
+# `sub`: (1) ci.yml's build-image/build-prod-image jobs only ever run on a `pull_request` event
+# (ci.yml has no `push` trigger), whose `sub` carries no branch component at all — a
+# `ref:refs/heads/<branch>` condition, as staging_deploy/production_deploy above use, can never
+# match it; (2) `sub` for this event is also not the plain `repo:<owner>/<repo>:pull_request`
+# shape GitHub's own docs show as the generic example — this account has ID-qualified claims
+# enabled, so `sub` is actually `repo:<owner>@<owner_id>/<repo>@<repo_id>:pull_request`, confirmed
+# by decoding an actual token. A same-account-scoped custom claim like `repository` would dodge
+# that ID problem, but AWS's own IAM validation rejects it outright: a trust policy for a GitHub
+# OIDC principal must condition on `sub` or `job_workflow_ref` specifically (confirmed against
+# the real account: `UpdateAssumeRolePolicy` returned `MalformedPolicyDocument: ... must evaluate
+# ... token.actions.githubusercontent.com:sub or token.actions.githubusercontent.com:job_workflow_ref
+# which is not scoped to all` when this condition used `repository` instead). `job_workflow_ref`
+# turns out to use plain `owner/repo` naming (no IDs) even on this account — confirmed from the
+# same decoded token (`job_workflow_ref: "dahagag/odoo/.github/workflows/ci.yml@refs/pull/261/merge"`)
+# — so it's used here instead, with `StringLike` (not `StringEquals`) since the trailing
+# `refs/pull/<PR_NUMBER>/merge` segment varies per PR.
 #
 # IMPORTANT — this condition alone does NOT exclude a fork's pull_request run: for `pull_request`
 # (not `pull_request_target`), GitHub always executes the job using the *base* repository's own
-# workflow file and permissions, so `repository`/`repository_owner`/`sub` in the token are the
+# workflow file and permissions, so `job_workflow_ref`/`sub`/`repository` in the token are the
 # base repo (dahagag/odoo) regardless of whether the PR's head branch lives in this repo or a
 # fork of it — there is no OIDC claim this trigger type exposes that distinguishes the two. The
 # actual fork exclusion is `ci.yml`'s own `github.event.pull_request.head.repo.full_name ==
 # github.repository` job-level guard (added alongside this fix), checked before the job ever
 # requests an OIDC token — this trust condition only narrows "some pull_request against this
-# repo" down from "any GitHub Actions run anywhere with this OIDC provider."
+# repo's ci.yml" down from "any GitHub Actions run anywhere with this OIDC provider."
 # ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "ecr_push_trust" {
@@ -161,9 +168,9 @@ data "aws_iam_policy_document" "ecr_push_trust" {
     }
 
     condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:repository"
-      values   = [var.github_repository]
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:job_workflow_ref"
+      values   = ["${var.github_repository}/.github/workflows/ci.yml@refs/pull/*/merge"]
     }
   }
 }
