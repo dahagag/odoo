@@ -24,13 +24,16 @@ provider "aws" {
 }
 
 variables {
-  aws_region                = "us-east-1"
-  github_repository         = "dahagag/odoo"
-  staging_branch            = "dev/19.0"
-  production_branch         = "main/19.0"
-  platform_account_id       = "333333333333"
-  tofu_state_bucket_arn     = "arn:aws:s3:::hosting-tofu-state"
-  tofu_state_lock_table_arn = "arn:aws:dynamodb:us-east-1:111111111111:table/hosting-tofu-state-lock"
+  aws_region                                    = "us-east-1"
+  github_repository                             = "dahagag/odoo"
+  staging_branch                                = "dev/19.0"
+  production_branch                             = "main/19.0"
+  platform_account_id                           = "333333333333"
+  tofu_state_bucket_arn                         = "arn:aws:s3:::hosting-tofu-state"
+  tofu_state_lock_table_arn                     = "arn:aws:dynamodb:us-east-1:111111111111:table/hosting-tofu-state-lock"
+  platform_registry_deploy_role_arn             = "arn:aws:iam::333333333333:role/platform-registry-deploy"
+  platform_administration_stack_deploy_role_arn = "arn:aws:iam::333333333333:role/platform-administration-stack-deploy"
+  platform_ci_plan_role_arn                     = "arn:aws:iam::333333333333:role/platform-ci-plan"
 }
 
 override_data {
@@ -173,18 +176,37 @@ run "verify_deploy_role_infra_management_scoping" {
     error_message = "production_deploy's policy must not grant any write action against staging_deploy's role ARN."
   }
 
+  # Issue #271/#272: ManageRegistryRepositories granted ecr:CreateRepository et al. directly here,
+  # which could never have worked — ECR repository-management actions have no cross-account
+  # resource-based policy mechanism, and this role lives in a different account than the
+  # repositories. Replaced by a narrow sts:AssumeRole onto platform-registry-deploy, shared by
+  # both staging_deploy and production_deploy (both already manage infra/registry today).
   assert {
     condition = anytrue([
       for statement in jsondecode(data.aws_iam_policy_document.staging_deploy.json).Statement :
-      statement.Sid == "ManageRegistryRepositories"
-      && toset(flatten([statement.Resource])) == toset([
-        "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/odoo-dev",
-        "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/odoo-prod",
-        "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/tofu-runner",
-        "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/administration-stack-api",
-      ])
+      statement.Sid == "AssumePlatformRegistryDeployRole"
+      && flatten([statement.Action]) == ["sts:AssumeRole"]
+      && toset(flatten([statement.Resource])) == toset(["arn:aws:iam::333333333333:role/platform-registry-deploy"])
     ])
-    error_message = "staging_deploy's ManageRegistryRepositories statement must be scoped to exactly the four ADR-0038 repository ARNs — no resource=\"*\"."
+    error_message = "staging_deploy must carry exactly one sts:AssumeRole statement scoped to platform-registry-deploy's own ARN."
+  }
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.production_deploy.json).Statement :
+      statement.Sid == "AssumePlatformRegistryDeployRole"
+      && flatten([statement.Action]) == ["sts:AssumeRole"]
+      && toset(flatten([statement.Resource])) == toset(["arn:aws:iam::333333333333:role/platform-registry-deploy"])
+    ])
+    error_message = "production_deploy must carry exactly one sts:AssumeRole statement scoped to platform-registry-deploy's own ARN too — it already manages infra/registry today (infra_management_statements is shared by both roles)."
+  }
+
+  assert {
+    condition = !anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.staging_deploy.json).Statement :
+      statement.Sid == "ManageRegistryRepositories"
+    ])
+    error_message = "staging_deploy must not carry the old direct ManageRegistryRepositories statement any more — it never could have worked cross-account."
   }
 
   assert {

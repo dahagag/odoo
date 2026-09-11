@@ -21,6 +21,10 @@ variables {
   aws_region                              = "us-east-1"
   administration_stack_api_repository_url = "111111111111.dkr.ecr.us-east-1.amazonaws.com/agentic-erp/administration-stack-api"
   administration_stack_image_tag          = "v1.2.3"
+  # Issue #271/#272: this module's provider now assumes into a Platform Account cross-account
+  # role — a plain stand-in ARN here, never actually assumed against real AWS in this test
+  # (skip_credentials_validation above).
+  platform_assume_role_arn = "arn:aws:iam::333333333333:role/platform-administration-stack-deploy"
 }
 
 override_data {

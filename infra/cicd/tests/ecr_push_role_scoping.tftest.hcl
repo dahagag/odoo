@@ -33,13 +33,16 @@ provider "aws" {
 }
 
 variables {
-  aws_region                = "us-east-1"
-  github_repository         = "dahagag/odoo"
-  staging_branch            = "dev/19.0"
-  production_branch         = "main/19.0"
-  platform_account_id       = "333333333333"
-  tofu_state_bucket_arn     = "arn:aws:s3:::hosting-tofu-state"
-  tofu_state_lock_table_arn = "arn:aws:dynamodb:us-east-1:111111111111:table/hosting-tofu-state-lock"
+  aws_region                                    = "us-east-1"
+  github_repository                             = "dahagag/odoo"
+  staging_branch                                = "dev/19.0"
+  production_branch                             = "main/19.0"
+  platform_account_id                           = "333333333333"
+  tofu_state_bucket_arn                         = "arn:aws:s3:::hosting-tofu-state"
+  tofu_state_lock_table_arn                     = "arn:aws:dynamodb:us-east-1:111111111111:table/hosting-tofu-state-lock"
+  platform_registry_deploy_role_arn             = "arn:aws:iam::333333333333:role/platform-registry-deploy"
+  platform_administration_stack_deploy_role_arn = "arn:aws:iam::333333333333:role/platform-administration-stack-deploy"
+  platform_ci_plan_role_arn                     = "arn:aws:iam::333333333333:role/platform-ci-plan"
 }
 
 override_data {

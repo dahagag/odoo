@@ -10,6 +10,17 @@ variable "environment" {
   default     = "platform"
 }
 
+variable "platform_assume_role_arn" {
+  type        = string
+  description = <<-EOT
+    Platform Account role ARN this module's own AWS provider assumes into before creating/reading
+    any resource (issue #271/#272) — infra/registry's platform_administration_stack_deploy_role_arn
+    output for the staging-deploy apply job, or its platform_ci_plan_role_arn output for the
+    PR-time plan job. Supplied at apply time, same no-remote-state convention as
+    administration_stack_api_repository_url.
+  EOT
+}
+
 # ---------------------------------------------------------------------------
 # Networking
 # ---------------------------------------------------------------------------

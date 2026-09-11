@@ -127,6 +127,25 @@ plans it on any pull request touching it (`infra_plan`, same as `cicd`/`registry
 `main/19.0`-triggered apply of `platform` yet — `production_deploy` carries none of these
 permissions until #217 defines what a production deploy of the administration stack touches.
 
+**Cross-account role chaining (issue #271/#272)**: `staging_deploy`, `production_deploy`, and
+`infra_plan` all live in the Hosting Account, but `platform`'s VPC/ECS/IAM/Logs resources and
+`registry`'s ECR repositories live in the Platform Account (ADR-0038) — and EC2, ECS, IAM, and
+CloudWatch Logs have no cross-account resource-based policy mechanism at all (unlike ECR's
+data-plane pull/push actions, which do, via a repository policy). So each of those three Hosting
+Account roles' own identity policy carries only a narrow `sts:AssumeRole` grant onto a
+corresponding Platform Account role `registry` owns (`platform-registry-deploy`,
+`platform-administration-stack-deploy`, `platform-ci-plan` — `registry/cross_account_iam.tf`),
+which carries the real EC2/ECS/IAM/Logs/ECR-management permissions instead. `platform`'s and
+`registry`'s own AWS providers assume into whichever of these three roles fits the calling CI job
+(a plain variable, `platform_assume_role_arn`, supplied at apply/plan time — no cross-module
+remote-state lookup).
+
+Because nothing can assume into a role that doesn't exist yet, **`registry`'s first apply is also
+now a manual, credentialed step**, alongside `bootstrap`'s and `foundation`'s: a human operator
+with real Platform Account credentials runs it directly (no `platform_assume_role_arn` set), which
+creates the four ECR repositories and all three cross-account roles at once. Every apply after
+that goes through CI as normal, self-managing the same way `cicd`'s own roles already do.
+
 ### Repository variables the infra-plan/infra-apply CI jobs need
 
 Bootstrapping `cicd`'s own roles/OIDC provider and `infra/bootstrap`'s state backend is still a
@@ -149,6 +168,9 @@ only its trust policy does, applies the same way here) for `.github/workflows/ci
 | `PLATFORM_ACCOUNT_ID` | `infra/cicd`'s `platform_account_id` input (the Platform Account `infra/registry` lives in) |
 | `HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN` | `infra/registry`'s `hosting_account_ecs_task_execution_role_arn` input |
 | `ADMINISTRATION_STACK_API_REPOSITORY_URL` | `infra/registry`'s `administration_stack_api_repository_url` output |
+| `PLATFORM_REGISTRY_DEPLOY_ROLE_ARN` | `infra/registry`'s `platform_registry_deploy_role_arn` output (issue #271/#272) |
+| `PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN` | `infra/registry`'s `platform_administration_stack_deploy_role_arn` output (issue #271/#272) |
+| `PLATFORM_CI_PLAN_ROLE_ARN` | `infra/registry`'s `platform_ci_plan_role_arn` output (issue #271/#272) |
 
 `AWS_REGION` already exists from #212/#252's wiring and is reused as-is for the backend's `region`
 too (`infra/bootstrap` and `infra/cicd` live in the same account/region).
