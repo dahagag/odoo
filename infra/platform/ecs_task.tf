@@ -58,6 +58,17 @@ resource "aws_ecs_service" "administration_stack_api" {
   desired_count   = var.administration_stack_desired_count
   launch_type     = "FARGATE"
 
+  # Issue #216's own acceptance criteria ("a failed step stops the workflow rather than leaving a
+  # partial deploy") extends to the ECS rollout itself, not just the workflow's own steps: without
+  # these, a task definition revision that can't reach steady state (bad image, missing env, OOM)
+  # just keeps failing and retrying with no rollback, while `tofu apply` reports success anyway.
+  wait_for_steady_state = true
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
   network_configuration {
     subnets          = aws_subnet.private[*].id
     security_groups  = [aws_security_group.administration_stack_api.id]
