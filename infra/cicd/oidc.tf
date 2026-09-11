@@ -156,11 +156,15 @@ data "aws_iam_policy_document" "infra_management_statements" {
   }
 }
 
-# Own-role write access, scoped to this role's own literal ARN — not the other deploy role's, and
-# not a github-actions-* wildcard pattern (which would also let this role create some other,
-# arbitrarily-named role matching that pattern). Read-only access to the other deploy role's ARN is
-# still needed: a `tofu apply` of this shared module refreshes both roles' state even when only
-# one is being written to.
+# Own-role write access, scoped to this role's own literal ARN — not any other role's, and not a
+# github-actions-* wildcard pattern (which would also let this role create some other,
+# arbitrarily-named role matching that pattern). Read-only access to every OTHER role this same
+# infra/cicd state manages is still needed — not just the other deploy role: `tofu apply` refreshes
+# every resource in state on every run regardless of what's being written, and this module's state
+# also holds ecr_push and infra_plan (see their own resource blocks below), not just the two deploy
+# roles. Issue #266's hotfix omitted ecr_push/infra_plan here, which failed the very first
+# self-managed apply with "AccessDenied: iam:GetRole on role github-actions-ecr-push" during the
+# refresh phase — confirmed live before this fix landed.
 data "aws_iam_policy_document" "manage_own_role_staging_deploy" {
   statement {
     sid    = "ManageOwnRole"
@@ -183,7 +187,7 @@ data "aws_iam_policy_document" "manage_own_role_staging_deploy" {
   }
 
   statement {
-    sid    = "ReadOtherDeployRole"
+    sid    = "ReadOtherManagedRoles"
     effect = "Allow"
     actions = [
       "iam:GetRole",
@@ -192,7 +196,11 @@ data "aws_iam_policy_document" "manage_own_role_staging_deploy" {
       "iam:ListAttachedRolePolicies",
       "iam:ListInstanceProfilesForRole",
     ]
-    resources = [aws_iam_role.production_deploy.arn]
+    resources = [
+      aws_iam_role.production_deploy.arn,
+      aws_iam_role.ecr_push.arn,
+      aws_iam_role.infra_plan.arn,
+    ]
   }
 }
 
@@ -272,7 +280,7 @@ data "aws_iam_policy_document" "manage_own_role_production_deploy" {
   }
 
   statement {
-    sid    = "ReadOtherDeployRole"
+    sid    = "ReadOtherManagedRoles"
     effect = "Allow"
     actions = [
       "iam:GetRole",
@@ -281,7 +289,11 @@ data "aws_iam_policy_document" "manage_own_role_production_deploy" {
       "iam:ListAttachedRolePolicies",
       "iam:ListInstanceProfilesForRole",
     ]
-    resources = [aws_iam_role.staging_deploy.arn]
+    resources = [
+      aws_iam_role.staging_deploy.arn,
+      aws_iam_role.ecr_push.arn,
+      aws_iam_role.infra_plan.arn,
+    ]
   }
 }
 
