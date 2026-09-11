@@ -1,11 +1,21 @@
 # Issue #252 / ADR-0038: ecr_push is a third, separate role from staging_deploy/production_deploy
 # — not a reuse of either, mirroring #153's discipline that a PR-time image-build job gets only
 # the permission it needs. This proves both halves of that narrowness: (1) the trust policy's
-# branch scoping — matching either staging_branch or production_branch (image builds only run on
-# push to those two), same isolation proof as deploy_role_branch_isolation.tftest.hcl — and (2)
-# the permission policy's repository scoping — ecr:* is granted only against the four configured
-# repository ARNs, with ecr:GetAuthorizationToken carved out into its own resource="*" statement
-# since ECR does not support resource-level permissions for that action.
+# scoping — matching this repo's own ci.yml via `job_workflow_ref` and no other repo's or
+# workflow file's (issue #259: ci.yml's build-image/build-prod-image jobs only ever run on
+# `pull_request`, whose `sub` carries no branch component to scope on, unlike
+# deploy_role_branch_isolation.tftest.hcl's push-shaped roles, is not the plain
+# `repo:<owner>/<repo>:pull_request` shape either once ID-qualified claims are enabled, and — even
+# set aside those two problems — AWS's own IAM validation rejects any GitHub-OIDC trust condition
+# that isn't scoped via `sub` or `job_workflow_ref` specifically, which is why this condition
+# targets `job_workflow_ref` with `StringLike`, not `sub`/`repository` with `StringEquals`) — and
+# (2) the permission policy's repository scoping — ecr:* is granted only against the four
+# configured repository ARNs, with ecr:GetAuthorizationToken carved out into its own
+# resource="*" statement since ECR does not support resource-level permissions for that action.
+#
+# This trust condition cannot, by itself, exclude a fork's pull_request run (see oidc.tf's
+# comment) — that guarantee comes from ci.yml's own head-repo check, not from anything provable
+# in isolation here.
 #
 # No live AWS account is wired into this repo's CI (infra-checks only runs `tofu fmt`/`validate`/
 # `test`/lint — .github/workflows/ci.yml), so this uses OpenTofu's own native test framework: it
@@ -44,7 +54,7 @@ override_resource {
   }
 }
 
-run "verify_ecr_push_branch_scoping" {
+run "verify_ecr_push_repo_scoping" {
   command = apply
 
   plan_options {
@@ -62,36 +72,24 @@ run "verify_ecr_push_branch_scoping" {
       statement.Action == "sts:AssumeRoleWithWebIdentity"
       && contains(flatten([statement.Principal.Federated]), aws_iam_openid_connect_provider.github_actions.arn)
       && statement.Condition.StringEquals["token.actions.githubusercontent.com:aud"] == "sts.amazonaws.com"
-      && toset(flatten([statement.Condition.StringEquals["token.actions.githubusercontent.com:sub"]])) == toset([
-        "repo:dahagag/odoo:ref:refs/heads/dev/19.0",
-        "repo:dahagag/odoo:ref:refs/heads/main/19.0",
+      && toset(flatten([statement.Condition.StringLike["token.actions.githubusercontent.com:job_workflow_ref"]])) == toset([
+        "dahagag/odoo/.github/workflows/ci.yml@refs/pull/*/merge",
       ])
     ])
-    error_message = "ecr_push's trust policy must allow sts:AssumeRoleWithWebIdentity from the GitHub OIDC provider, scoped to exactly the two configured staging/production branch subjects — no more, no fewer."
+    error_message = "ecr_push's trust policy must allow sts:AssumeRoleWithWebIdentity from the GitHub OIDC provider, scoped to exactly this repo's ci.yml job_workflow_ref pattern — no more, no fewer."
   }
 
-  # --- isolation proof: neither an arbitrary branch nor a forked repo's OIDC sub claim matches ---
+  # --- isolation proof: a different repository's or workflow file's job_workflow_ref does not match ---
 
   assert {
     condition = !contains(
       flatten([
         [for statement in jsondecode(data.aws_iam_policy_document.ecr_push_trust.json).Statement : statement][0]
-        .Condition.StringEquals["token.actions.githubusercontent.com:sub"]
+        .Condition.StringLike["token.actions.githubusercontent.com:job_workflow_ref"]
       ]),
-      "repo:dahagag/odoo:ref:refs/heads/some-other-branch"
+      "someone-else/odoo/.github/workflows/ci.yml@refs/pull/1/merge"
     )
-    error_message = "ecr_push's trust policy sub condition must not match a different branch of this same repo."
-  }
-
-  assert {
-    condition = !contains(
-      flatten([
-        [for statement in jsondecode(data.aws_iam_policy_document.ecr_push_trust.json).Statement : statement][0]
-        .Condition.StringEquals["token.actions.githubusercontent.com:sub"]
-      ]),
-      "repo:someone-else/odoo:ref:refs/heads/dev/19.0"
-    )
-    error_message = "ecr_push's trust policy sub condition must not match a forked repository's OIDC token, even on an identically-named branch."
+    error_message = "ecr_push's trust policy job_workflow_ref condition must not match a different repository's OIDC token."
   }
 
   assert {
@@ -114,13 +112,14 @@ run "verify_ecr_push_branch_scoping" {
       statement.Sid == "EcrPush"
       && toset(flatten([statement.Action])) == toset([
         "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
         "ecr:CompleteLayerUpload",
         "ecr:InitiateLayerUpload",
         "ecr:PutImage",
         "ecr:UploadLayerPart",
       ])
     ])
-    error_message = "ecr_push's EcrPush statement must grant exactly the five image-push actions — no ecr:* wildcard, no pull actions (ecr:BatchGetImage), and no repository-management actions (ecr:DeleteRepository/ecr:SetRepositoryPolicy)."
+    error_message = "ecr_push's EcrPush statement must grant exactly the six push-flow actions (BatchGetImage included — BuildKit's push exporter calls it to check for an existing manifest, confirmed on a live run) — no ecr:* wildcard, and no repository-management actions (ecr:DeleteRepository/ecr:SetRepositoryPolicy)."
   }
 
   assert {
@@ -131,5 +130,15 @@ run "verify_ecr_push_branch_scoping" {
       && flatten([statement.Resource]) == ["*"]
     ])
     error_message = "ecr_push must carry a separate EcrAuth statement granting only ecr:GetAuthorizationToken against resource \"*\" (the one ECR action that does not support resource-level permissions) — this must not be folded into the repo-scoped EcrPush statement."
+  }
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.ecr_push.json).Statement :
+      statement.Sid == "EcrTestPull"
+      && statement.Action == "ecr:GetDownloadUrlForLayer"
+      && flatten([statement.Resource]) == ["arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/odoo-dev"]
+    ])
+    error_message = "ecr_push must carry a separate EcrTestPull statement granting ecr:GetDownloadUrlForLayer scoped to only agentic-erp/odoo-dev — the one repository ci.yml's test job pulls back, not all four."
   }
 }

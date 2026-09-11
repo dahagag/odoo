@@ -120,11 +120,35 @@ resource "aws_iam_role_policy" "production_deploy" {
 # ---------------------------------------------------------------------------
 # ECR push role (ADR-0038 / issue #252): a third, separate role from the two above — not a reuse
 # of staging_deploy/production_deploy, mirroring #153's discipline that a PR-time image-build job
-# gets only the permission it needs, never deploy-adjacent access it doesn't. Its trust policy
-# reuses the same OIDC provider and is scoped to whichever of staging_branch/production_branch a
-# workflow run is on, since image builds only run on push to those two branches today (a
-# single-valued condition key matches if the token's `sub` equals any value in the list — this is
-# an OR, not a second independent gate).
+# gets only the permission it needs, never deploy-adjacent access it doesn't.
+#
+# Its trust condition matches `job_workflow_ref`, not `sub` (issue #259). Two things ruled out
+# `sub`: (1) ci.yml's build-image/build-prod-image jobs only ever run on a `pull_request` event
+# (ci.yml has no `push` trigger), whose `sub` carries no branch component at all — a
+# `ref:refs/heads/<branch>` condition, as staging_deploy/production_deploy above use, can never
+# match it; (2) `sub` for this event is also not the plain `repo:<owner>/<repo>:pull_request`
+# shape GitHub's own docs show as the generic example — this account has ID-qualified claims
+# enabled, so `sub` is actually `repo:<owner>@<owner_id>/<repo>@<repo_id>:pull_request`, confirmed
+# by decoding an actual token. A same-account-scoped custom claim like `repository` would dodge
+# that ID problem, but AWS's own IAM validation rejects it outright: a trust policy for a GitHub
+# OIDC principal must condition on `sub` or `job_workflow_ref` specifically (confirmed against
+# the real account: `UpdateAssumeRolePolicy` returned `MalformedPolicyDocument: ... must evaluate
+# ... token.actions.githubusercontent.com:sub or token.actions.githubusercontent.com:job_workflow_ref
+# which is not scoped to all` when this condition used `repository` instead). `job_workflow_ref`
+# turns out to use plain `owner/repo` naming (no IDs) even on this account — confirmed from the
+# same decoded token (`job_workflow_ref: "dahagag/odoo/.github/workflows/ci.yml@refs/pull/261/merge"`)
+# — so it's used here instead, with `StringLike` (not `StringEquals`) since the trailing
+# `refs/pull/<PR_NUMBER>/merge` segment varies per PR.
+#
+# IMPORTANT — this condition alone does NOT exclude a fork's pull_request run: for `pull_request`
+# (not `pull_request_target`), GitHub always executes the job using the *base* repository's own
+# workflow file and permissions, so `job_workflow_ref`/`sub`/`repository` in the token are the
+# base repo (dahagag/odoo) regardless of whether the PR's head branch lives in this repo or a
+# fork of it — there is no OIDC claim this trigger type exposes that distinguishes the two. The
+# actual fork exclusion is `ci.yml`'s own `github.event.pull_request.head.repo.full_name ==
+# github.repository` job-level guard (added alongside this fix), checked before the job ever
+# requests an OIDC token — this trust condition only narrows "some pull_request against this
+# repo's ci.yml" down from "any GitHub Actions run anywhere with this OIDC provider."
 # ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "ecr_push_trust" {
@@ -144,12 +168,9 @@ data "aws_iam_policy_document" "ecr_push_trust" {
     }
 
     condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:sub"
-      values = [
-        "repo:${var.github_repository}:ref:refs/heads/${var.staging_branch}",
-        "repo:${var.github_repository}:ref:refs/heads/${var.production_branch}",
-      ]
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:job_workflow_ref"
+      values   = ["${var.github_repository}/.github/workflows/ci.yml@refs/pull/*/merge"]
     }
   }
 }
@@ -178,12 +199,32 @@ data "aws_iam_policy_document" "ecr_push" {
     effect = "Allow"
     actions = [
       "ecr:BatchCheckLayerAvailability",
+      # Not a pull grant despite the name: docker/build-push-action's underlying BuildKit
+      # exporter calls BatchGetImage during push itself, to check whether the manifest it's about
+      # to write already exists (skip re-pushing an identical one) — confirmed on issue #259's
+      # PR #258 run, which failed at exactly this call once OIDC auth itself started working:
+      # "denied: ... not authorized to perform: ecr:BatchGetImage ... because no identity-based
+      # policy allows the ecr:BatchGetImage action". Omitting it (the original ADR-0038 intent,
+      # "no pull actions") breaks every push, not just a hypothetical pull path.
+      "ecr:BatchGetImage",
       "ecr:CompleteLayerUpload",
       "ecr:InitiateLayerUpload",
       "ecr:PutImage",
       "ecr:UploadLayerPart",
     ]
     resources = local.ecr_repository_arns
+  }
+
+  # ci.yml's test job assumes this same role to pull back the odoo-dev image build-image just
+  # pushed (issue #259) — BatchGetImage above covers the manifest fetch (already granted on all
+  # four repos for the push-time existence check), but actually reading a layer's bytes needs
+  # GetDownloadUrlForLayer too, which EcrPush doesn't grant. Scoped to odoo-dev only: it's the
+  # only repository anything in this repo's CI pulls back.
+  statement {
+    sid       = "EcrTestPull"
+    effect    = "Allow"
+    actions   = ["ecr:GetDownloadUrlForLayer"]
+    resources = [local.odoo_dev_repository_arn]
   }
 }
 
