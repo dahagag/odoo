@@ -214,6 +214,18 @@ data "aws_iam_policy_document" "ecr_push" {
     ]
     resources = local.ecr_repository_arns
   }
+
+  # ci.yml's test job assumes this same role to pull back the odoo-dev image build-image just
+  # pushed (issue #259) — BatchGetImage above covers the manifest fetch (already granted on all
+  # four repos for the push-time existence check), but actually reading a layer's bytes needs
+  # GetDownloadUrlForLayer too, which EcrPush doesn't grant. Scoped to odoo-dev only: it's the
+  # only repository anything in this repo's CI pulls back.
+  statement {
+    sid       = "EcrTestPull"
+    effect    = "Allow"
+    actions   = ["ecr:GetDownloadUrlForLayer"]
+    resources = [local.odoo_dev_repository_arn]
+  }
 }
 
 resource "aws_iam_role_policy" "ecr_push" {

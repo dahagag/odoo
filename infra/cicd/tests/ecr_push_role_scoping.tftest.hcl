@@ -131,4 +131,14 @@ run "verify_ecr_push_repo_scoping" {
     ])
     error_message = "ecr_push must carry a separate EcrAuth statement granting only ecr:GetAuthorizationToken against resource \"*\" (the one ECR action that does not support resource-level permissions) — this must not be folded into the repo-scoped EcrPush statement."
   }
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.ecr_push.json).Statement :
+      statement.Sid == "EcrTestPull"
+      && statement.Action == "ecr:GetDownloadUrlForLayer"
+      && flatten([statement.Resource]) == ["arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/odoo-dev"]
+    ])
+    error_message = "ecr_push must carry a separate EcrTestPull statement granting ecr:GetDownloadUrlForLayer scoped to only agentic-erp/odoo-dev — the one repository ci.yml's test job pulls back, not all four."
+  }
 }
