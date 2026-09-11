@@ -513,11 +513,14 @@ jobs:
   test:
     name: Test (${{ matrix.module }})
     needs: [changes, build-image]
-    if: needs.changes.outputs.image_relevant == 'true' && needs.changes.outputs.test_modules != '[]'
+    # See build-image's identical guard: excludes a fork's pull_request run, which ecr_push's
+    # IAM trust policy alone cannot distinguish from this repo's own (this job assumes the same
+    # role, to pull back the image build-image just pushed).
+    if: needs.changes.outputs.image_relevant == 'true' && needs.changes.outputs.test_modules != '[]' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: read
+      id-token: write
     # Non-blocking by design: see docs/agents/sdlc.md#continuous-integration.
     # Do not add this job to the branch's required status checks.
     continue-on-error: true
@@ -533,7 +536,10 @@ jobs:
           echo "HOST_UID=$(id -u)" >> .env
           echo "HOST_GID=$(id -g)" >> .env
           echo "ODOO_DEV_IMAGE=${{ needs.build-image.outputs.image }}" >> .env
-      - uses: ./.github/actions/ghcr-login
+      - uses: ./.github/actions/ecr-login
+        with:
+          role-arn: ${{ vars.ECR_PUSH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
       - name: Pull cached development image
         run: docker compose pull odoo
       - name: Run tests for ${{ matrix.module }}
