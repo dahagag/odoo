@@ -234,6 +234,11 @@ data "aws_iam_policy_document" "platform_administration_stack_deploy" {
     actions = [
       "ecs:RegisterTaskDefinition",
       "ecs:DeregisterTaskDefinition",
+      # Confirmed live (issue #271/#272's first real apply): RegisterTaskDefinition applies this
+      # module's default_tags to the new task definition as part of the same call, which needs
+      # ecs:TagResource too — same "*" scoping as Register/Deregister above, for the identical
+      # reason (a task definition's revision-qualified ARN isn't known ahead of the call).
+      "ecs:TagResource",
     ]
     resources = ["*"]
   }
