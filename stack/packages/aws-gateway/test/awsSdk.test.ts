@@ -94,6 +94,53 @@ describe('AwsSdkGateway dynamoDb', () => {
     expect(command.input.TableName).toBe('physical-orgs');
   });
 
+  it('updateItem sends a SET expression scoped to the given attributes with an IN condition', async () => {
+    const send = vi.fn().mockResolvedValue({});
+    const gateway = new AwsSdkGateway(
+      { region: 'us-east-1', dynamoTableNames: { orgs: 'physical-orgs' } },
+      { dynamoDb: { send } as never },
+    );
+
+    await gateway.dynamoDb.updateItem({
+      table: 'orgs',
+      key: { pk: 'org#1' },
+      set: { state: 'destroyed', lastJobId: 'job-2' },
+      condition: { type: 'attribute_in', attribute: 'state', values: ['active', 'suspended'] },
+    });
+
+    const [command] = send.mock.calls[0];
+    expect(command.constructor.name).toBe('UpdateItemCommand');
+    expect(command.input.TableName).toBe('physical-orgs');
+    expect(command.input.UpdateExpression).toBe('SET #set_attr0 = :set_value0, #set_attr1 = :set_value1');
+    expect(command.input.ConditionExpression).toBe('#cond_attr IN (:cond_value0, :cond_value1)');
+    expect(command.input.ExpressionAttributeNames).toEqual({
+      '#set_attr0': 'state',
+      '#set_attr1': 'lastJobId',
+      '#cond_attr': 'state',
+    });
+    expect(command.input.ExpressionAttributeValues).toEqual({
+      ':set_value0': { S: 'destroyed' },
+      ':set_value1': { S: 'job-2' },
+      ':cond_value0': { S: 'active' },
+      ':cond_value1': { S: 'suspended' },
+    });
+  });
+
+  it('updateItem maps ConditionalCheckFailedException to ConditionalCheckFailedError', async () => {
+    const send = vi.fn().mockRejectedValue(conditionalCheckFailed());
+    const gateway = new AwsSdkGateway(
+      { region: 'us-east-1', dynamoTableNames: { orgs: 'physical-orgs' } },
+      { dynamoDb: { send } as never },
+    );
+
+    await expect(gateway.dynamoDb.updateItem({
+      table: 'orgs',
+      key: { pk: 'org#1' },
+      set: { state: 'active' },
+      condition: { type: 'attribute_in', attribute: 'state', values: ['issued'] },
+    })).rejects.toBeInstanceOf(ConditionalCheckFailedError);
+  });
+
   it('maps TransactionCanceledException to TransactionCanceledError with per-item reasons', async () => {
     const send = vi.fn().mockRejectedValue(transactionCanceled(undefined, 'ConditionalCheckFailed'));
     const gateway = new AwsSdkGateway(

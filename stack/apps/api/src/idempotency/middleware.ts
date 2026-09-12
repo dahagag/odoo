@@ -3,6 +3,12 @@ import { IDEMPOTENCY_KEY_HEADER } from '@stack/domain';
 import { problem } from '../problem';
 import type { IdempotencyRecord, IdempotencyStore } from './store';
 
+declare module 'fastify' {
+  interface FastifyRequest {
+    idempotencyKey?: string;
+  }
+}
+
 /** Every state-changing endpoint calls this instead of writing its response directly (this
  * ticket's Implementation Decisions: "every state-changing endpoint takes an idempotency key").
  *
@@ -37,6 +43,18 @@ export function requireIdempotencyKey(request: FastifyRequest, reply: FastifyRep
     reply.code(400).send(problem(400, 'Missing Idempotency-Key', `Every ${request.method} request must carry a unique ${IDEMPOTENCY_KEY_HEADER} header.`));
     return;
   }
-  (request as FastifyRequest & { idempotencyKey: string }).idempotencyKey = key;
+  request.idempotencyKey = key;
   done();
+}
+
+/** Every mutating route handler needs the key `requireIdempotencyKey` already validated is
+ * present, to pass into `withIdempotency` - one accessor instead of each call site re-asserting
+ * `request.idempotencyKey as string`. Throwing (rather than returning `undefined`) reflects that
+ * reaching a route handler for a mutating method without this hook having run first is a wiring
+ * bug in this app, not a client error to report as a 4xx. */
+export function idempotencyKeyOf(request: FastifyRequest): string {
+  if (!request.idempotencyKey) {
+    throw new Error('request.idempotencyKey is unset - did requireIdempotencyKey run as a preHandler?');
+  }
+  return request.idempotencyKey;
 }
