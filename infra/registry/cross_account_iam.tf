@@ -145,6 +145,10 @@ data "aws_iam_policy_document" "platform_administration_stack_deploy" {
       "ec2:CreateNatGateway",
       "ec2:DescribeAddresses",
       "ec2:AllocateAddress",
+      # Confirmed live (issue #271/#272's first real apply): the AWS provider reads an EIP's
+      # domain-name attribute after allocating it (aws_eip), which isn't covered by
+      # ec2:DescribeAddresses.
+      "ec2:DescribeAddressesAttribute",
       "ec2:DescribeRouteTables",
       "ec2:CreateRouteTable",
       "ec2:DescribeSecurityGroups",
@@ -295,6 +299,9 @@ data "aws_iam_policy_document" "platform_administration_stack_deploy" {
       "logs:DeleteLogGroup",
       "logs:PutRetentionPolicy",
       "logs:TagResource",
+      # Confirmed live (issue #271/#272's first real apply): the AWS provider reads a log
+      # group's tags back after creating it (aws_cloudwatch_log_group's own tags argument).
+      "logs:ListTagsForResource",
     ]
     resources = [
       local.administration_stack_log_group_arn,
