@@ -198,6 +198,7 @@ jobs:
         with:
           role-arn: ${{ vars.ECR_PUSH_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+          registry-account-id: ${{ vars.PLATFORM_ACCOUNT_ID }}
       - name: Compute the image tag from its content inputs
         # Tag by the hash of everything that actually affects the image's contents
         # (not github.sha), so a PR that only touches custom_addons/ or scripts/
@@ -251,6 +252,7 @@ jobs:
         with:
           role-arn: ${{ vars.ECR_PUSH_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+          registry-account-id: ${{ vars.PLATFORM_ACCOUNT_ID }}
       - name: Compute the image tag from its content inputs
         # This image bakes in the whole application tree (odoo-bin, odoo/, addons/,
         # custom_addons/), not the small, rarely-changing set of build inputs build-image
@@ -310,6 +312,7 @@ jobs:
         with:
           role-arn: ${{ vars.ECR_PUSH_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+          registry-account-id: ${{ vars.PLATFORM_ACCOUNT_ID }}
       - name: Compute the image tag from its content inputs
         # Content-hash tagged, same convention as build-image/build-prod-image — this is not the
         # tag deploy-administration-stack-staging deploys under (that's the release version,
@@ -885,6 +888,7 @@ jobs:
         with:
           role-arn: ${{ vars.ECR_PUSH_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+          registry-account-id: ${{ vars.PLATFORM_ACCOUNT_ID }}
       - name: Pull cached development image
         run: docker compose pull odoo
       - name: Run tests for ${{ matrix.module }}
