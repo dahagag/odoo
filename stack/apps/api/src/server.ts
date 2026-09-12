@@ -4,7 +4,7 @@ import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { requireAdminPrincipal } from './auth/admin';
 import { forbidCrossOrgAccess, requireOrgToken, type OrgTokenStore } from './auth/orgToken';
 import type { Env } from './config/env';
-import { requireIdempotencyKey, withIdempotency } from './idempotency/middleware';
+import { idempotencyKeyOf, requireIdempotencyKey, withIdempotency } from './idempotency/middleware';
 import type { IdempotencyStore } from './idempotency/store';
 import { CreateOrgRequestSchema, OrgSchema, OrgRegistrationSchema, UpdateOrgRequestSchema } from './openapi/registry';
 import {
@@ -29,10 +29,11 @@ export interface ServerDeps {
   provisioner: Provisioner;
 }
 
-/** Maps the errors `org/record.ts` itself defines to their Problem Details response. Returns
- * `undefined` for anything else - a route decides for itself what an unrecognized error means
- * (create/patch: a bug, so it rethrows for Fastify's default 500; a transition: quite possibly
- * the injected provisioner throwing its own error, see `orgErrorResponse` below). */
+/** Maps the errors `org/errors.ts` defines (raised by `org/record.ts`) to their Problem Details
+ * response. Returns `undefined` for anything else - a route decides for itself what an
+ * unrecognized error means (create/patch: a bug, so it rethrows for Fastify's default 500; a
+ * transition: quite possibly the injected provisioner throwing its own error, see
+ * `transitionErrorResponse` below). */
 function knownOrgErrorResponse(error: unknown, reply: FastifyReply): ReturnType<typeof problem> | undefined {
   if (error instanceof OrgNotFoundError) {
     reply.code(404);
@@ -153,7 +154,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     }
 
     try {
-      const record = await withIdempotency(deps.idempotencyStore, request.idempotencyKey as string, async () => {
+      const record = await withIdempotency(deps.idempotencyStore, idempotencyKeyOf(request), async () => {
         const org = await createOrg(deps.awsGateway, parsed.data, {
           defaultRegion: deps.env.DEFAULT_ORG_REGION,
           trialDurationDays: deps.env.TRIAL_DEFAULT_DURATION_DAYS,
@@ -183,7 +184,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       }
 
       try {
-        const record = await withIdempotency(deps.idempotencyStore, request.idempotencyKey as string, async () => {
+        const record = await withIdempotency(deps.idempotencyStore, idempotencyKeyOf(request), async () => {
           const org = await updateDnsSubdomainLabel(deps.awsGateway, orgId, parsed.data.dnsSubdomainLabel);
           return { status: 200, body: OrgSchema.parse(org) };
         });
@@ -206,7 +207,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         if (!orgId) return undefined;
 
         try {
-          const record = await withIdempotency(deps.idempotencyStore, request.idempotencyKey as string, async () => {
+          const record = await withIdempotency(deps.idempotencyStore, idempotencyKeyOf(request), async () => {
             const org = await applyTransition(deps.awsGateway, deps.provisioner, orgId, action);
             return { status: 200, body: OrgSchema.parse(org) };
           });

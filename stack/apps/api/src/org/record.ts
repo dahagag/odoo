@@ -15,9 +15,12 @@ import { callProvisioner, type Provisioner } from './provisioner';
  * record under `org#<orgId>`, plus one `dnslabel#<label>` reservation item per unique
  * `dnsSubdomainLabel` in the same table - the mechanism that makes uniqueness atomic at create
  * time (this ticket's Acceptance Criteria) rather than a racy separate check. */
-const ORGS_TABLE = 'orgs';
+export const ORGS_TABLE = 'orgs';
 
-function orgPk(orgId: string): string {
+/** Exported so every reader/writer of the org item (this module, and the org-facing
+ * `orgRegistration.ts` read path) derives the same key the same way, rather than each
+ * re-deriving `` `org#${orgId}` `` independently. */
+export function orgPk(orgId: string): string {
   return `org#${orgId}`;
 }
 

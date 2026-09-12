@@ -46,3 +46,15 @@ export function requireIdempotencyKey(request: FastifyRequest, reply: FastifyRep
   request.idempotencyKey = key;
   done();
 }
+
+/** Every mutating route handler needs the key `requireIdempotencyKey` already validated is
+ * present, to pass into `withIdempotency` - one accessor instead of each call site re-asserting
+ * `request.idempotencyKey as string`. Throwing (rather than returning `undefined`) reflects that
+ * reaching a route handler for a mutating method without this hook having run first is a wiring
+ * bug in this app, not a client error to report as a 4xx. */
+export function idempotencyKeyOf(request: FastifyRequest): string {
+  if (!request.idempotencyKey) {
+    throw new Error('request.idempotencyKey is unset - did requireIdempotencyKey run as a preHandler?');
+  }
+  return request.idempotencyKey;
+}
