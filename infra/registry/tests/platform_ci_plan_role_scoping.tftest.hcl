@@ -146,9 +146,22 @@ run "verify_platform_ci_plan_trust_and_read_only_scoping" {
       && toset(flatten([statement.Resource])) == toset([
         "arn:aws:ecs:us-east-1:333333333333:cluster/platform",
         "arn:aws:ecs:us-east-1:333333333333:service/platform/platform-administration-stack-api",
-        "arn:aws:ecs:us-east-1:333333333333:task-definition/platform-administration-stack-api:*",
       ])
     ])
-    error_message = "ReadAdministrationStackEcs must be scoped to exactly the administration-stack cluster/service/task-family ARNs, built from this account's own identity."
+    error_message = "ReadAdministrationStackEcs must be scoped to exactly the administration-stack cluster/service ARNs, built from this account's own identity — ecs:DescribeTaskDefinition moved to its own resources=\"*\" statement, since that action has no resource-level permission support at all."
+  }
+
+  # Issue #271/#272's second real-apply fix: ecs:DescribeTaskDefinition (and
+  # ecs:ListTagsForResource, needed for the same read) have no resource-level permission support,
+  # confirmed against AWS's own ECS IAM reference — must be resources = "*", not a family ARN
+  # pattern.
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.platform_ci_plan.json).Statement :
+      statement.Sid == "ReadAdministrationStackTaskDefinition"
+      && toset(flatten([statement.Action])) == toset(["ecs:DescribeTaskDefinition", "ecs:ListTagsForResource"])
+      && flatten([statement.Resource]) == ["*"]
+    ])
+    error_message = "ReadAdministrationStackTaskDefinition must grant ecs:DescribeTaskDefinition and ecs:ListTagsForResource with resources = \"*\"."
   }
 }
