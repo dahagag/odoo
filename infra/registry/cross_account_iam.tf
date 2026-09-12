@@ -244,10 +244,21 @@ data "aws_iam_policy_document" "platform_administration_stack_deploy" {
   }
 
   statement {
-    sid       = "ReadAdministrationStackTaskDefinition"
-    effect    = "Allow"
-    actions   = ["ecs:DescribeTaskDefinition"]
-    resources = [local.administration_stack_task_family_arn]
+    # Confirmed live (issue #271/#272's first real apply, against AWS's own ECS IAM reference):
+    # ecs:DescribeTaskDefinition has no resource-level permission support at all — scoping it to
+    # this family's ARN pattern (as this statement originally did) fails authorization outright,
+    # same shape as logs:DescribeLogGroups above. ecs:ListTagsForResource is a second, separate
+    # action the AWS provider's own read-after-register calls (task definition tags aren't folded
+    # into DescribeTaskDefinition) — kept in this same "*" statement rather than proven-scoped,
+    # since task-definition ARNs are revision-suffixed and not enumerable ahead of time (the same
+    # reasoning RegisterAdministrationStackTaskDefinition's own "*" scoping above already uses).
+    sid    = "ReadAdministrationStackTaskDefinition"
+    effect = "Allow"
+    actions = [
+      "ecs:DescribeTaskDefinition",
+      "ecs:ListTagsForResource",
+    ]
+    resources = ["*"]
   }
 
   statement {
@@ -396,13 +407,25 @@ data "aws_iam_policy_document" "platform_ci_plan" {
     actions = [
       "ecs:DescribeClusters",
       "ecs:DescribeServices",
-      "ecs:DescribeTaskDefinition",
     ]
     resources = [
       local.administration_stack_ecs_cluster_arn,
       local.administration_stack_service_arn,
-      local.administration_stack_task_family_arn,
     ]
+  }
+
+  # ecs:DescribeTaskDefinition has no resource-level permission support at all (see
+  # ReadAdministrationStackTaskDefinition's identical comment on
+  # platform_administration_stack_deploy above) — split out with resources = "*", alongside
+  # ecs:ListTagsForResource for the same reason that statement carries it.
+  statement {
+    sid    = "ReadAdministrationStackTaskDefinition"
+    effect = "Allow"
+    actions = [
+      "ecs:DescribeTaskDefinition",
+      "ecs:ListTagsForResource",
+    ]
+    resources = ["*"]
   }
 
   statement {
