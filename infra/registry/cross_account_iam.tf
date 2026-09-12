@@ -63,26 +63,26 @@ data "aws_iam_policy_document" "platform_registry_deploy" {
     resources = local.ecr_repository_arns
   }
 
-  # This role is the one both staging_deploy and production_deploy assume to apply the whole of
-  # infra/registry via CI — not just the ECR repositories above, but this module's own three
-  # cross-account IAM roles too (a `tofu apply`/`plan` refreshes every resource in state
-  # regardless of what's being written, and self-management of a module's own IAM resources is
-  # the same pattern infra/cicd's manage_own_role_staging_deploy/manage_own_role_production_deploy
-  # already establish for its own roles). Scoped to exactly the three roles this module creates —
-  # not a wildcard, and not any other account's role.
+  # CI-driven applies of infra/registry (via this role, assumed by staging_deploy/
+  # production_deploy) never get write access to this module's own three cross-account IAM
+  # roles' definitions — CWE-269, flagged in review: a compromised staging_deploy/
+  # production_deploy session assuming this shared role could otherwise rewrite
+  # platform_administration_stack_deploy's (or its own) trust/inline policy to grant itself
+  # broader access than ECR management, defeating the whole point of #271/#272's role
+  # separation. Read-only here (mirroring platform_ci_plan's identical ReadRegistryCrossAccountRoles
+  # statement below) is still needed — a `tofu apply` refreshes every resource in state regardless
+  # of what's being written, and this module's state holds these three roles too. Any real change
+  # to these three roles' own definitions (a new statement, a trust-policy change) is a manual,
+  # human-operator apply from here on (infra/README.md) — the same precedent bootstrap/foundation
+  # already set, not infra/cicd's self-managing one (that pattern is safe there because
+  # staging_deploy/production_deploy each only ever self-manage their own single role, never a
+  # shared one both can reach).
   statement {
-    sid    = "ManageRegistryCrossAccountRoles"
+    sid    = "ReadRegistryCrossAccountRoles"
     effect = "Allow"
     actions = [
       "iam:GetRole",
-      "iam:CreateRole",
-      "iam:UpdateRole",
-      "iam:UpdateAssumeRolePolicy",
-      "iam:DeleteRole",
-      "iam:TagRole",
-      "iam:PutRolePolicy",
       "iam:GetRolePolicy",
-      "iam:DeleteRolePolicy",
       "iam:ListRolePolicies",
       "iam:ListAttachedRolePolicies",
       "iam:ListInstanceProfilesForRole",
@@ -295,12 +295,23 @@ data "aws_iam_policy_document" "platform_administration_stack_deploy" {
       "logs:DeleteLogGroup",
       "logs:PutRetentionPolicy",
       "logs:TagResource",
-      "logs:DescribeLogGroups",
     ]
     resources = [
       local.administration_stack_log_group_arn,
       "${local.administration_stack_log_group_arn}:*",
     ]
+  }
+
+  # logs:DescribeLogGroups has no resource-level permission support at all (confirmed against
+  # AWS's own CloudWatch Logs IAM reference, list_logs.html — its own action row lists no
+  # resource type, unlike CreateLogGroup/PutRetentionPolicy/etc above, which support log-group*) —
+  # scoping it to a specific ARN can fail authorization outright rather than merely narrow it, so
+  # it's split out here with resources = "*".
+  statement {
+    sid       = "DescribeAdministrationStackLogGroups"
+    effect    = "Allow"
+    actions   = ["logs:DescribeLogGroups"]
+    resources = ["*"]
   }
 }
 
@@ -394,11 +405,14 @@ data "aws_iam_policy_document" "platform_ci_plan" {
     resources = [local.administration_stack_task_role_arn_pattern]
   }
 
+  # logs:DescribeLogGroups has no resource-level permission support at all (see
+  # DescribeAdministrationStackLogGroups's identical comment on platform_administration_stack_deploy
+  # above) — scoping it to a specific ARN can fail authorization outright.
   statement {
     sid       = "ReadAdministrationStackLogGroup"
     effect    = "Allow"
     actions   = ["logs:DescribeLogGroups"]
-    resources = [local.administration_stack_log_group_arn]
+    resources = ["*"]
   }
 
   # infra_plan also plans infra/registry itself (via this same role) — a `tofu plan` refreshes

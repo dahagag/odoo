@@ -143,8 +143,19 @@ remote-state lookup).
 Because nothing can assume into a role that doesn't exist yet, **`registry`'s first apply is also
 now a manual, credentialed step**, alongside `bootstrap`'s and `foundation`'s: a human operator
 with real Platform Account credentials runs it directly (no `platform_assume_role_arn` set), which
-creates the four ECR repositories and all three cross-account roles at once. Every apply after
-that goes through CI as normal, self-managing the same way `cicd`'s own roles already do.
+creates the four ECR repositories and all three cross-account roles at once.
+
+Every apply after that goes through CI as normal for `registry`'s own ECR repositories — but
+**not** for the three cross-account roles' own definitions (their trust policy, their permission
+statements). Those stay a manual, human-operator apply forever, same as `bootstrap`/`foundation`:
+`platform-registry-deploy` (shared by `staging_deploy`/`production_deploy`, since both apply
+`registry` via CI) deliberately carries no `iam:PutRolePolicy`/`iam:CreateRole`/etc. on any of the
+three roles, only read access for `tofu plan`/`apply`'s refresh phase — a compromised
+`staging_deploy`/`production_deploy` session assuming it must not be able to rewrite
+`platform-administration-stack-deploy`'s (or its own) authorization into something broader
+(CWE-269). This is unlike `cicd`'s own self-managing roles, which is safe there only because each
+of `staging_deploy`/`production_deploy` self-manages exactly its own single role, never a role the
+other can also reach.
 
 ### Repository variables the infra-plan/infra-apply CI jobs need
 

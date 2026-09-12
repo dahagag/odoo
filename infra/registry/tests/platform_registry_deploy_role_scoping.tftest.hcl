@@ -73,8 +73,8 @@ override_resource {
 }
 
 # platform_registry_deploy's own policy also references its two sibling roles' ARNs
-# (ManageRegistryCrossAccountRoles) — overridden here too so this run never attempts to create
-# them for real.
+# (ReadRegistryCrossAccountRoles, read-only) — overridden here too so this run never attempts to
+# create them for real.
 override_resource {
   target = aws_iam_role.platform_administration_stack_deploy
   values = {
@@ -137,5 +137,22 @@ run "verify_platform_registry_deploy_trust_and_permissions" {
       ])
     ])
     error_message = "platform-registry-deploy's ManageRegistryRepositories statement must grant exactly infra/cicd's old repository-management action list, scoped to exactly the four repositories this module creates."
+  }
+
+  # Security review (issue #271/#272): platform-registry-deploy is assumable by both
+  # staging_deploy and production_deploy — it must never carry write access to any of the three
+  # cross-account roles' own IAM definitions (CreateRole/PutRolePolicy/UpdateAssumeRolePolicy/
+  # etc.), or a compromised session assuming it could rewrite its own or a sibling role's
+  # authorization into something broader than ECR management (CWE-269). Only read access
+  # (ReadRegistryCrossAccountRoles) is allowed, for `tofu plan`/`apply`'s refresh phase.
+  assert {
+    condition = alltrue([
+      for statement in jsondecode(data.aws_iam_policy_document.platform_registry_deploy.json).Statement :
+      alltrue([
+        for action in flatten([statement.Action]) :
+        !can(regex("^iam:(Create|Update|Delete|Put|Attach|Detach|Tag)Role", action))
+      ])
+    ])
+    error_message = "platform-registry-deploy must not grant any IAM role/policy write action (Create/Update/Delete/Put/Attach/Detach/Tag against a role) — it must only ever read the three cross-account roles' state, never write their definitions."
   }
 }
