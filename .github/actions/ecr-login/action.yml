@@ -13,9 +13,20 @@ inputs:
   aws-region:
     description: AWS region the agentic-erp ECR repositories live in.
     required: true
+  registry-account-id:
+    description: >-
+      Platform Account id (issue #271/#272) the agentic-erp/* ECR repositories actually live in —
+      ecr_push now lives in the Hosting Account (a different account), so
+      aws-actions/amazon-ecr-login's own default (log into the calling identity's own account)
+      resolves to the wrong registry entirely. Passed straight through to amazon-ecr-login's
+      `registries` input, which is how it logs into a cross-account registry (the corresponding
+      repository policy — infra/registry/ecr.tf's odoo_dev_push/odoo_prod_push/
+      administration_stack_api_push — is what actually authorizes ecr_push there;
+      GetAuthorizationToken itself isn't account-scoped).
+    required: true
 outputs:
   registry:
-    description: This account's ECR registry hostname, as resolved by aws-actions/amazon-ecr-login.
+    description: The Platform Account's ECR registry hostname, as resolved by aws-actions/amazon-ecr-login.
     value: ${{ steps.login.outputs.registry }}
 runs:
   using: composite
@@ -27,3 +38,5 @@ runs:
     - name: Log in to Amazon ECR
       id: login
       uses: aws-actions/amazon-ecr-login@v2
+      with:
+        registries: ${{ inputs.registry-account-id }}

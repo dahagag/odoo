@@ -1,9 +1,14 @@
-# Issue #216: staging_deploy's new administration-stack deploy permissions (oidc.tf's
-# administration_stack_deploy document) must stay scoped to exactly infra/platform's resource
-# shapes and the one ECR repository it retags — not a broader grant, and never granted to
-# production_deploy (that stays #217's job). Same no-live-AWS-account style as this directory's
-# other tftest.hcl files: every resource's own creation is replaced by a literal stand-in
-# (`override_resource`).
+# Issue #216: staging_deploy's administration-stack deploy permissions must stay scoped to
+# exactly infra/platform's resource shapes and the one ECR repository it retags — not a broader
+# grant, and never granted to production_deploy (that stays #217's job).
+#
+# Issue #271/#272: the EC2/ECS/IAM/Logs statements this test used to assert directly (the actual
+# scoping now lives in infra/registry/cross_account_iam.tf's platform_administration_stack_deploy
+# role — see infra/registry/tests/platform_administration_stack_deploy_role_scoping.tftest.hcl)
+# are replaced here by an assertion that staging_deploy carries exactly one narrow
+# sts:AssumeRole statement onto that role's ARN, and none of the old direct EC2/ECS/IAM/Logs
+# actions at all. Same no-live-AWS-account style as this directory's other tftest.hcl files:
+# every resource's own creation is replaced by a literal stand-in (`override_resource`).
 
 provider "aws" {
   region                      = "us-east-1"
@@ -15,16 +20,16 @@ provider "aws" {
 }
 
 variables {
-  aws_region                            = "us-east-1"
-  github_repository                     = "dahagag/odoo"
-  staging_branch                        = "dev/19.0"
-  production_branch                     = "main/19.0"
-  platform_account_id                   = "333333333333"
-  tofu_state_bucket_arn                 = "arn:aws:s3:::hosting-tofu-state"
-  tofu_state_lock_table_arn             = "arn:aws:dynamodb:us-east-1:111111111111:table/hosting-tofu-state-lock"
-  administration_stack_ecs_cluster_name = "platform"
-  administration_stack_task_family      = "platform-administration-stack-api"
-  administration_stack_ecs_service_name = "platform-administration-stack-api"
+  aws_region                                    = "us-east-1"
+  github_repository                             = "dahagag/odoo"
+  staging_branch                                = "dev/19.0"
+  production_branch                             = "main/19.0"
+  platform_account_id                           = "333333333333"
+  tofu_state_bucket_arn                         = "arn:aws:s3:::hosting-tofu-state"
+  tofu_state_lock_table_arn                     = "arn:aws:dynamodb:us-east-1:111111111111:table/hosting-tofu-state-lock"
+  platform_registry_deploy_role_arn             = "arn:aws:iam::333333333333:role/platform-registry-deploy"
+  platform_administration_stack_deploy_role_arn = "arn:aws:iam::333333333333:role/platform-administration-stack-deploy"
+  platform_ci_plan_role_arn                     = "arn:aws:iam::333333333333:role/platform-ci-plan"
 }
 
 override_data {
@@ -96,21 +101,11 @@ run "verify_administration_stack_deploy_scoping" {
   assert {
     condition = anytrue([
       for statement in jsondecode(data.aws_iam_policy_document.staging_deploy.json).Statement :
-      statement.Sid == "ManageAdministrationStackEcs"
-      && toset(flatten([statement.Resource])) == toset(["arn:aws:ecs:us-east-1:333333333333:cluster/platform"])
+      statement.Sid == "AssumePlatformAdministrationStackDeployRole"
+      && flatten([statement.Action]) == ["sts:AssumeRole"]
+      && toset(flatten([statement.Resource])) == toset(["arn:aws:iam::333333333333:role/platform-administration-stack-deploy"])
     ])
-    error_message = "staging_deploy's ManageAdministrationStackEcs statement must be scoped to exactly the administration-stack platform ECS cluster ARN."
-  }
-
-  assert {
-    condition = anytrue([
-      for statement in jsondecode(data.aws_iam_policy_document.staging_deploy.json).Statement :
-      statement.Sid == "DeployAdministrationStackService"
-      && toset(flatten([statement.Resource])) == toset([
-        "arn:aws:ecs:us-east-1:333333333333:service/platform/platform-administration-stack-api",
-      ])
-    ])
-    error_message = "staging_deploy's DeployAdministrationStackService statement must be scoped to exactly the administration-stack-api ECS service ARN."
+    error_message = "staging_deploy must carry exactly one sts:AssumeRole statement scoped to platform-administration-stack-deploy's own ARN."
   }
 
   assert {
@@ -125,14 +120,30 @@ run "verify_administration_stack_deploy_scoping" {
     error_message = "staging_deploy's RetagAdministrationStackImage statement must grant exactly BatchGetImage/PutImage on exactly the administration-stack-api repository — not push actions, and not the other three ECR repositories."
   }
 
+  # --- issue #271/#272: none of the old direct EC2/ECS/IAM/Logs statements survive on
+  # --- staging_deploy itself — they moved wholesale to platform_administration_stack_deploy
+  # --- (infra/registry/cross_account_iam.tf), replaced here by the single AssumeRole statement
+  # --- asserted above.
   assert {
-    condition = anytrue([
+    condition = !anytrue([
       for statement in jsondecode(data.aws_iam_policy_document.staging_deploy.json).Statement :
-      statement.Sid == "PassAdministrationStackTaskRoles"
-      && flatten([statement.Action]) == ["iam:PassRole"]
-      && toset(flatten([statement.Resource])) == toset(["arn:aws:iam::333333333333:role/platform-administration-stack-api-*"])
+      contains([
+        "ManageAdministrationStackNetworking", "TagAdministrationStackNetworkingOnCreate",
+        "ManageAdministrationStackNetworkingScoped", "ManageAdministrationStackEcs",
+        "RegisterAdministrationStackTaskDefinition", "ReadAdministrationStackTaskDefinition",
+        "DeployAdministrationStackService", "ManageAdministrationStackTaskRoles",
+        "PassAdministrationStackTaskRoles", "ManageAdministrationStackLogGroup",
+      ], statement.Sid)
     ])
-    error_message = "staging_deploy's PassAdministrationStackTaskRoles statement must be scoped to exactly the administration-stack task/execution role naming pattern, not a bare github-actions-* or \"*\"."
+    error_message = "staging_deploy must not carry any direct EC2/ECS/IAM/Logs statement — those services have no cross-account resource-based policy mechanism, so any such grant here could never work against real AWS; the fix is the AssumePlatformAdministrationStackDeployRole statement instead."
+  }
+
+  assert {
+    condition = !anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.staging_deploy.json).Statement :
+      contains(flatten([statement.Action]), "ec2:CreateVpc") || contains(flatten([statement.Action]), "ecs:CreateCluster")
+    ])
+    error_message = "staging_deploy must not grant any EC2/ECS action directly, under any statement Sid — this is a belt-and-suspenders check on top of the Sid-based one above."
   }
 
   # --- production_deploy gets none of this — that's #217's own ticket to define ---
@@ -141,13 +152,10 @@ run "verify_administration_stack_deploy_scoping" {
     condition = !anytrue([
       for statement in jsondecode(data.aws_iam_policy_document.production_deploy.json).Statement :
       contains([
-        "TofuStateBackendPlatform", "ManageAdministrationStackNetworking", "ManageAdministrationStackEcs",
-        "RegisterAdministrationStackTaskDefinition", "ReadAdministrationStackTaskDefinition",
-        "DeployAdministrationStackService", "ManageAdministrationStackTaskRoles",
-        "PassAdministrationStackTaskRoles", "ManageAdministrationStackLogGroup",
+        "TofuStateBackendPlatform", "AssumePlatformAdministrationStackDeployRole",
         "RetagAdministrationStackImage", "EcrAuthForRetag",
       ], statement.Sid)
     ])
-    error_message = "production_deploy must not carry any of staging_deploy's new administration-stack deploy statements (issue #216 is staging-only; #217 defines production's own)."
+    error_message = "production_deploy must not carry any of staging_deploy's administration-stack deploy statements (issue #216 is staging-only; #217 defines production's own)."
   }
 }

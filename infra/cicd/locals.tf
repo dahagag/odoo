@@ -45,19 +45,15 @@ locals {
   # The one ECR repository (of the four ecr_repository_arns covers) staging_deploy needs write
   # access to — to add the release-version tag to the image ecr_push already pushed at PR time
   # (issue #216: "deploys the administration stack's image tagged with the derived release
-  # version"), not to push new image content (that stays ecr_push's job, PR-time only).
+  # version"), not to push new image content (that stays ecr_push's job, PR-time only). This
+  # stays here (not moved to infra/registry) because it's a data-plane ECR grant, now backed by a
+  # matching repository policy (infra/registry/ecr.tf's administration_stack_api_push) rather
+  # than the role-chaining mechanism issue #271/#272 adds for EC2/ECS/IAM/Logs.
   administration_stack_api_repository_arn = "arn:aws:ecr:${var.aws_region}:${var.platform_account_id}:repository/agentic-erp/administration-stack-api"
 
-  # Naming convention infra/platform's own ECS task execution/task roles follow
-  # (iam.tf: "${var.environment}-administration-stack-api-execution" / "-task", environment
-  # defaulting to "platform") — staging_deploy's own iam:CreateRole/PutRolePolicy/PassRole grant
-  # below is scoped to this pattern, not a bare "*" or "github-actions-*" (which wouldn't even
-  # match these role names, but the point is the same narrow-by-pattern discipline
-  # manage_own_role_staging_deploy already uses for its own role).
-  administration_stack_task_role_arn_pattern = "arn:aws:iam::${var.platform_account_id}:role/${var.administration_stack_ecs_cluster_name}-administration-stack-api-*"
-
-  administration_stack_ecs_cluster_arn = "arn:aws:ecs:${var.aws_region}:${var.platform_account_id}:cluster/${var.administration_stack_ecs_cluster_name}"
-  administration_stack_task_family_arn = "arn:aws:ecs:${var.aws_region}:${var.platform_account_id}:task-definition/${var.administration_stack_task_family}:*"
-  administration_stack_service_arn     = "arn:aws:ecs:${var.aws_region}:${var.platform_account_id}:service/${var.administration_stack_ecs_cluster_name}/${var.administration_stack_ecs_service_name}"
-  administration_stack_log_group_arn   = "arn:aws:logs:${var.aws_region}:${var.platform_account_id}:log-group:/ecs/${var.administration_stack_ecs_cluster_name}/administration-stack-api"
+  # Issue #271/#272: the administration-stack-specific ECS/IAM/Logs ARN locals that used to live
+  # here (administration_stack_ecs_cluster_arn, -task_family_arn, -service_arn,
+  # -task_role_arn_pattern, -log_group_arn) moved to infra/registry — the module that now builds
+  # infra/platform's resource ARNs, since platform_administration_stack_deploy and
+  # platform_ci_plan (which actually reference them) live there.
 }

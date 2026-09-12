@@ -40,6 +40,45 @@ inputs:
     description: infra/platform's same-named input (only used when dir is infra/platform) — the release version this apply deploys (issue #216).
     required: false
     default: ""
+  platform_registry_deploy_role_arn:
+    description: infra/cicd's same-named input (only used when dir is infra/cicd) — infra/registry's platform_registry_deploy_role_arn output (issue #271/#272).
+    required: false
+    default: ""
+  platform_administration_stack_deploy_role_arn:
+    description: infra/cicd's same-named input (only used when dir is infra/cicd) — infra/registry's platform_administration_stack_deploy_role_arn output (issue #271/#272).
+    required: false
+    default: ""
+  platform_ci_plan_role_arn:
+    description: infra/cicd's same-named input (only used when dir is infra/cicd) — infra/registry's platform_ci_plan_role_arn output (issue #271/#272).
+    required: false
+    default: ""
+  staging_deploy_role_arn:
+    description: infra/registry's same-named input (only used when dir is infra/registry) — infra/cicd's staging_deploy_role_arn output (issue #271/#272).
+    required: false
+    default: ""
+  production_deploy_role_arn:
+    description: infra/registry's same-named input (only used when dir is infra/registry) — infra/cicd's production_deploy_role_arn output (issue #271/#272).
+    required: false
+    default: ""
+  infra_plan_role_arn:
+    description: infra/registry's same-named input (only used when dir is infra/registry) — infra/cicd's infra_plan_role_arn output (issue #271/#272).
+    required: false
+    default: ""
+  ecr_push_role_arn:
+    description: infra/registry's same-named input (only used when dir is infra/registry) — infra/cicd's ecr_push_role_arn output (issue #271/#272).
+    required: false
+    default: ""
+  platform_assume_role_arn:
+    description: >-
+      infra/registry's and infra/platform's same-named input (used when dir is infra/registry or
+      infra/platform) — the Platform Account role this module's own AWS provider assumes into
+      (issue #271/#272). For infra/registry: unset for the operator's first bootstrap apply, or
+      infra/registry's own platform_registry_deploy_role_arn/platform_ci_plan_role_arn output for
+      apply/plan. For infra/platform: infra/registry's platform_administration_stack_deploy_role_arn
+      output for apply, or platform_ci_plan_role_arn for plan — always required (infra/platform is
+      never applied by a human operator directly).
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -52,17 +91,26 @@ runs:
               -var "platform_account_id=${{ inputs.platform_account_id }}"
               -var "tofu_state_bucket_arn=${{ inputs.tofu_state_bucket_arn }}"
               -var "tofu_state_lock_table_arn=${{ inputs.tofu_state_lock_table_arn }}"
+              -var "platform_registry_deploy_role_arn=${{ inputs.platform_registry_deploy_role_arn }}"
+              -var "platform_administration_stack_deploy_role_arn=${{ inputs.platform_administration_stack_deploy_role_arn }}"
+              -var "platform_ci_plan_role_arn=${{ inputs.platform_ci_plan_role_arn }}"
             )
             ;;
           infra/registry)
             extra_vars=(
               -var "hosting_account_ecs_task_execution_role_arn=${{ inputs.hosting_account_ecs_task_execution_role_arn }}"
+              -var "staging_deploy_role_arn=${{ inputs.staging_deploy_role_arn }}"
+              -var "production_deploy_role_arn=${{ inputs.production_deploy_role_arn }}"
+              -var "infra_plan_role_arn=${{ inputs.infra_plan_role_arn }}"
+              -var "ecr_push_role_arn=${{ inputs.ecr_push_role_arn }}"
+              -var "platform_assume_role_arn=${{ inputs.platform_assume_role_arn }}"
             )
             ;;
           infra/platform)
             extra_vars=(
               -var "administration_stack_api_repository_url=${{ inputs.administration_stack_api_repository_url }}"
               -var "administration_stack_image_tag=${{ inputs.administration_stack_image_tag }}"
+              -var "platform_assume_role_arn=${{ inputs.platform_assume_role_arn }}"
             )
             ;;
           *)

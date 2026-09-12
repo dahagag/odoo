@@ -23,13 +23,16 @@ provider "aws" {
 }
 
 variables {
-  aws_region                = "us-east-1"
-  github_repository         = "dahagag/odoo"
-  staging_branch            = "dev/19.0"
-  production_branch         = "main/19.0"
-  platform_account_id       = "333333333333"
-  tofu_state_bucket_arn     = "arn:aws:s3:::hosting-tofu-state"
-  tofu_state_lock_table_arn = "arn:aws:dynamodb:us-east-1:111111111111:table/hosting-tofu-state-lock"
+  aws_region                                    = "us-east-1"
+  github_repository                             = "dahagag/odoo"
+  staging_branch                                = "dev/19.0"
+  production_branch                             = "main/19.0"
+  platform_account_id                           = "333333333333"
+  tofu_state_bucket_arn                         = "arn:aws:s3:::hosting-tofu-state"
+  tofu_state_lock_table_arn                     = "arn:aws:dynamodb:us-east-1:111111111111:table/hosting-tofu-state-lock"
+  platform_registry_deploy_role_arn             = "arn:aws:iam::333333333333:role/platform-registry-deploy"
+  platform_administration_stack_deploy_role_arn = "arn:aws:iam::333333333333:role/platform-administration-stack-deploy"
+  platform_ci_plan_role_arn                     = "arn:aws:iam::333333333333:role/platform-ci-plan"
 }
 
 override_data {
@@ -92,35 +95,28 @@ run "verify_infra_plan_trust_and_read_only_scoping" {
   }
 
   # --- read-only proof: no statement in infra_plan's policy grants a write/mutate action ---
+  # --- (issue #271/#272: sts:AssumeRole onto platform-ci-plan is the one deliberate exception —
+  # --- that target role is itself entirely read-only, asserted in infra/registry/tests) ---
 
   assert {
     condition = alltrue([
       for statement in jsondecode(data.aws_iam_policy_document.infra_plan.json).Statement :
       alltrue([
         for action in flatten([statement.Action]) :
-        # Every action infra_plan grants must be a read-only IAM/ECR/S3/EC2/ECS/Logs verb — Get*,
-        # List*, Describe*, or ecr:GetLifecyclePolicy/GetRepositoryPolicy (also read-only despite
-        # not matching the Get*/List*/Describe* prefixes below). EC2/ECS/Logs were added by issue
-        # #216 so a PR touching infra/platform gets a real plan too (see this document's own
-        # ReadAdministrationStack* statements).
-        can(regex("^(iam|ecr|s3|ec2|ecs|logs):(Get|List|Describe).*$", action))
+        action == "sts:AssumeRole" || can(regex("^(iam|ecr|s3):(Get|List|Describe).*$", action))
       ])
     ])
-    error_message = "infra_plan's policy must grant only read-only (Get*/List*/Describe*) actions — no iam:Create*/Put*/Update*/Delete*, no ecr:Create*/Put*/Delete*, no s3:PutObject."
+    error_message = "infra_plan's policy must grant only read-only (Get*/List*/Describe*) actions, plus the one sts:AssumeRole exception onto platform-ci-plan — no iam:Create*/Put*/Update*/Delete*, no ecr:Create*/Put*/Delete*, no s3:PutObject, and (issue #271/#272) no direct ec2:*/ecs:*/logs:* action at all."
   }
 
   assert {
     condition = anytrue([
       for statement in jsondecode(data.aws_iam_policy_document.infra_plan.json).Statement :
-      statement.Sid == "ReadRegistryRepositories"
-      && toset(flatten([statement.Resource])) == toset([
-        "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/odoo-dev",
-        "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/odoo-prod",
-        "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/tofu-runner",
-        "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/administration-stack-api",
-      ])
+      statement.Sid == "AssumePlatformCiPlanRole"
+      && flatten([statement.Action]) == ["sts:AssumeRole"]
+      && toset(flatten([statement.Resource])) == toset(["arn:aws:iam::333333333333:role/platform-ci-plan"])
     ])
-    error_message = "infra_plan's ReadRegistryRepositories statement must be scoped to exactly the four ADR-0038 repository ARNs — no resource=\"*\"."
+    error_message = "infra_plan must carry exactly one sts:AssumeRole statement scoped to platform-ci-plan's own ARN — this replaces the old direct ReadRegistryRepositories/ReadAdministrationStackNetworking/-Ecs/-TaskRoles/-LogGroup statements, none of which could ever have worked cross-account for the EC2/ECS/IAM/Logs half of them."
   }
 
   assert {

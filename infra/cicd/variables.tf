@@ -70,22 +70,24 @@ variable "tofu_state_bucket_arn" {
   EOT
 }
 
-variable "administration_stack_ecs_cluster_name" {
+# Issue #271/#272: administration_stack_ecs_cluster_name/task_family/ecs_service_name moved to
+# infra/registry — that module is the one that now builds infra/platform's resource ARNs (for
+# platform_administration_stack_deploy/platform_ci_plan, in the Platform Account where those
+# resources actually live), so it needs these names, not this module anymore.
+
+variable "platform_registry_deploy_role_arn" {
   type        = string
-  description = "infra/platform's var.ecs_cluster_name default (\"platform\") — fixed here too (issue #216) so staging_deploy's ECS deploy permissions can be scoped to this exact cluster's ARN rather than a bare \"*\", the same convention ecr_repository_names uses for the ECR repositories' fixed names."
-  default     = "platform"
+  description = "infra/registry's platform_registry_deploy_role_arn output (issue #271/#272) — the Platform Account role staging_deploy and production_deploy assume (via AssumePlatformRegistryDeployRole/its infra_management_statements equivalent) to manage infra/registry's own ECR repositories. Not looked up via remote state, supplied at apply time, same convention as platform_account_id."
 }
 
-variable "administration_stack_task_family" {
+variable "platform_administration_stack_deploy_role_arn" {
   type        = string
-  description = "infra/platform's aws_ecs_task_definition.administration_stack_api family default (\"platform-administration-stack-api\", infra/platform/ecs_task.tf) — fixed here so staging_deploy's RegisterTaskDefinition/DescribeTaskDefinition grant can be scoped to this exact family, not every task family in the account."
-  default     = "platform-administration-stack-api"
+  description = "infra/registry's platform_administration_stack_deploy_role_arn output (issue #271/#272) — the Platform Account role staging_deploy alone assumes (AssumePlatformAdministrationStackDeployRole) to deploy infra/platform's VPC/ECS/IAM/Logs resources."
 }
 
-variable "administration_stack_ecs_service_name" {
+variable "platform_ci_plan_role_arn" {
   type        = string
-  description = "infra/platform's aws_ecs_service.administration_stack_api name default (same \"platform-administration-stack-api\" convention) — fixed here so staging_deploy's service-update grant can be scoped to this exact service's ARN."
-  default     = "platform-administration-stack-api"
+  description = "infra/registry's platform_ci_plan_role_arn output (issue #271/#272) — the Platform Account, read-only role infra_plan alone assumes (AssumePlatformCiPlanRole) for a real `tofu plan` of infra/registry or infra/platform."
 }
 
 variable "tofu_state_lock_table_arn" {

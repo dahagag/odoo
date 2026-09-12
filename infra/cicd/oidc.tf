@@ -134,25 +134,19 @@ data "aws_iam_policy_document" "infra_management_statements" {
     resources = [local.managed_oidc_provider_arn]
   }
 
+  # Issue #271/#272: infra/registry's ECR repositories live in the Platform Account, and (like
+  # EC2/ECS/IAM/Logs below) ECR *repository-management* actions such as CreateRepository have no
+  # cross-account resource-based policy mechanism — only ECR's *data-plane* actions
+  # (BatchGetImage, PutImage, etc.) support that (see infra/registry/ecr.tf's new repository
+  # policies). This statement used to grant those management actions directly here, which could
+  # never have worked cross-account; it's replaced by a narrow sts:AssumeRole onto
+  # platform-registry-deploy, the Platform Account role that now carries them
+  # (infra/registry/cross_account_iam.tf).
   statement {
-    sid    = "ManageRegistryRepositories"
-    effect = "Allow"
-    actions = [
-      "ecr:CreateRepository",
-      "ecr:DescribeRepositories",
-      "ecr:DeleteRepository",
-      "ecr:PutLifecyclePolicy",
-      "ecr:GetLifecyclePolicy",
-      "ecr:DeleteLifecyclePolicy",
-      "ecr:SetRepositoryPolicy",
-      "ecr:GetRepositoryPolicy",
-      "ecr:DeleteRepositoryPolicy",
-      "ecr:PutImageTagMutability",
-      "ecr:PutImageScanningConfiguration",
-      "ecr:TagResource",
-      "ecr:ListTagsForResource",
-    ]
-    resources = local.ecr_repository_arns
+    sid       = "AssumePlatformRegistryDeployRole"
+    effect    = "Allow"
+    actions   = ["sts:AssumeRole"]
+    resources = [var.platform_registry_deploy_role_arn]
   }
 }
 
@@ -231,21 +225,14 @@ data "aws_iam_policy_document" "staging_deploy" {
 # yet (that's #217's own ticket to define, possibly against a different infra/platform instance
 # or var.environment).
 #
-# VPC/subnet/security-group/NAT/route-table/EIP *creation* and read-only Describe* calls are
-# granted with resource "*": unlike an IAM role name or an ECR repository name, none of these
-# carry a name known before creation (only an opaque, provider-assigned id), so — the same
-# reasoning infra/foundation/iam.tf's own DescribeEc2 statement gives for read-only EC2 calls —
-# AWS's IAM reference offers no resource-level ARN to scope create calls to ahead of time.
-#
-# Every other write action here — Delete/Modify/Authorize/Revoke, plus Attach/DetachInternetGateway,
-# Associate/DisassociateRouteTable, and CreateRoute (adds a route to an already-created,
-# already-tagged route table) — acts only on resources that already exist and are already tagged
-# (via this module's own default_tags) by the time they're called, so those are scoped below to
-# this module's own resources via the ec2:ResourceTag condition key, rather than "*" — narrowing
-# blast radius if staging_deploy's credentials were ever compromised. This is on top of, not
-# instead of, role separation: infra_plan is the only other role this state manages with any
-# ec2:* grant at all, and it is read-only (ReadAdministrationStackNetworking below, Describe*
-# actions only).
+# Issue #271/#272: the actual EC2/ECS/IAM/Logs statements this comment used to describe in detail
+# (VPC/subnet/security-group creation with resource "*", ec2:ResourceTag-scoped writes, etc.) now
+# live in infra/registry/cross_account_iam.tf's platform_administration_stack_deploy role, in the
+# Platform Account where infra/platform's resources actually are — this document only carries a
+# narrow sts:AssumeRole onto it (AssumePlatformAdministrationStackDeployRole below). See that
+# role's own comments for the scoping rationale (ec2:CreateAction/ec2:ResourceTag conditions,
+# etc.), preserved verbatim there. infra_plan's equivalent read-only access
+# (AssumePlatformCiPlanRole) is the same shape, one level down.
 # ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "administration_stack_deploy" {
@@ -260,193 +247,19 @@ data "aws_iam_policy_document" "administration_stack_deploy" {
     resources = [local.administration_stack_platform_state_object_arn]
   }
 
+  # Issue #271/#272: this used to be nine statements granting EC2/ECS/IAM/Logs actions directly
+  # here — none of which could ever have worked, since those four services have no cross-account
+  # resource-based policy mechanism at all (unlike ECR's data-plane actions, see
+  # RetagAdministrationStackImage below), and this role lives in the Hosting Account while
+  # infra/platform's actual resources live in the Platform Account. Confirmed live against real
+  # AWS credentials while scoping this fix. Replaced by a narrow sts:AssumeRole onto
+  # platform-administration-stack-deploy, the Platform Account role that now carries those nine
+  # statements verbatim (infra/registry/cross_account_iam.tf).
   statement {
-    sid    = "ManageAdministrationStackNetworking"
-    effect = "Allow"
-    actions = [
-      "ec2:DescribeVpcs",
-      "ec2:CreateVpc",
-      "ec2:DescribeVpcAttribute",
-      "ec2:DescribeSubnets",
-      "ec2:CreateSubnet",
-      "ec2:DescribeInternetGateways",
-      "ec2:CreateInternetGateway",
-      "ec2:DescribeNatGateways",
-      "ec2:CreateNatGateway",
-      "ec2:DescribeAddresses",
-      "ec2:AllocateAddress",
-      "ec2:DescribeRouteTables",
-      "ec2:CreateRouteTable",
-      "ec2:DescribeSecurityGroups",
-      "ec2:CreateSecurityGroup",
-      "ec2:DescribeTags",
-    ]
-    resources = ["*"]
-  }
-
-  # ec2:CreateTags kept out of the statement above and conditioned on ec2:CreateAction: unrestricted,
-  # it would let staging_deploy tag an unrelated, pre-existing EC2 resource with TofuModule=platform
-  # and then use ManageAdministrationStackNetworkingScoped's own ec2:ResourceTag condition below to
-  # delete/modify that resource — an escalation the resource-tag scoping was supposed to prevent, not
-  # enable. ec2:CreateAction only evaluates true when CreateTags is invoked as part of one of these
-  # specific resource-creating calls' own tag-on-create parameters, never as a same-role follow-up
-  # call against something that already exists.
-  statement {
-    sid    = "TagAdministrationStackNetworkingOnCreate"
-    effect = "Allow"
-    actions = [
-      "ec2:CreateTags",
-    ]
-    resources = ["*"]
-    condition {
-      test     = "StringEquals"
-      variable = "ec2:CreateAction"
-      values = [
-        "CreateVpc",
-        "CreateSubnet",
-        "CreateInternetGateway",
-        "CreateNatGateway",
-        "AllocateAddress",
-        "CreateRouteTable",
-        "CreateSecurityGroup",
-      ]
-    }
-  }
-
-  # Same networking surface as above, but every write action that acts on a resource this module
-  # already created (and tagged) earlier in the same apply — unlike the create/describe statement
-  # above, a resource-level ARN isn't the only option here; ec2:ResourceTag lets us scope to
-  # exactly this module's own resources instead of the whole account.
-  statement {
-    sid    = "ManageAdministrationStackNetworkingScoped"
-    effect = "Allow"
-    actions = [
-      "ec2:DeleteVpc",
-      "ec2:ModifyVpcAttribute",
-      "ec2:DeleteSubnet",
-      "ec2:ModifySubnetAttribute",
-      "ec2:AttachInternetGateway",
-      "ec2:DetachInternetGateway",
-      "ec2:DeleteInternetGateway",
-      "ec2:DeleteNatGateway",
-      "ec2:ReleaseAddress",
-      "ec2:AssociateRouteTable",
-      "ec2:DisassociateRouteTable",
-      "ec2:DeleteRouteTable",
-      "ec2:CreateRoute",
-      "ec2:DeleteRoute",
-      "ec2:DeleteSecurityGroup",
-      "ec2:AuthorizeSecurityGroupEgress",
-      "ec2:RevokeSecurityGroupEgress",
-      "ec2:AuthorizeSecurityGroupIngress",
-      "ec2:RevokeSecurityGroupIngress",
-      "ec2:DeleteTags",
-    ]
-    resources = ["*"]
-    condition {
-      test     = "StringEquals"
-      variable = "ec2:ResourceTag/TofuModule"
-      values   = ["platform"]
-    }
-  }
-
-  statement {
-    sid    = "ManageAdministrationStackEcs"
-    effect = "Allow"
-    actions = [
-      "ecs:DescribeClusters",
-      "ecs:CreateCluster",
-      "ecs:DeleteCluster",
-      "ecs:PutClusterCapacityProviders",
-      "ecs:TagResource",
-    ]
-    resources = [local.administration_stack_ecs_cluster_arn]
-  }
-
-  # RegisterTaskDefinition/DeregisterTaskDefinition don't accept a resource-level ARN in AWS's own
-  # ECS IAM reference (they operate on a family name, not yet a specific revision ARN) — scoped to
-  # "*" the same way; DescribeTaskDefinition does accept one, scoped to this family's every
-  # revision.
-  statement {
-    sid    = "RegisterAdministrationStackTaskDefinition"
-    effect = "Allow"
-    actions = [
-      "ecs:RegisterTaskDefinition",
-      "ecs:DeregisterTaskDefinition",
-    ]
-    resources = ["*"]
-  }
-
-  statement {
-    sid       = "ReadAdministrationStackTaskDefinition"
+    sid       = "AssumePlatformAdministrationStackDeployRole"
     effect    = "Allow"
-    actions   = ["ecs:DescribeTaskDefinition"]
-    resources = [local.administration_stack_task_family_arn]
-  }
-
-  statement {
-    sid    = "DeployAdministrationStackService"
-    effect = "Allow"
-    actions = [
-      "ecs:CreateService",
-      "ecs:UpdateService",
-      "ecs:DeleteService",
-      "ecs:DescribeServices",
-      "ecs:TagResource",
-    ]
-    resources = [local.administration_stack_service_arn]
-  }
-
-  statement {
-    sid    = "ManageAdministrationStackTaskRoles"
-    effect = "Allow"
-    actions = [
-      "iam:GetRole",
-      "iam:CreateRole",
-      "iam:UpdateRole",
-      "iam:DeleteRole",
-      "iam:TagRole",
-      "iam:PutRolePolicy",
-      "iam:GetRolePolicy",
-      "iam:DeleteRolePolicy",
-      "iam:ListRolePolicies",
-      "iam:AttachRolePolicy",
-      "iam:DetachRolePolicy",
-      "iam:ListAttachedRolePolicies",
-      "iam:ListInstanceProfilesForRole",
-    ]
-    resources = [local.administration_stack_task_role_arn_pattern]
-  }
-
-  # So ECS can actually assume the two roles it registers into the task definition/service —
-  # scoped to ecs-tasks.amazonaws.com as the only passed-to service, the same PassRole-narrowing
-  # pattern infra/foundation/iam.tf's PassTrialOrgInstanceRole statement uses.
-  statement {
-    sid       = "PassAdministrationStackTaskRoles"
-    effect    = "Allow"
-    actions   = ["iam:PassRole"]
-    resources = [local.administration_stack_task_role_arn_pattern]
-    condition {
-      test     = "StringEquals"
-      variable = "iam:PassedToService"
-      values   = ["ecs-tasks.amazonaws.com"]
-    }
-  }
-
-  statement {
-    sid    = "ManageAdministrationStackLogGroup"
-    effect = "Allow"
-    actions = [
-      "logs:CreateLogGroup",
-      "logs:DeleteLogGroup",
-      "logs:PutRetentionPolicy",
-      "logs:TagResource",
-      "logs:DescribeLogGroups",
-    ]
-    resources = [
-      local.administration_stack_log_group_arn,
-      "${local.administration_stack_log_group_arn}:*",
-    ]
+    actions   = ["sts:AssumeRole"]
+    resources = [var.platform_administration_stack_deploy_role_arn]
   }
 
   # Retags the image ecr_push already pushed at PR time (content-hash tag) with the current
@@ -776,16 +589,18 @@ data "aws_iam_policy_document" "infra_plan" {
     ]
   }
 
+  # Issue #271/#272: infra/registry's ECR repositories and infra/platform's EC2/ECS/IAM/Logs
+  # resources both live in the Platform Account, and (like staging_deploy's own equivalent
+  # grants above) reading them directly from this Hosting Account identity policy could never
+  # have worked for the EC2/ECS/IAM/Logs half of that — replaced by a narrow sts:AssumeRole onto
+  # platform-ci-plan, the Platform Account, read-only role that now carries every statement this
+  # used to grant directly (both the ECR read statement and the four Administration Stack read
+  # statements below), verbatim (infra/registry/cross_account_iam.tf).
   statement {
-    sid    = "ReadRegistryRepositories"
-    effect = "Allow"
-    actions = [
-      "ecr:DescribeRepositories",
-      "ecr:GetLifecyclePolicy",
-      "ecr:GetRepositoryPolicy",
-      "ecr:ListTagsForResource",
-    ]
-    resources = local.ecr_repository_arns
+    sid       = "AssumePlatformCiPlanRole"
+    effect    = "Allow"
+    actions   = ["sts:AssumeRole"]
+    resources = [var.platform_ci_plan_role_arn]
   }
 
   # Issue #216: a PR touching infra/platform needs a real (not empty-state) `tofu plan` too, the
@@ -800,57 +615,6 @@ data "aws_iam_policy_document" "infra_plan" {
     resources = [local.administration_stack_platform_state_object_arn]
   }
 
-  statement {
-    sid    = "ReadAdministrationStackNetworking"
-    effect = "Allow"
-    actions = [
-      "ec2:DescribeVpcs",
-      "ec2:DescribeVpcAttribute",
-      "ec2:DescribeSubnets",
-      "ec2:DescribeInternetGateways",
-      "ec2:DescribeNatGateways",
-      "ec2:DescribeAddresses",
-      "ec2:DescribeRouteTables",
-      "ec2:DescribeSecurityGroups",
-      "ec2:DescribeTags",
-    ]
-    resources = ["*"]
-  }
-
-  statement {
-    sid    = "ReadAdministrationStackEcs"
-    effect = "Allow"
-    actions = [
-      "ecs:DescribeClusters",
-      "ecs:DescribeServices",
-      "ecs:DescribeTaskDefinition",
-    ]
-    resources = [
-      local.administration_stack_ecs_cluster_arn,
-      local.administration_stack_service_arn,
-      local.administration_stack_task_family_arn,
-    ]
-  }
-
-  statement {
-    sid    = "ReadAdministrationStackTaskRoles"
-    effect = "Allow"
-    actions = [
-      "iam:GetRole",
-      "iam:GetRolePolicy",
-      "iam:ListRolePolicies",
-      "iam:ListAttachedRolePolicies",
-      "iam:ListInstanceProfilesForRole",
-    ]
-    resources = [local.administration_stack_task_role_arn_pattern]
-  }
-
-  statement {
-    sid       = "ReadAdministrationStackLogGroup"
-    effect    = "Allow"
-    actions   = ["logs:DescribeLogGroups"]
-    resources = [local.administration_stack_log_group_arn]
-  }
 }
 
 resource "aws_iam_role_policy" "infra_plan" {

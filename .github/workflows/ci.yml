@@ -198,6 +198,7 @@ jobs:
         with:
           role-arn: ${{ vars.ECR_PUSH_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+          registry-account-id: ${{ vars.PLATFORM_ACCOUNT_ID }}
       - name: Compute the image tag from its content inputs
         # Tag by the hash of everything that actually affects the image's contents
         # (not github.sha), so a PR that only touches custom_addons/ or scripts/
@@ -251,6 +252,7 @@ jobs:
         with:
           role-arn: ${{ vars.ECR_PUSH_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+          registry-account-id: ${{ vars.PLATFORM_ACCOUNT_ID }}
       - name: Compute the image tag from its content inputs
         # This image bakes in the whole application tree (odoo-bin, odoo/, addons/,
         # custom_addons/), not the small, rarely-changing set of build inputs build-image
@@ -310,6 +312,7 @@ jobs:
         with:
           role-arn: ${{ vars.ECR_PUSH_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+          registry-account-id: ${{ vars.PLATFORM_ACCOUNT_ID }}
       - name: Compute the image tag from its content inputs
         # Content-hash tagged, same convention as build-image/build-prod-image — this is not the
         # tag deploy-administration-stack-staging deploys under (that's the release version,
@@ -565,6 +568,17 @@ jobs:
           tofu_state_bucket_arn: ${{ vars.TOFU_STATE_BUCKET_ARN }}
           tofu_state_lock_table_arn: ${{ vars.TOFU_STATE_LOCK_TABLE_ARN }}
           hosting_account_ecs_task_execution_role_arn: ${{ vars.HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN }}
+          # Issue #271/#272: infra/cicd's own plan needs no cross-account role (it only reads its
+          # own Hosting Account resources); infra/registry's plan chains infra_plan (already
+          # assumed above) into platform-ci-plan to actually read its Platform Account resources.
+          platform_registry_deploy_role_arn: ${{ vars.PLATFORM_REGISTRY_DEPLOY_ROLE_ARN }}
+          platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
+          platform_ci_plan_role_arn: ${{ vars.PLATFORM_CI_PLAN_ROLE_ARN }}
+          staging_deploy_role_arn: ${{ vars.STAGING_DEPLOY_ROLE_ARN }}
+          production_deploy_role_arn: ${{ vars.PRODUCTION_DEPLOY_ROLE_ARN }}
+          infra_plan_role_arn: ${{ vars.INFRA_PLAN_ROLE_ARN }}
+          ecr_push_role_arn: ${{ vars.ECR_PUSH_ROLE_ARN }}
+          platform_assume_role_arn: ${{ matrix.dir == 'infra/registry' && vars.PLATFORM_CI_PLAN_ROLE_ARN || '' }}
 
   infra-apply:
     name: Infra apply (${{ matrix.dir }})
@@ -611,6 +625,18 @@ jobs:
           tofu_state_bucket_arn: ${{ vars.TOFU_STATE_BUCKET_ARN }}
           tofu_state_lock_table_arn: ${{ vars.TOFU_STATE_LOCK_TABLE_ARN }}
           hosting_account_ecs_task_execution_role_arn: ${{ vars.HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN }}
+          # Issue #271/#272: infra/cicd's own apply needs no cross-account role; infra/registry's
+          # apply chains the just-assumed staging_deploy/production_deploy into
+          # platform-registry-deploy (which trusts both, same as infra_management_statements
+          # already shares between them) to actually manage its Platform Account ECR resources.
+          platform_registry_deploy_role_arn: ${{ vars.PLATFORM_REGISTRY_DEPLOY_ROLE_ARN }}
+          platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
+          platform_ci_plan_role_arn: ${{ vars.PLATFORM_CI_PLAN_ROLE_ARN }}
+          staging_deploy_role_arn: ${{ vars.STAGING_DEPLOY_ROLE_ARN }}
+          production_deploy_role_arn: ${{ vars.PRODUCTION_DEPLOY_ROLE_ARN }}
+          infra_plan_role_arn: ${{ vars.INFRA_PLAN_ROLE_ARN }}
+          ecr_push_role_arn: ${{ vars.ECR_PUSH_ROLE_ARN }}
+          platform_assume_role_arn: ${{ matrix.dir == 'infra/registry' && vars.PLATFORM_REGISTRY_DEPLOY_ROLE_ARN || '' }}
 
   infra-plan-platform:
     name: Infra plan (infra/platform)
@@ -652,6 +678,9 @@ jobs:
           hosting_account_ecs_task_execution_role_arn: ${{ vars.HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN }}
           administration_stack_api_repository_url: ${{ vars.ADMINISTRATION_STACK_API_REPOSITORY_URL }}
           administration_stack_image_tag: ${{ steps.tag.outputs.tag }}
+          # Issue #271/#272: infra_plan (just assumed above) chains into platform-ci-plan to
+          # actually read infra/platform's Platform Account resources for a real plan diff.
+          platform_assume_role_arn: ${{ vars.PLATFORM_CI_PLAN_ROLE_ARN }}
 
   deploy-administration-stack-staging:
     name: Deploy administration-stack API (staging)
@@ -741,6 +770,10 @@ jobs:
           hosting_account_ecs_task_execution_role_arn: ${{ vars.HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN }}
           administration_stack_api_repository_url: ${{ vars.ADMINISTRATION_STACK_API_REPOSITORY_URL }}
           administration_stack_image_tag: ${{ steps.tag.outputs.tag }}
+          # Issue #271/#272: staging_deploy (just assumed above) chains into
+          # platform-administration-stack-deploy to actually manage infra/platform's Platform
+          # Account resources.
+          platform_assume_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
       - name: Record which release is now running in staging
         env:
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
@@ -855,6 +888,7 @@ jobs:
         with:
           role-arn: ${{ vars.ECR_PUSH_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+          registry-account-id: ${{ vars.PLATFORM_ACCOUNT_ID }}
       - name: Pull cached development image
         run: docker compose pull odoo
       - name: Run tests for ${{ matrix.module }}
