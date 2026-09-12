@@ -59,7 +59,13 @@ export type DynamoCondition =
   | { type: 'attribute_not_exists'; attribute: string }
   | { type: 'attribute_exists'; attribute: string }
   | { type: 'attribute_equals'; attribute: string; value: string | number }
-  | { type: 'numeric_less_than_or_equal'; attribute: string; value: number };
+  | { type: 'numeric_less_than_or_equal'; attribute: string; value: number }
+  /** One of several legal values (e.g. the org lifecycle state machine's multi-source
+   * transitions - `destroy` is legal from both `active` and `suspended`, docs/adr/0034's
+   * lifecycle port). A single `attribute_equals` can't express that; this is the narrowest
+   * addition that can (this ticket, #278: "the seam covers exactly the patterns this stack
+   * needs"). */
+  | { type: 'attribute_in'; attribute: string; values: (string | number)[] };
 
 export interface GetItemInput {
   table: string;
@@ -69,6 +75,18 @@ export interface GetItemInput {
 export interface PutItemInput {
   table: string;
   item: DynamoItem;
+  condition?: DynamoCondition;
+}
+
+export interface UpdateItemInput {
+  table: string;
+  key: DynamoKey;
+  /** Attributes to set, and only these - unlike `putItem`, every other attribute already on the
+   * item is left untouched. This is what lets two concurrent writers that each only care about
+   * different attributes of the same item (e.g. a lifecycle transition writing `state`/
+   * `lastJobId` alongside a `dnsSubdomainLabel` edit) avoid clobbering each other's change with a
+   * stale full-item overwrite (#278's org record store). */
+  set: DynamoItem;
   condition?: DynamoCondition;
 }
 
@@ -112,7 +130,16 @@ export interface TransactDelete {
   };
 }
 
-export type TransactWriteItem = TransactPut | TransactIncrement | TransactDelete;
+export interface TransactUpdate {
+  update: {
+    table: string;
+    key: DynamoKey;
+    set: DynamoItem;
+    condition?: DynamoCondition;
+  };
+}
+
+export type TransactWriteItem = TransactPut | TransactIncrement | TransactDelete | TransactUpdate;
 
 export interface TransactWriteInput {
   items: TransactWriteItem[];
@@ -122,6 +149,9 @@ export interface DynamoDbGateway {
   getItem(input: GetItemInput): Promise<DynamoItem | undefined>;
   /** Throws `ConditionalCheckFailedError` when `condition` is not satisfied. */
   putItem(input: PutItemInput): Promise<void>;
+  /** Partial update (see `UpdateItemInput.set`); throws `ConditionalCheckFailedError` when
+   * `condition` is not satisfied. */
+  updateItem(input: UpdateItemInput): Promise<void>;
   query(input: QueryInput): Promise<QueryResult>;
   /** All-or-nothing; throws `TransactionCanceledError` (carrying each item's outcome) when any
    * item's condition fails. */

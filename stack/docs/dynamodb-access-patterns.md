@@ -15,7 +15,8 @@ writes no org records itself (Out of Scope: "Trial Org and Client Org lifecycle 
 
 | Item type | `pk` | `sk` | Notes |
 |---|---|---|---|
-| Org record | `org#<orgId>` | *(none - single item)* | `type`, `state`, `name`, `domain`, `seatsUsed`, `seatsTotal`, `expiryDate`, `opportunityId`. |
+| Org record | `org#<orgId>` | *(none - single item)* | `type`, `state`, `region`, `dnsSubdomainLabel`, `name`, `domain`, `seatsUsed`, `seatsTotal`, `expiryDate`, `opportunityId`, `amiId`/`tofuModuleGitSha`/`pendingAmiId`/`pendingTofuModuleGitSha` (ADR-0024), `lastJobId`/`lastJobAction` (ADR-0019). |
+| DNS label reservation | `dnslabel#<label>` | *(none)* | `orgId` - the mechanism the lifecycle port (#278: `stack/apps/api/src/org/record.ts`) uses to make `dnsSubdomainLabel` uniqueness atomic at create time: reserved in the same `transactWrite` as the org item itself (`attribute_not_exists` on its own `pk`), released and re-reserved atomically when the label changes while `issued`. |
 | Seat | `org#<orgId>` | `seat#<seatId>` | Lets "list seats for an org" be a `Query` on `pk` alone. |
 | Idempotency record | `idempotency#<key>` | *(none)* | `status`, `body` (`stack/apps/api/src/idempotency/store.ts`). Shares this table rather than a table of its own. |
 
@@ -65,6 +66,26 @@ writes no org records itself (Out of Scope: "Trial Org and Client Org lifecycle 
    issuance," not something a later action edits - so today's contract already matches this
    constraint; it is recorded here so a change that makes `seatsTotal` mutable knows it must
    revisit this write path too.
+
+## Seam additions the lifecycle port (#278) needed
+
+`AwsGateway.dynamoDb` (`stack/packages/aws-gateway`) gained two things this ticket's own
+Implementation Decisions didn't anticipate, needed once the lifecycle port actually had a
+multi-source transition and a same-item field it must change without touching others:
+
+- **`attribute_in` condition.** `destroy` is legal from both `active` and `suspended` - a single
+  `attribute_equals` condition can't express "one of several values." `attribute_in` is the
+  narrowest addition that can, mirroring how `numeric_less_than_or_equal` was added earlier for
+  the seat counter's own need. This is what makes `applyTransition`'s conditional write the
+  actual concurrency guard: checked against whatever is truly current at write time, exactly one
+  of two genuinely concurrent transitions on the same org commits.
+- **`updateItem` (and a matching `transactWrite` `update` item).** `putItem` replaces the whole
+  item; two logically-independent concurrent writers to the same org item (a lifecycle
+  transition changing `state`, a `dnsSubdomainLabel` edit changing that one field) would
+  otherwise silently clobber each other's change via a stale full-item overwrite (the classic
+  lost-update problem). `updateItem` sets only the given attributes, so each writer's own
+  condition is the only thing that can reject it - it can never discard a concurrent, unrelated
+  field change it never read.
 
 ## What this ticket does not decide
 
