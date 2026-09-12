@@ -142,7 +142,7 @@ registry.registerPath({
   security: [{ sigv4: [] }],
   request: {
     headers: idempotencyKeyHeaderSchema,
-    body: { content: { 'application/json': { schema: CreateOrgRequestSchema } } },
+    body: { required: true, content: { 'application/json': { schema: CreateOrgRequestSchema } } },
   },
   responses: {
     201: { description: 'Created', content: { 'application/json': { schema: OrgSchema } } },
@@ -161,7 +161,7 @@ registry.registerPath({
   request: {
     params: z.object({ orgId: OrgIdSchema }),
     headers: idempotencyKeyHeaderSchema,
-    body: { content: { 'application/json': { schema: UpdateOrgRequestSchema } } },
+    body: { required: true, content: { 'application/json': { schema: UpdateOrgRequestSchema } } },
   },
   responses: {
     200: { description: 'OK', content: { 'application/json': { schema: OrgSchema } } },
