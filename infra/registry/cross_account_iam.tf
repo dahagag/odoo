@@ -377,6 +377,7 @@ data "aws_iam_policy_document" "platform_ci_plan" {
       "ec2:DescribeInternetGateways",
       "ec2:DescribeNatGateways",
       "ec2:DescribeAddresses",
+      "ec2:DescribeAddressesAttribute",
       "ec2:DescribeRouteTables",
       "ec2:DescribeSecurityGroups",
       "ec2:DescribeTags",
@@ -420,6 +421,20 @@ data "aws_iam_policy_document" "platform_ci_plan" {
     effect    = "Allow"
     actions   = ["logs:DescribeLogGroups"]
     resources = ["*"]
+  }
+
+  # Confirmed live (issue #271/#272's first real apply): `tofu plan` reads a log group's tags
+  # back too, same as the write-side ManageAdministrationStackLogGroup statement above.
+  statement {
+    sid    = "ReadAdministrationStackLogGroupTags"
+    effect = "Allow"
+    actions = [
+      "logs:ListTagsForResource",
+    ]
+    resources = [
+      local.administration_stack_log_group_arn,
+      "${local.administration_stack_log_group_arn}:*",
+    ]
   }
 
   # infra_plan also plans infra/registry itself (via this same role) — a `tofu plan` refreshes
