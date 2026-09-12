@@ -44,3 +44,16 @@ export class ConcurrentWriteError extends Error {
     this.name = 'ConcurrentWriteError';
   }
 }
+
+/** Wraps whatever the injected `Provisioner` itself threw (`applyTransition`, `record.ts`), so
+ * `server.ts` can map *specifically* a provisioner failure to 502 - and nothing else. Without
+ * this wrapper, a later failure in the same call (e.g. the conditional `updateItem` after the
+ * provisioner already succeeded) would be indistinguishable from a provisioner failure by type
+ * alone, and get the same misleading "the provisioner failed" response even though the
+ * provisioner didn't fail at all (CodeRabbit, PR #284). */
+export class ProvisionerFailedError extends Error {
+  constructor(readonly orgId: string, readonly action: string, readonly provisionerError: unknown) {
+    super(`Provisioner failed for org ${orgId} action ${action}: ${provisionerError instanceof Error ? provisionerError.message : String(provisionerError)}`);
+    this.name = 'ProvisionerFailedError';
+  }
+}

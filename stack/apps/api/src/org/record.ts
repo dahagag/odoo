@@ -8,6 +8,7 @@ import {
   DnsLabelInUseError,
   IllegalTransitionError,
   OrgNotFoundError,
+  ProvisionerFailedError,
 } from './errors';
 import { callProvisioner, type Provisioner } from './provisioner';
 
@@ -78,10 +79,6 @@ export interface CreateOrgInput {
   seatsTotal: number;
   dnsSubdomainLabel: string;
   opportunityId?: string;
-  /** Overrides the configured default when given (docs/adr's Org Region: "recorded at
-   * creation, defaulting to the single configured region" - region *selection* is out of scope,
-   * #207, but nothing stops a caller who already knows a region from naming it). */
-  region?: string;
 }
 
 export interface CreateOrgConfig {
@@ -106,7 +103,9 @@ export async function createOrg(gateway: AwsGateway, input: CreateOrgInput, conf
     orgId,
     type: input.type,
     state: 'issued',
-    region: input.region ?? config.defaultRegion,
+    // Region *selection* is explicitly out of scope until #207 (#196: "Nothing selects it
+    // yet.") - every org gets the configured default, with no caller-supplied override.
+    region: config.defaultRegion,
     dnsSubdomainLabel: input.dnsSubdomainLabel,
     name: input.name,
     domain: input.domain,
@@ -241,7 +240,14 @@ export async function applyTransition(gateway: AwsGateway, provisioner: Provisio
   if (!from.includes(org.state)) throw new IllegalTransitionError(orgId, action, org.state);
 
   const jobId = randomUUID();
-  await callProvisioner(provisioner, action, org, jobId);
+  try {
+    await callProvisioner(provisioner, action, org, jobId);
+  } catch (error) {
+    // Wrapped so the route layer can map *specifically* a provisioner failure to 502 - a later
+    // failure in this same function (the conditional write below) is a different kind of
+    // problem and must not be reported the same way (CodeRabbit, PR #284).
+    throw new ProvisionerFailedError(orgId, action, error);
+  }
 
   try {
     await gateway.dynamoDb.updateItem({

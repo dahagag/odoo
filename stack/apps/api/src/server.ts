@@ -13,6 +13,7 @@ import {
   DnsLabelInUseError,
   IllegalTransitionError,
   OrgNotFoundError,
+  ProvisionerFailedError,
 } from './org/errors';
 import type { Provisioner } from './org/provisioner';
 import { applyTransition, createOrg, updateDnsSubdomainLabel } from './org/record';
@@ -30,10 +31,10 @@ export interface ServerDeps {
 }
 
 /** Maps the errors `org/errors.ts` defines (raised by `org/record.ts`) to their Problem Details
- * response. Returns `undefined` for anything else - a route decides for itself what an
- * unrecognized error means (create/patch: a bug, so it rethrows for Fastify's default 500; a
- * transition: quite possibly the injected provisioner throwing its own error, see
- * `transitionErrorResponse` below). */
+ * response. Returns `undefined` for anything else - every route rethrows in that case, for
+ * Fastify's default 500: a transition's own `ProvisionerFailedError` is one of the errors this
+ * maps, so an unrecognized error reaching a transition route is *not* a provisioner failure by
+ * construction, and reporting it as a plain 500 rather than a misleading 502 is correct. */
 function knownOrgErrorResponse(error: unknown, reply: FastifyReply): ReturnType<typeof problem> | undefined {
   if (error instanceof OrgNotFoundError) {
     reply.code(404);
@@ -55,17 +56,18 @@ function knownOrgErrorResponse(error: unknown, reply: FastifyReply): ReturnType<
     reply.code(409);
     return problem(409, 'Concurrent transition', error.message);
   }
+  if (error instanceof ProvisionerFailedError) {
+    // A provisioner failure is an upstream dependency failing, not this service's own fault,
+    // and this ticket's Acceptance Criteria only promises the state change doesn't happen -
+    // reported as 502 rather than crashing the request as an unhandled 500. Deliberately
+    // narrower than "anything a transition route throws": a later failure in the *same* call
+    // (e.g. the conditional DynamoDB write after the provisioner already succeeded) is a
+    // different kind of problem and must not be mislabeled as the provisioner's fault
+    // (CodeRabbit, PR #284) - see `applyTransition`'s own wrapping in `org/record.ts`.
+    reply.code(502);
+    return problem(502, 'The provisioner failed; no state change was made', error.message);
+  }
   return undefined;
-}
-
-/** Transition routes only: a provisioner failure is an upstream dependency failing, not this
- * service's own fault, and this ticket's Acceptance Criteria only promises the state change
- * doesn't happen - reported as 502 rather than crashing the request as an unhandled 500. */
-function transitionErrorResponse(error: unknown, reply: FastifyReply): ReturnType<typeof problem> {
-  const known = knownOrgErrorResponse(error, reply);
-  if (known) return known;
-  reply.code(502);
-  return problem(502, 'The provisioner failed; no state change was made', error instanceof Error ? error.message : String(error));
 }
 
 /** Every path takes `orgId` through this, rather than trusting the raw path segment, so a
@@ -214,7 +216,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
           reply.code(record.status);
           return record.body;
         } catch (error) {
-          return transitionErrorResponse(error, reply);
+          const known = knownOrgErrorResponse(error, reply);
+          if (known) return known;
+          throw error;
         }
       },
     );

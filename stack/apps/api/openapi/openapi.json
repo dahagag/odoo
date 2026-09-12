@@ -227,10 +227,6 @@
           },
           "opportunityId": {
             "type": "string"
-          },
-          "region": {
-            "type": "string",
-            "description": "Defaults to the stack's configured region when omitted (per-org region selection is #207, deferred)."
           }
         },
         "required": [

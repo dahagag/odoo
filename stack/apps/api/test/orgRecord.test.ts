@@ -6,6 +6,7 @@ import {
   DnsLabelInUseError,
   IllegalTransitionError,
   OrgNotFoundError,
+  ProvisionerFailedError,
 } from '../src/org/errors';
 import type { Provisioner } from '../src/org/provisioner';
 import { StubProvisioner } from '../src/org/provisioner';
@@ -69,14 +70,6 @@ describe('createOrg (this ticket\'s Acceptance Criteria)', () => {
     const org = await createOrg(gateway, trialInput({ type: 'client', dnsSubdomainLabel: 'acme-client' }), CONFIG);
 
     expect(org.expiryDate).toBeUndefined();
-  });
-
-  it('honors an explicit region override instead of the configured default', async () => {
-    const gateway = new InMemoryAwsGateway();
-
-    const org = await createOrg(gateway, trialInput({ region: 'eu-west-1', dnsSubdomainLabel: 'acme-eu' }), CONFIG);
-
-    expect(org.region).toBe('eu-west-1');
   });
 
   it('rejects a second org with an already-used dnsSubdomainLabel', async () => {
@@ -238,7 +231,9 @@ describe('applyTransition (this ticket\'s What to build/Acceptance Criteria)', (
     const provisioner = new SpyProvisioner();
     provisioner.failing.issue = new Error('Step Functions is unavailable');
 
-    await expect(applyTransition(gateway, provisioner, org.orgId, 'issue')).rejects.toThrow('Step Functions is unavailable');
+    const error = await applyTransition(gateway, provisioner, org.orgId, 'issue').catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ProvisionerFailedError);
+    expect((error as Error).message).toMatch('Step Functions is unavailable');
 
     const afterFailure = await getOrgRecord(gateway, org.orgId);
     expect(afterFailure?.state).toBe('issued');
@@ -249,6 +244,19 @@ describe('applyTransition (this ticket\'s What to build/Acceptance Criteria)', (
     const gateway = new InMemoryAwsGateway();
     await expect(applyTransition(gateway, new StubProvisioner(), '11111111-1111-4111-8111-111111111111', 'issue'))
       .rejects.toBeInstanceOf(OrgNotFoundError);
+  });
+
+  it('a failure in the final DynamoDB write (after the provisioner already succeeded) is never mistaken for a provisioner failure', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await issuedOrg(gateway);
+    const provisioner = new StubProvisioner();
+    const infraFailure = new Error('DynamoDB is throttling this table');
+    gateway.dynamoDb.updateItem = async () => { throw infraFailure; };
+
+    const error = await applyTransition(gateway, provisioner, org.orgId, 'issue').catch((caught: unknown) => caught);
+
+    expect(error).not.toBeInstanceOf(ProvisionerFailedError);
+    expect(error).toBe(infraFailure);
   });
 
   it('two genuinely concurrent identical transitions on the same org resolve to exactly one winner', async () => {

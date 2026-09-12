@@ -211,4 +211,18 @@ describe('PATCH /v1/admin/orgs/:orgId and lifecycle actions (this ticket\'s Acce
     const stillIssued = await app.inject({ method: 'GET', url: `/v1/admin/orgs/${org.orgId}`, headers: ADMIN_HEADERS });
     expect(stillIssued.json()).toMatchObject({ state: 'issued' });
   });
+
+  it('a non-provisioner failure during a transition is reported as 500, not 502', async () => {
+    const { app, awsGateway } = buildTestServer();
+    const org = await createOrgViaApi(app, 'create-infra-fail', { dnsSubdomainLabel: 'acme-infra-fail' });
+    awsGateway.dynamoDb.updateItem = async () => { throw new Error('DynamoDB is throttling this table'); };
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/orgs/${org.orgId}/issue`,
+      headers: { ...ADMIN_HEADERS, 'idempotency-key': 'infra-fail-issue' },
+    });
+
+    expect(response.statusCode).toBe(500);
+  });
 });

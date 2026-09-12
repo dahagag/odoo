@@ -124,9 +124,6 @@ export const CreateOrgRequestSchema = z
     seatsTotal: z.number().int().positive(),
     dnsSubdomainLabel: DnsSubdomainLabelSchema,
     opportunityId: z.string().optional(),
-    region: z.string().optional().openapi({
-      description: 'Defaults to the stack\'s configured region when omitted (per-org region selection is #207, deferred).',
-    }),
   })
   .openapi('CreateOrgRequest');
 
