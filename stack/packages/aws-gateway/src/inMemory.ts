@@ -20,6 +20,7 @@ import type {
   StartExecutionResult,
   StepFunctionsGateway,
   TransactWriteInput,
+  UpdateItemInput,
 } from './types';
 
 function keyOf(key: Record<string, string | number>): string {
@@ -44,6 +45,10 @@ function evaluateCondition(item: DynamoItem | undefined, condition: DynamoCondit
       if (value === undefined) return 'ConditionalCheckFailed';
       return Number(value) <= condition.value ? undefined : 'ConditionalCheckFailed';
     }
+    case 'attribute_in':
+      return item && condition.values.includes(item[condition.attribute] as string | number)
+        ? undefined
+        : 'ConditionalCheckFailed';
     /* istanbul ignore next -- exhaustiveness guard */
     default: {
       const exhaustive: never = condition;
@@ -83,6 +88,15 @@ class InMemoryDynamoDbGateway implements DynamoDbGateway {
     const failure = evaluateCondition(table.get(key), input.condition);
     if (failure) throw new ConditionalCheckFailedError();
     table.set(key, { ...input.item });
+  }
+
+  async updateItem(input: UpdateItemInput): Promise<void> {
+    const table = this.table(input.table);
+    const key = keyOf(input.key);
+    const existing = table.get(key);
+    const failure = evaluateCondition(existing, input.condition);
+    if (failure) throw new ConditionalCheckFailedError();
+    table.set(key, { ...existing, ...input.key, ...input.set });
   }
 
   async query(input: QueryInput): Promise<QueryResult> {
@@ -125,6 +139,10 @@ class InMemoryDynamoDbGateway implements DynamoDbGateway {
         const table = this.table(writeItem.increment.table);
         return evaluateCondition(table.get(keyOf(writeItem.increment.key)), writeItem.increment.condition);
       }
+      if ('update' in writeItem) {
+        const table = this.table(writeItem.update.table);
+        return evaluateCondition(table.get(keyOf(writeItem.update.key)), writeItem.update.condition);
+      }
       const table = this.table(writeItem.delete.table);
       return evaluateCondition(table.get(keyOf(writeItem.delete.key)), writeItem.delete.condition);
     });
@@ -143,6 +161,11 @@ class InMemoryDynamoDbGateway implements DynamoDbGateway {
         const existing = table.get(keyOf(key)) ?? { ...key };
         const current = Number(existing[attribute] ?? 0);
         table.set(keyOf(key), { ...existing, [attribute]: current + delta });
+      } else if ('update' in writeItem) {
+        const { table: tableName, key, set } = writeItem.update;
+        const table = this.table(tableName);
+        const existing = table.get(keyOf(key));
+        table.set(keyOf(key), { ...existing, ...key, ...set });
       } else {
         const table = this.table(writeItem.delete.table);
         table.delete(keyOf(writeItem.delete.key));

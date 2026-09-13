@@ -105,6 +105,83 @@ describe('InMemoryAwsGateway dynamoDb', () => {
     await expect(gateway.dynamoDb.getItem({ table: 'orgs', key: { pk: 'seat#1' } })).resolves.toBeUndefined();
   });
 
+  it('accepts an attribute_in condition matching one of several legal values (multi-source lifecycle transitions, #278)', async () => {
+    const gateway = new InMemoryAwsGateway();
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'org#1', state: 'suspended' } });
+
+    await gateway.dynamoDb.putItem({
+      table: 'orgs',
+      item: { pk: 'org#1', state: 'destroyed' },
+      condition: { type: 'attribute_in', attribute: 'state', values: ['active', 'suspended'] },
+    });
+
+    await expect(gateway.dynamoDb.getItem({ table: 'orgs', key: { pk: 'org#1' } }))
+      .resolves.toEqual({ pk: 'org#1', state: 'destroyed' });
+  });
+
+  it('rejects an attribute_in condition when the current value is outside the legal set', async () => {
+    const gateway = new InMemoryAwsGateway();
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'org#1', state: 'issued' } });
+
+    await expect(gateway.dynamoDb.putItem({
+      table: 'orgs',
+      item: { pk: 'org#1', state: 'destroyed' },
+      condition: { type: 'attribute_in', attribute: 'state', values: ['active', 'suspended'] },
+    })).rejects.toBeInstanceOf(ConditionalCheckFailedError);
+  });
+
+  it('updateItem sets only the given attributes, leaving the rest of the item untouched', async () => {
+    const gateway = new InMemoryAwsGateway();
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'org#1', state: 'active', name: 'Acme' } });
+
+    await gateway.dynamoDb.updateItem({
+      table: 'orgs',
+      key: { pk: 'org#1' },
+      set: { state: 'suspended' },
+      condition: { type: 'attribute_in', attribute: 'state', values: ['active'] },
+    });
+
+    await expect(gateway.dynamoDb.getItem({ table: 'orgs', key: { pk: 'org#1' } }))
+      .resolves.toEqual({ pk: 'org#1', state: 'suspended', name: 'Acme' });
+  });
+
+  it('updateItem rejects an unsatisfied condition and leaves the item unchanged', async () => {
+    const gateway = new InMemoryAwsGateway();
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'org#1', state: 'issued' } });
+
+    await expect(gateway.dynamoDb.updateItem({
+      table: 'orgs',
+      key: { pk: 'org#1' },
+      set: { state: 'active' },
+      condition: { type: 'attribute_in', attribute: 'state', values: ['active', 'suspended'] },
+    })).rejects.toBeInstanceOf(ConditionalCheckFailedError);
+
+    await expect(gateway.dynamoDb.getItem({ table: 'orgs', key: { pk: 'org#1' } }))
+      .resolves.toEqual({ pk: 'org#1', state: 'issued' });
+  });
+
+  it('transactWrite applies an update item alongside a put, all-or-nothing', async () => {
+    const gateway = new InMemoryAwsGateway();
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'org#1', state: 'issued' } });
+
+    await gateway.dynamoDb.transactWrite({
+      items: [
+        {
+          update: {
+            table: 'orgs',
+            key: { pk: 'org#1' },
+            set: { dnsSubdomainLabel: 'acme-relabeled' },
+            condition: { type: 'attribute_equals', attribute: 'state', value: 'issued' },
+          },
+        },
+        { put: { table: 'orgs', item: { pk: 'dnslabel#acme-relabeled', orgId: 'org#1' }, condition: { type: 'attribute_not_exists', attribute: 'pk' } } },
+      ],
+    });
+
+    await expect(gateway.dynamoDb.getItem({ table: 'orgs', key: { pk: 'org#1' } }))
+      .resolves.toEqual({ pk: 'org#1', state: 'issued', dnsSubdomainLabel: 'acme-relabeled' });
+  });
+
   it('queries by partition key and an optional sort-key prefix, paginating with limit/cursor', async () => {
     const gateway = new InMemoryAwsGateway();
     for (const state of ['active', 'active', 'issued']) {

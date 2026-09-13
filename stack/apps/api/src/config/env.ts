@@ -12,6 +12,15 @@ const BaseEnvSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   ORG_ROOT_DNS_ZONE: z.string().min(1).default('example.invalid'),
+  /** Org Region (docs/contexts/hosting/CONTEXT.md): "the one region an org's infrastructure and
+   * data live in ... Choosing it per org is a captured requirement, not a capability we have"
+   * (#207, deferred) - every org gets this region until per-org selection ships. Deliberately
+   * distinct from `AWS_REGION` below, which is where *this stack's own* AWS SDK calls run
+   * (Platform Account), not where org infrastructure lives (Hosting Account). */
+  DEFAULT_ORG_REGION: z.string().default('us-east-1'),
+  /** docs/contexts/hosting/CONTEXT.md's Trial Org entry: "runs for a fixed window (default 14
+   * days)". Never consulted for a Client Org, which carries no expiry at all. */
+  TRIAL_DEFAULT_DURATION_DAYS: z.coerce.number().int().positive().default(14),
   /** `fake` (default) runs the seam against `InMemoryAwsGateway` - the "runnable locally
    * against the AWS fake" requirement (this ticket's User Stories, #11) - `real` constructs
    * `AwsSdkGateway`, requiring the AWS_* variables below. */

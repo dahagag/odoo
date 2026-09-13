@@ -41,6 +41,24 @@ export const OrgIdSchema = z.string().uuid().openapi('OrgId', {
 });
 export type OrgId = z.infer<typeof OrgIdSchema>;
 
+/** The four legal lifecycle actions (#278's transition graph: `issue: issued->active`,
+ * `suspend: active->suspended`, `wake: suspended->active`,
+ * `destroy: {active,suspended}->destroyed`). Matches `Provisioner`'s method names
+ * (custom_addons/hosting_admin/models/provisioner.py) one language over. */
+export const OrgActionSchema = z.enum(['issue', 'suspend', 'wake', 'destroy']).openapi('OrgAction');
+export type OrgAction = z.infer<typeof OrgActionSchema>;
+
+/** A DNS label: lowercase letters/digits/hyphens, 1-63 characters, neither starting nor ending
+ * with a hyphen (RFC 1123) - this is prefixed onto the configured org root DNS zone
+ * (`ORG_ROOT_DNS_ZONE`) to form the org's actual hostname. */
+export const DnsSubdomainLabelSchema = z
+  .string()
+  .min(1)
+  .max(63)
+  .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/, 'Must be a valid DNS label: lowercase letters, digits, and hyphens, not starting or ending with a hyphen.')
+  .openapi('DnsSubdomainLabel');
+export type DnsSubdomainLabel = z.infer<typeof DnsSubdomainLabelSchema>;
+
 /** RFC 7807 Problem Details, used for every non-2xx response so every consumer (Odoo, the
  * staff app, the client app) parses errors one way. */
 export const ProblemDetailsSchema = z

@@ -22,6 +22,7 @@ import type {
   StartExecutionResult,
   StepFunctionsGateway,
   TransactWriteInput,
+  UpdateItemInput,
 } from './types';
 
 export interface AwsSdkGatewayConfig {
@@ -98,6 +99,16 @@ function compileCondition(condition: DynamoCondition | undefined): {
         ExpressionAttributeNames: { [nameAlias]: condition.attribute },
         ExpressionAttributeValues: { ':cond_value': { N: String(condition.value) } },
       };
+    case 'attribute_in': {
+      const placeholders = condition.values.map((_value, index) => `:cond_value${index}`);
+      return {
+        ConditionExpression: `${nameAlias} IN (${placeholders.join(', ')})`,
+        ExpressionAttributeNames: { [nameAlias]: condition.attribute },
+        ExpressionAttributeValues: Object.fromEntries(
+          condition.values.map((value, index) => [placeholders[index], marshalValue(value)]),
+        ),
+      };
+    }
     /* istanbul ignore next -- exhaustiveness guard */
     default: {
       const exhaustive: never = condition;
@@ -160,6 +171,49 @@ class AwsSdkDynamoDbGateway implements DynamoDbGateway {
     }
   }
 
+  async updateItem(input: UpdateItemInput): Promise<void> {
+    const { UpdateItemCommand } = await import('@aws-sdk/client-dynamodb');
+    const client = await this.getClient();
+    const { UpdateExpression, names, values } = this.compileSet(input.set);
+    const compiledCondition = compileCondition(input.condition);
+    try {
+      await client.send(new UpdateItemCommand({
+        TableName: this.tableName(input.table),
+        Key: marshalItem(input.key),
+        UpdateExpression,
+        ExpressionAttributeNames: { ...names, ...compiledCondition.ExpressionAttributeNames },
+        ExpressionAttributeValues: { ...values, ...compiledCondition.ExpressionAttributeValues },
+        ConditionExpression: compiledCondition.ConditionExpression,
+      }));
+    } catch (error) {
+      if (error instanceof Error && error.name === 'ConditionalCheckFailedException') {
+        throw new ConditionalCheckFailedError(error.message);
+      }
+      throw error;
+    }
+  }
+
+  /** Builds a `SET #k0 = :v0, #k1 = :v1, ...` expression for `updateItem`/the transact `update`
+   * branch - aliasing every attribute name (never a reserved word breaks this) and value the
+   * same way `compileCondition` does for a condition's own single attribute. */
+  private compileSet(set: DynamoItem): {
+    UpdateExpression: string;
+    names: Record<string, string>;
+    values: Record<string, AttributeValue>;
+  } {
+    const entries = Object.entries(set);
+    const names: Record<string, string> = {};
+    const values: Record<string, AttributeValue> = {};
+    const assignments = entries.map(([attribute, value], index) => {
+      const nameAlias = `#set_attr${index}`;
+      const valueAlias = `:set_value${index}`;
+      names[nameAlias] = attribute;
+      values[valueAlias] = marshalValue(value);
+      return `${nameAlias} = ${valueAlias}`;
+    });
+    return { UpdateExpression: `SET ${assignments.join(', ')}`, names, values };
+  }
+
   async query(input: QueryInput): Promise<QueryResult> {
     const { QueryCommand } = await import('@aws-sdk/client-dynamodb');
     const client = await this.getClient();
@@ -213,6 +267,21 @@ class AwsSdkDynamoDbGateway implements DynamoDbGateway {
             UpdateExpression: 'ADD #inc_attr :delta',
             ExpressionAttributeNames: { '#inc_attr': attribute, ...compiled.ExpressionAttributeNames },
             ExpressionAttributeValues: { ':delta': { N: String(delta) }, ...compiled.ExpressionAttributeValues },
+            ConditionExpression: compiled.ConditionExpression,
+          },
+        };
+      }
+      if ('update' in writeItem) {
+        const { table, key, set, condition } = writeItem.update;
+        const { UpdateExpression, names, values } = this.compileSet(set);
+        const compiled = compileCondition(condition);
+        return {
+          Update: {
+            TableName: this.tableName(table),
+            Key: marshalItem(key),
+            UpdateExpression,
+            ExpressionAttributeNames: { ...names, ...compiled.ExpressionAttributeNames },
+            ExpressionAttributeValues: { ...values, ...compiled.ExpressionAttributeValues },
             ConditionExpression: compiled.ConditionExpression,
           },
         };
