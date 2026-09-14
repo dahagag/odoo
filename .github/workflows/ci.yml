@@ -799,7 +799,10 @@ jobs:
           # must not be able to read a persisted git credential out of local config afterward.
           persist-credentials: false
       - name: Fetch the base branch's tip for the OpenAPI breaking-change diff
-        if: needs.changes.outputs.stack_relevant == 'true'
+        # github.base_ref is only populated for pull_request events - on a push-triggered run
+        # (see the `on:` block above, added for issue #215) there is no PR base branch to diff
+        # against, so this step (and the breaking-change gate below) only makes sense on PRs.
+        if: needs.changes.outputs.stack_relevant == 'true' && github.event_name == 'pull_request'
         # openapi:breaking-check reads the committed document at origin/<base_ref> (git show).
         # A full fetch-depth: 0 checkout would work too, but clones this repo's entire history
         # to do it - a shallow, single-commit fetch of just the base branch's tip is enough,
@@ -828,7 +831,8 @@ jobs:
         working-directory: stack
         run: npm run openapi:check
       - name: OpenAPI breaking-change gate against the PR's base branch
-        if: needs.changes.outputs.stack_relevant == 'true'
+        # Only meaningful on pull_request events - see the fetch step above.
+        if: needs.changes.outputs.stack_relevant == 'true' && github.event_name == 'pull_request'
         working-directory: stack
         env:
           OPENAPI_BASE_REF: origin/${{ github.base_ref }}
