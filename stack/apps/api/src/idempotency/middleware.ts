@@ -18,7 +18,7 @@ const DEFAULT_LEASE_MS = 30_000;
 /** A bounded window, well under `DEFAULT_LEASE_MS`, that a concurrent caller spends waiting for
  * a `pending` claim to resolve before failing fast (this ticket's Implementation Decisions: "on
  * the order of a few seconds"). */
-const DEFAULT_POLL_WINDOW_MS = 5_000;
+const DEFAULT_POLL_WINDOW_MS = 3_000;
 const DEFAULT_POLL_INTERVAL_MS = 100;
 
 function defaultSleep(ms: number): Promise<void> {
@@ -68,7 +68,15 @@ export function idempotencyContext(request: FastifyRequest): IdempotencyContext 
   if (!principal) {
     throw new Error('request.adminPrincipal is unset - did requireAdminPrincipal run as a preHandler?');
   }
-  const route = request.routeOptions.url ?? request.url;
+  const route = request.routeOptions.url;
+  if (!route) {
+    // Only unset for a 404 (no route matched) - unreachable from inside a registered route
+    // handler, which is the only place this runs. A silent fallback to `request.url` (the raw
+    // path, `orgId` already substituted in) would reintroduce exactly the collision this
+    // function exists to prevent (`suspend`/`destroy` on the same org colliding), so this is a
+    // wiring bug to surface loudly, not a case to paper over.
+    throw new Error('request.routeOptions.url is unset - idempotencyContext must run from inside a matched route handler');
+  }
   const scoped = createHash('sha256')
     .update(`${principal} ${request.method} ${route} ${rawKey}`)
     .digest('hex');

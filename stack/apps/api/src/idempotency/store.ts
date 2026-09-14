@@ -109,10 +109,12 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
     const outcome = claimOutcomeFor(existing, fingerprint, options.now);
     if (outcome) return outcome;
 
-    // The existing claim is `pending` and its lease has expired: reclaim it, conditioned on
-    // nobody having mutated it since we read it (ADR-0020's owner-token-conditional pattern,
-    // applied to an idempotency claim instead of a Trial Org's execution lock).
-    if (this.claims.get(key) !== existing) return this.claim(key, fingerprint, options);
+    // The existing claim is `pending` and its lease has expired: reclaim it (ADR-0020's
+    // owner-token-conditional pattern, applied to an idempotency claim instead of a Trial Org's
+    // execution lock). No re-check against a concurrent mutation is needed here the way
+    // `DynamoIdempotencyStore.claim` needs one: this whole method body runs synchronously
+    // end to end (no `await` above this line), so nothing else can have touched `this.claims`
+    // between the `get` at the top of this call and this write.
     const ownerToken = randomUUID();
     this.claims.set(key, { status: 'pending', fingerprint, ownerToken, expiresAt: options.now + options.leaseMs });
     return { kind: 'claimed', ownerToken };
@@ -138,50 +140,65 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
  * that makes reclaim or expiry correct - that's the application-level `expiresAt` check above,
  * performed on the request path, since native TTL sweeps are asynchronous and not immediate. */
 export class DynamoIdempotencyStore implements IdempotencyStore {
-  /** How long a `succeeded` claim's record stays replayable before it becomes eligible for
-   * DynamoDB's TTL sweep - long enough to cover a legitimate client retry well after the
-   * original call finished, short enough not to grow the table unbounded. An implementation
-   * parameter (this ticket's Further Notes), not an architectural one. */
-  private static readonly SUCCEEDED_RETENTION_MS = 24 * 60 * 60 * 1000;
+  /** How far out the storage-cost-backstop `ttl` attribute is set, on both a `pending` and a
+   * `succeeded` item alike - "a few hours out", the same order of magnitude ADR-0020 picks for
+   * its own lock item's TTL, not a distinct data-retention policy for idempotency records (this
+   * store never relied on TTL for correctness before this ticket, and still doesn't - see the
+   * class doc above). An implementation parameter (this ticket's Further Notes), not an
+   * architectural one. */
+  private static readonly TTL_BACKSTOP_MS = 6 * 60 * 60 * 1000;
 
   constructor(private readonly gateway: AwsGateway, private readonly table = 'orgs') {}
 
+  /** Bounds the "raced a release/expiry between our failed `putItem` and our follow-up `get`"
+   * retry below - a handful of attempts is enough to ride out a genuine race without risking
+   * unbounded recursion under sustained contention; if every attempt loses, `withIdempotency`'s
+   * own poll loop (`middleware.ts`) tries again on its next tick regardless. */
+  private static readonly MAX_CLAIM_ATTEMPTS = 5;
+
   async claim(key: string, fingerprint: string, options: ClaimOptions): Promise<ClaimOutcome> {
-    const ownerToken = randomUUID();
     const expiresAt = options.now + options.leaseMs;
-    try {
-      await this.gateway.dynamoDb.putItem({
-        table: this.table,
-        item: this.pendingItem(key, fingerprint, ownerToken, expiresAt),
-        condition: { type: 'attribute_not_exists', attribute: 'pk' },
-      });
-      return { kind: 'claimed', ownerToken };
-    } catch (error) {
-      if (!(error instanceof ConditionalCheckFailedError)) throw error;
+
+    for (let attempt = 0; attempt < DynamoIdempotencyStore.MAX_CLAIM_ATTEMPTS; attempt += 1) {
+      const ownerToken = randomUUID();
+      try {
+        await this.gateway.dynamoDb.putItem({
+          table: this.table,
+          item: this.pendingItem(key, fingerprint, ownerToken, expiresAt),
+          condition: { type: 'attribute_not_exists', attribute: 'pk' },
+        });
+        return { kind: 'claimed', ownerToken };
+      } catch (error) {
+        if (!(error instanceof ConditionalCheckFailedError)) throw error;
+      }
+
+      const existing = await this.getClaim(key);
+      if (!existing) continue; // raced a release/expiry between our failed putItem and this get; retry.
+
+      const outcome = claimOutcomeFor(existing, fingerprint, options.now);
+      if (outcome) return outcome;
+
+      // Stale claim: reclaim via a compare-and-swap on the owner token we just read. Every write
+      // this store makes (claim, reclaim, complete) mints a fresh `ownerToken`, so this condition
+      // also implicitly guards against the original leader completing between our `get` and this
+      // `putItem` - if it did, the stored token no longer matches and this CAS fails too.
+      try {
+        await this.gateway.dynamoDb.putItem({
+          table: this.table,
+          item: this.pendingItem(key, fingerprint, ownerToken, expiresAt),
+          condition: { type: 'attribute_equals', attribute: 'ownerToken', value: existing.ownerToken },
+        });
+        return { kind: 'claimed', ownerToken };
+      } catch (error) {
+        if (!(error instanceof ConditionalCheckFailedError)) throw error;
+        // Someone else reclaimed or completed it first; the caller (`withIdempotency`) polls again.
+        return { kind: 'pending', retryAfterMs: 0 };
+      }
     }
 
-    const existing = await this.getClaim(key);
-    if (!existing) return this.claim(key, fingerprint, options); // raced a release/expiry; retry once.
-
-    const outcome = claimOutcomeFor(existing, fingerprint, options.now);
-    if (outcome) return outcome;
-
-    // Stale claim: reclaim via a compare-and-swap on the owner token we just read. Every write
-    // this store makes (claim, reclaim, complete) mints a fresh `ownerToken`, so this condition
-    // also implicitly guards against the original leader completing between our `get` and this
-    // `putItem` - if it did, the stored token no longer matches and this CAS fails too.
-    try {
-      await this.gateway.dynamoDb.putItem({
-        table: this.table,
-        item: this.pendingItem(key, fingerprint, ownerToken, expiresAt),
-        condition: { type: 'attribute_equals', attribute: 'ownerToken', value: existing.ownerToken },
-      });
-      return { kind: 'claimed', ownerToken };
-    } catch (error) {
-      if (!(error instanceof ConditionalCheckFailedError)) throw error;
-      // Someone else reclaimed or completed it first; the caller (`withIdempotency`) polls again.
-      return { kind: 'pending', retryAfterMs: 0 };
-    }
+    // Lost every attempt to sustained contention on the same key - let the caller's own poll
+    // loop retry rather than recursing further.
+    return { kind: 'pending', retryAfterMs: 0 };
   }
 
   async complete(key: string, ownerToken: string, record: IdempotencyRecord): Promise<void> {
@@ -194,7 +211,7 @@ export class DynamoIdempotencyStore implements IdempotencyStore {
           statusCode: record.status,
           body: JSON.stringify(record.body),
           ownerToken: randomUUID(),
-          ttl: Math.floor((Date.now() + DynamoIdempotencyStore.SUCCEEDED_RETENTION_MS) / 1000),
+          ttl: Math.floor((Date.now() + DynamoIdempotencyStore.TTL_BACKSTOP_MS) / 1000),
         },
         condition: { type: 'attribute_equals', attribute: 'ownerToken', value: ownerToken },
       });
@@ -230,7 +247,7 @@ export class DynamoIdempotencyStore implements IdempotencyStore {
       fingerprint,
       ownerToken,
       expiresAt,
-      ttl: Math.floor(expiresAt / 1000),
+      ttl: Math.floor((Date.now() + DynamoIdempotencyStore.TTL_BACKSTOP_MS) / 1000),
     };
   }
 

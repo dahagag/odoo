@@ -226,3 +226,88 @@ describe('PATCH /v1/admin/orgs/:orgId and lifecycle actions (this ticket\'s Acce
     expect(response.statusCode).toBe(500);
   });
 });
+
+/** A `Provisioner` whose calls block until the test explicitly `open()`s the gate - lets a test
+ * hold a lifecycle action's `compute()` in flight for as long as it needs to observe a
+ * concurrent racer's behavior (#285's Testing Decisions: "a concurrent call within the bounded
+ * poll window"), then release it cleanly so nothing is left dangling. */
+class GatedProvisioner {
+  private release!: () => void;
+  private readonly gate = new Promise<void>((resolve) => { this.release = resolve; });
+
+  private wait(): Promise<void> { return this.gate; }
+  issue() { return this.wait(); }
+  suspend() { return this.wait(); }
+  wake() { return this.wait(); }
+  destroy() { return this.wait(); }
+
+  open(): void { this.release(); }
+}
+
+describe('idempotency conflict responses through the real server (#285)', () => {
+  async function createOrgViaApi(app: ReturnType<typeof buildTestServer>['app'], key: string, overrides: Record<string, unknown> = {}) {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/orgs',
+      headers: { ...ADMIN_HEADERS, 'idempotency-key': key },
+      payload: createPayload(overrides),
+    });
+    return response.json() as { orgId: string };
+  }
+
+  it('a reused Idempotency-Key against a materially different body is rejected 409 with its own title', async () => {
+    const { app } = buildTestServer();
+    const headers = { ...ADMIN_HEADERS, 'idempotency-key': 'mismatch-1' };
+
+    const first = await app.inject({ method: 'POST', url: '/v1/admin/orgs', headers, payload: createPayload() });
+    expect(first.statusCode).toBe(201);
+
+    const mismatched = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/orgs',
+      headers,
+      payload: createPayload({ dnsSubdomainLabel: 'a-different-label' }),
+    });
+
+    expect(mismatched.statusCode).toBe(409);
+    expect(mismatched.json().title).toBe('Idempotency-Key reused for a different request');
+  });
+
+  it('a concurrent lifecycle call replays the leader\'s result once it resolves within the poll window', async () => {
+    const provisioner = new GatedProvisioner();
+    const { app } = buildTestServer({}, { provisioner });
+    const org = await createOrgViaApi(app, 'create-concurrency-1', { dnsSubdomainLabel: 'acme-concurrency-1' });
+    const headers = { ...ADMIN_HEADERS, 'idempotency-key': 'issue-concurrency-1' };
+
+    const leader = app.inject({ method: 'POST', url: `/v1/admin/orgs/${org.orgId}/issue`, headers });
+    await new Promise((resolve) => setTimeout(resolve, 20)); // let the leader actually claim first
+    const followerPromise = app.inject({ method: 'POST', url: `/v1/admin/orgs/${org.orgId}/issue`, headers });
+
+    provisioner.open();
+    const [leaderResponse, followerResponse] = await Promise.all([leader, followerPromise]);
+
+    expect(leaderResponse.statusCode).toBe(200);
+    expect(followerResponse.statusCode).toBe(200);
+    expect(followerResponse.json()).toEqual(leaderResponse.json());
+  });
+
+  it('a concurrent lifecycle call fails fast with 409 and Retry-After once the leader outlives the poll window', async () => {
+    const provisioner = new GatedProvisioner();
+    const { app } = buildTestServer({}, { provisioner });
+    const org = await createOrgViaApi(app, 'create-concurrency-2', { dnsSubdomainLabel: 'acme-concurrency-2' });
+    const headers = { ...ADMIN_HEADERS, 'idempotency-key': 'issue-concurrency-2' };
+
+    const leader = app.inject({ method: 'POST', url: `/v1/admin/orgs/${org.orgId}/issue`, headers });
+    await new Promise((resolve) => setTimeout(resolve, 20)); // let the leader actually claim first
+
+    const follower = await app.inject({ method: 'POST', url: `/v1/admin/orgs/${org.orgId}/issue`, headers });
+
+    expect(follower.statusCode).toBe(409);
+    expect(follower.json().title).toBe('Idempotency-Key is still processing');
+    expect(follower.headers['retry-after']).toBeDefined();
+
+    provisioner.open();
+    const leaderResponse = await leader;
+    expect(leaderResponse.statusCode).toBe(200);
+  }, 8000);
+});
