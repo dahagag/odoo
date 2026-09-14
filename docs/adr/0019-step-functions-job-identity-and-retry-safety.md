@@ -7,28 +7,29 @@ to how the execution's own mutex works ([ADR-0020](0020-dynamodb-per-trial-org-l
 or what OpenTofu does and doesn't own about the EC2 instance
 ([ADR-0021](0021-trial-org-ec2-power-state-and-instance-profile-boundary.md)).
 
-**Job identity.** `hosting_admin` generates a fresh UUID in memory as that lifecycle action's
-**job id** and passes it into the `StartExecution` call; the id is persisted on the Trial Org
-record only after that call returns (`_apply_transition()` writes `last_job_id` together with
-the new lifecycle state, not before). The Step Functions execution name is derived from it
-(e.g. `trial-<trial_org_id>-<job_id>`), and the same job id
-becomes the base of the `ClientToken` passed to the ECS `RunTask` call inside the execution
+**Lifecycle operation identity.** The HTTP service deterministically derives one opaque operation
+id from its idempotency scope, `Idempotency-Key`, and canonical request fingerprint; it does not
+mint a new UUID when an idempotency lease is reclaimed. Before `StartExecution`, it conditionally
+creates a snapshot item keyed by that operation id. The snapshot freezes the org, action,
+execution name, and complete provider input on first writer; every later claimant reads it instead
+of recomputing mutable configuration or org fields. The snapshot remains for 92 days, exceeding
+Step Functions Standard's 90-day execution-name reservation.
+
+The Step Functions execution name is this stable opaque operation id. On an
+`ExecutionAlreadyExists` response, the service describes the named execution: `RUNNING` and
+`SUCCEEDED` are accepted as the same operation; `FAILED`, `TIMED_OUT`, and `ABORTED` are reported
+as a provisioner failure and never start a replacement under the same name. A deliberate new
+attempt therefore requires a new `Idempotency-Key`. The operation id is persisted on the Trial Org
+record only after the provisioner succeeds (`_apply_transition()` writes `last_job_id` with the
+new lifecycle state). It becomes the base of the `ClientToken` passed to the ECS `RunTask` call inside the execution
 (folded together with `$$.State.RetryCount`, so a Step Functions-level Task retry launches a
 fresh attempt rather than ECS's own `ClientToken` dedup handing back an already-failed task,
 while transport-level retries of that same attempt still share one token and get its dedup
 protection). This closes the retry hazard within a single `StartExecution` call and the
 execution it starts.
 
-`hosting_admin` itself does not reuse a job id across separate calls: `_apply_transition()`
-writes the new lifecycle state together with `last_job_status: 'running'` in the same call that
-starts the job, so a same-action retry always fails source-state validation before it could ever
-reach a reuse check - by design there's no window where a second top-level call finds a prior
-job for the same action still outstanding. (An earlier revision of this design attempted such a
-reuse window keyed off a 24-hour TTL; it turned out to be unreachable given the state/job-status
-write above and was removed - see the CodeRabbit finding this addressed on PR #138.)
-
 **Trigger.** `hosting_admin` calls `StartExecution` on a per-lifecycle-action state machine,
-passing the Trial Org's id, the job id, and the requested action, then polls or receives a
+passing the Trial Org's id, the stable operation id, and the requested action, then polls or receives a
 callback for completion/failure — no subprocess, no local process to manage.
 
 **`hosting_admin`'s IAM scope.** Its cross-account role (assumed from the Platform Account's
@@ -57,5 +58,5 @@ state is not an acceptable substitute, since AWS's own Task-state page documents
 **Retry.** `Retry`/`Catch` fields on each Task state (`MaxAttempts`, `BackoffRate`,
 `IntervalSeconds`), AWS-managed rather than an application-level retry loop. A Task-level retry
 re-enters that Task only — it does not reacquire the mutex (already held for the whole execution,
-see ADR-0020) and, for the ECS Task, is itself made safe by the same job-id-derived `ClientToken`
-from Job identity above.
+see ADR-0020) and, for the ECS Task, is itself made safe by the same operation-id-derived `ClientToken`
+from Lifecycle operation identity above.

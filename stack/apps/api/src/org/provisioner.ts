@@ -1,13 +1,14 @@
 import type { OrgAction } from '@stack/domain';
 import type { OrgRecord } from './record';
+import type { LifecycleOperation } from './lifecycleOperation';
 
 /**
  * Injectable seam standing in for the AWS/Step-Functions call surface behind every org lifecycle
  * action (this ticket, #278; docs/adr/0016, docs/adr/0019) - mirrors `Provisioner`
  * (custom_addons/hosting_admin/models/provisioner.py) one language over. `applyTransition`
  * (`record.ts`) calls exactly one of these methods per action, passing the org record as it
- * stood immediately before the transition and a freshly-minted job id (ADR-0019: "a fresh id is
- * minted before any write"). The persisted state change only happens once the call here
+ * stood immediately before the transition and the stable identity of the client-requested
+ * lifecycle operation. The persisted state change only happens once the call here
  * resolves - a throw here prevents the state change entirely (this ticket's Acceptance
  * Criteria: "a provisioner failure ... prevents the state change entirely - no partial write").
  *
@@ -16,10 +17,10 @@ import type { OrgRecord } from './record';
  * of `applyTransition` changing.
  */
 export interface Provisioner {
-  issue(org: OrgRecord, jobId: string): Promise<void>;
-  suspend(org: OrgRecord, jobId: string): Promise<void>;
-  wake(org: OrgRecord, jobId: string): Promise<void>;
-  destroy(org: OrgRecord, jobId: string): Promise<void>;
+  issue(org: OrgRecord, operation: LifecycleOperation): Promise<void>;
+  suspend(org: OrgRecord, operation: LifecycleOperation): Promise<void>;
+  wake(org: OrgRecord, operation: LifecycleOperation): Promise<void>;
+  destroy(org: OrgRecord, operation: LifecycleOperation): Promise<void>;
 }
 
 export class StubProvisioner implements Provisioner {
@@ -29,6 +30,11 @@ export class StubProvisioner implements Provisioner {
   async destroy(): Promise<void> {}
 }
 
-export function callProvisioner(provisioner: Provisioner, action: OrgAction, org: OrgRecord, jobId: string): Promise<void> {
-  return provisioner[action](org, jobId);
+export function callProvisioner(
+  provisioner: Provisioner,
+  action: OrgAction,
+  org: OrgRecord,
+  operation: LifecycleOperation,
+): Promise<void> {
+  return provisioner[action](org, operation);
 }

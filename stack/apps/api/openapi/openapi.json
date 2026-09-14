@@ -616,7 +616,7 @@
     "/v1/admin/orgs/{orgId}/issue": {
       "post": {
         "summary": "Lifecycle action: issue",
-        "description": "Calls the configured provisioner (a no-op by default, #278) with a freshly minted job id (ADR-0019). Rejected from any source state the transition graph does not allow, leaving the record unchanged.",
+        "description": "Calls the configured provisioner (a no-op by default, #278) with a stable operation identity derived from the Idempotency-Key. Rejected from any source state the transition graph does not allow, leaving the record unchanged.",
         "tags": [
           "admin"
         ],
@@ -711,7 +711,7 @@
     "/v1/admin/orgs/{orgId}/suspend": {
       "post": {
         "summary": "Lifecycle action: suspend",
-        "description": "Calls the configured provisioner (a no-op by default, #278) with a freshly minted job id (ADR-0019). Rejected from any source state the transition graph does not allow, leaving the record unchanged.",
+        "description": "Calls the configured provisioner (a no-op by default, #278) with a stable operation identity derived from the Idempotency-Key. Rejected from any source state the transition graph does not allow, leaving the record unchanged.",
         "tags": [
           "admin"
         ],
@@ -806,7 +806,7 @@
     "/v1/admin/orgs/{orgId}/wake": {
       "post": {
         "summary": "Lifecycle action: wake",
-        "description": "Calls the configured provisioner (a no-op by default, #278) with a freshly minted job id (ADR-0019). Rejected from any source state the transition graph does not allow, leaving the record unchanged.",
+        "description": "Calls the configured provisioner (a no-op by default, #278) with a stable operation identity derived from the Idempotency-Key. Rejected from any source state the transition graph does not allow, leaving the record unchanged.",
         "tags": [
           "admin"
         ],
@@ -901,7 +901,7 @@
     "/v1/admin/orgs/{orgId}/destroy": {
       "post": {
         "summary": "Lifecycle action: destroy",
-        "description": "Calls the configured provisioner (a no-op by default, #278) with a freshly minted job id (ADR-0019). Rejected from any source state the transition graph does not allow, leaving the record unchanged.",
+        "description": "Calls the configured provisioner (a no-op by default, #278) with a stable operation identity derived from the Idempotency-Key. Rejected from any source state the transition graph does not allow, leaving the record unchanged.",
         "tags": [
           "admin"
         ],

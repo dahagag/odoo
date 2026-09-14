@@ -10,7 +10,8 @@ import {
 } from '../src/org/errors';
 import type { Provisioner } from '../src/org/provisioner';
 import { StubProvisioner } from '../src/org/provisioner';
-import { applyTransition, createOrg, getOrgRecord, updateDnsSubdomainLabel } from '../src/org/record';
+import type { LifecycleOperation } from '../src/org/lifecycleOperation';
+import { applyTransition as applyTransitionRecord, createOrg, getOrgRecord, updateDnsSubdomainLabel } from '../src/org/record';
 
 const CONFIG = { defaultRegion: 'us-east-1', trialDurationDays: 14 };
 
@@ -26,22 +27,32 @@ function trialInput(overrides: Partial<Parameters<typeof createOrg>[1]> = {}) {
 }
 
 /** Captures every call it receives, and lets a test make one action reject on demand - used for
- * the "provisioner failure prevents the state change entirely" and "distinct job ids" Acceptance
+ * the "provisioner failure prevents the state change entirely" and operation-identity acceptance
  * Criteria without needing real AWS. */
 class SpyProvisioner implements Provisioner {
-  readonly calls: { action: string; orgId: string; jobId: string }[] = [];
+  readonly calls: { action: string; orgId: string; operationId: string }[] = [];
   failing: Partial<Record<'issue' | 'suspend' | 'wake' | 'destroy', Error>> = {};
 
-  private async record(action: 'issue' | 'suspend' | 'wake' | 'destroy', org: { orgId: string }, jobId: string): Promise<void> {
-    this.calls.push({ action, orgId: org.orgId, jobId });
+  private async record(action: 'issue' | 'suspend' | 'wake' | 'destroy', org: { orgId: string }, operation: LifecycleOperation): Promise<void> {
+    this.calls.push({ action, orgId: org.orgId, operationId: operation.id });
     const failure = this.failing[action];
     if (failure) throw failure;
   }
 
-  issue(org: { orgId: string }, jobId: string) { return this.record('issue', org, jobId); }
-  suspend(org: { orgId: string }, jobId: string) { return this.record('suspend', org, jobId); }
-  wake(org: { orgId: string }, jobId: string) { return this.record('wake', org, jobId); }
-  destroy(org: { orgId: string }, jobId: string) { return this.record('destroy', org, jobId); }
+  issue(org: { orgId: string }, operation: LifecycleOperation) { return this.record('issue', org, operation); }
+  suspend(org: { orgId: string }, operation: LifecycleOperation) { return this.record('suspend', org, operation); }
+  wake(org: { orgId: string }, operation: LifecycleOperation) { return this.record('wake', org, operation); }
+  destroy(org: { orgId: string }, operation: LifecycleOperation) { return this.record('destroy', org, operation); }
+}
+
+let operationSequence = 0;
+function applyTransition(
+  gateway: InMemoryAwsGateway,
+  provisioner: Provisioner,
+  orgId: string,
+  action: 'issue' | 'suspend' | 'wake' | 'destroy',
+) {
+  return applyTransitionRecord(gateway, provisioner, orgId, action, { id: `lop_test_${operationSequence++}` });
 }
 
 describe('createOrg (this ticket\'s Acceptance Criteria)', () => {
@@ -140,7 +151,7 @@ describe('applyTransition (this ticket\'s What to build/Acceptance Criteria)', (
     return createOrg(gateway, trialInput(), CONFIG);
   }
 
-  it('issue moves issued -> active and calls the provisioner with a freshly minted job id', async () => {
+  it('issue moves issued -> active and passes the operation identity to the provisioner', async () => {
     const gateway = new InMemoryAwsGateway();
     const org = await issuedOrg(gateway);
     const provisioner = new SpyProvisioner();
@@ -148,7 +159,7 @@ describe('applyTransition (this ticket\'s What to build/Acceptance Criteria)', (
     const result = await applyTransition(gateway, provisioner, org.orgId, 'issue');
 
     expect(result.state).toBe('active');
-    expect(provisioner.calls).toEqual([{ action: 'issue', orgId: org.orgId, jobId: result.lastJobId }]);
+    expect(provisioner.calls).toEqual([{ action: 'issue', orgId: org.orgId, operationId: result.lastJobId }]);
     await expect(getOrgRecord(gateway, org.orgId)).resolves.toMatchObject({ state: 'active', lastJobId: result.lastJobId });
   });
 
@@ -182,7 +193,7 @@ describe('applyTransition (this ticket\'s What to build/Acceptance Criteria)', (
     expect((await getOrgRecord(gateway, org.orgId))?.state).toBe('destroyed');
   });
 
-  it('two calls to the same action mint distinct job ids', async () => {
+  it('distinct lifecycle requests receive distinct operation identities', async () => {
     const gateway = new InMemoryAwsGateway();
     const org = await issuedOrg(gateway);
     const provisioner = new SpyProvisioner();
@@ -191,8 +202,8 @@ describe('applyTransition (this ticket\'s What to build/Acceptance Criteria)', (
     await applyTransition(gateway, provisioner, org.orgId, 'suspend');
     await applyTransition(gateway, provisioner, org.orgId, 'wake');
 
-    const jobIds = provisioner.calls.map((call) => call.jobId);
-    expect(new Set(jobIds).size).toBe(jobIds.length);
+    const operationIds = provisioner.calls.map((call) => call.operationId);
+    expect(new Set(operationIds).size).toBe(operationIds.length);
   });
 
   it.each([

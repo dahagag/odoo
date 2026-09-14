@@ -2,6 +2,7 @@ import { InMemoryAwsGateway } from '@stack/aws-gateway';
 import { describe, expect, it } from 'vitest';
 import { loadEnv } from '../src/config/env';
 import { AwsProvisioner, ProvisionerConfigError, StartExecutionError, buildProvisioner } from '../src/org/awsProvisioner';
+import type { LifecycleOperation } from '../src/org/lifecycleOperation';
 import { StubProvisioner } from '../src/org/provisioner';
 import { createOrg, getOrgRecord } from '../src/org/record';
 
@@ -13,6 +14,8 @@ const FULL_CONFIG = {
   tofuModuleGitSha: 'abc123def',
   dnsDomainSuffix: 'orgs.example',
 };
+
+const operation = (id: string): LifecycleOperation => ({ id: `lop_${id}` });
 
 async function makeOrg(gateway: InMemoryAwsGateway) {
   return createOrg(gateway, {
@@ -36,15 +39,15 @@ describe('AwsProvisioner (#280)', () => {
       const gateway = new InMemoryAwsGateway();
       const org = await makeOrg(gateway);
       const provisioner = new AwsProvisioner(gateway, FULL_CONFIG);
-      const jobId = 'job-1';
+      const lifecycleOperation = operation('issue-1');
 
-      await provisioner.issue(org, jobId);
+      await provisioner.issue(org, lifecycleOperation);
 
       const [[executionArn, execution]] = [...gateway.stepFunctions.executions.entries()];
-      expect(executionArn).toContain(`org-${org.orgId}-${jobId}`);
+      expect(executionArn).toContain(lifecycleOperation.id);
       expect(execution.input).toEqual({
         orgId: org.orgId,
-        jobId,
+        operationId: lifecycleOperation.id,
         action: 'issue',
         amiId: FULL_CONFIG.baseAmiId,
         tofuModuleGitSha: FULL_CONFIG.tofuModuleGitSha,
@@ -68,7 +71,7 @@ describe('AwsProvisioner (#280)', () => {
       const org = await makeOrg(gateway);
       const provisioner = new AwsProvisioner(gateway, config);
 
-      await expect(provisioner.issue(org, 'job-1')).rejects.toBeInstanceOf(ProvisionerConfigError);
+      await expect(provisioner.issue(org, operation('missing-config'))).rejects.toBeInstanceOf(ProvisionerConfigError);
 
       expect(gateway.stepFunctions.executions.size).toBe(0);
       expect((await getOrgRecord(gateway, org.orgId))?.pendingAmiId).toBeUndefined();
@@ -86,12 +89,12 @@ describe('AwsProvisioner (#280)', () => {
       });
       const provisioner = new AwsProvisioner(gateway, FULL_CONFIG);
 
-      await provisioner.destroy((await getOrgRecord(gateway, org.orgId))!, 'job-2');
+      await provisioner.destroy((await getOrgRecord(gateway, org.orgId))!, operation('destroy-1'));
 
       const [[, execution]] = [...gateway.stepFunctions.executions.entries()];
       expect(execution.input).toEqual({
         orgId: org.orgId,
-        jobId: 'job-2',
+        operationId: 'lop_destroy-1',
         action: 'destroy',
         amiId: 'ami-recorded',
         tofuModuleGitSha: 'recorded-sha',
@@ -110,7 +113,7 @@ describe('AwsProvisioner (#280)', () => {
       });
       const provisioner = new AwsProvisioner(gateway, FULL_CONFIG);
 
-      await provisioner.destroy((await getOrgRecord(gateway, org.orgId))!, 'job-3');
+      await provisioner.destroy((await getOrgRecord(gateway, org.orgId))!, operation('destroy-pending'));
 
       const [[, execution]] = [...gateway.stepFunctions.executions.entries()];
       expect(execution.input).toMatchObject({ amiId: 'ami-pending', tofuModuleGitSha: 'pending-sha' });
@@ -121,7 +124,7 @@ describe('AwsProvisioner (#280)', () => {
       const org = await makeOrg(gateway);
       const provisioner = new AwsProvisioner(gateway, FULL_CONFIG);
 
-      await expect(provisioner.destroy(org, 'job-7')).rejects.toBeInstanceOf(ProvisionerConfigError);
+      await expect(provisioner.destroy(org, operation('destroy-missing-version'))).rejects.toBeInstanceOf(ProvisionerConfigError);
 
       expect(gateway.stepFunctions.executions.size).toBe(0);
     });
@@ -138,12 +141,12 @@ describe('AwsProvisioner (#280)', () => {
       });
       const provisioner = new AwsProvisioner(gateway, FULL_CONFIG);
 
-      await provisioner[action]((await getOrgRecord(gateway, org.orgId))!, 'job-4');
+      await provisioner[action]((await getOrgRecord(gateway, org.orgId))!, operation(`${action}-1`));
 
       const [[, execution]] = [...gateway.stepFunctions.executions.entries()];
       expect(execution.input).toEqual({
         orgId: org.orgId,
-        jobId: 'job-4',
+        operationId: `lop_${action}-1`,
         action,
         instanceId: 'i-0123456789abcdef0',
       });
@@ -154,26 +157,39 @@ describe('AwsProvisioner (#280)', () => {
       const org = await makeOrg(gateway);
       const provisioner = new AwsProvisioner(gateway, FULL_CONFIG);
 
-      await expect(provisioner[action](org, 'job-5')).rejects.toBeInstanceOf(ProvisionerConfigError);
+      await expect(provisioner[action](org, operation(`${action}-missing-instance`))).rejects.toBeInstanceOf(ProvisionerConfigError);
       expect(gateway.stepFunctions.executions.size).toBe(0);
     });
   });
 
   describe('StartExecution retry safety', () => {
-    it('treats a name collision as a successful retry rather than an error', async () => {
+    it('treats a running execution collision as a successful retry rather than an error', async () => {
       const gateway = new InMemoryAwsGateway();
       const org = await makeOrg(gateway);
       const provisioner = new AwsProvisioner(gateway, FULL_CONFIG);
 
-      await provisioner.issue(org, 'same-job-id');
+      const lifecycleOperation = operation('same-request');
+      await provisioner.issue(org, lifecycleOperation);
       const firstArn = (await getOrgRecord(gateway, org.orgId))?.lastExecutionArn;
 
-      // A retried call with the same job id derives the same execution name (ADR-0019) - Step
-      // Functions itself recognizes it as the same execution rather than starting a second one.
-      await expect(provisioner.issue(org, 'same-job-id')).resolves.toBeUndefined();
+      // A reclaimed leader has the same stable execution name and attaches to the in-flight run.
+      await expect(provisioner.issue(org, lifecycleOperation)).resolves.toBeUndefined();
 
       expect(gateway.stepFunctions.executions.size).toBe(1);
       expect((await getOrgRecord(gateway, org.orgId))?.lastExecutionArn).toBe(firstArn);
+    });
+
+    it('treats a succeeded execution collision as the completed same operation', async () => {
+      const gateway = new InMemoryAwsGateway();
+      const org = await makeOrg(gateway);
+      const provisioner = new AwsProvisioner(gateway, FULL_CONFIG);
+      const lifecycleOperation = operation('already-succeeded');
+      await provisioner.issue(org, lifecycleOperation);
+      const [[executionArn]] = [...gateway.stepFunctions.executions.entries()];
+      gateway.completeExecution(executionArn, 'SUCCEEDED');
+
+      await expect(provisioner.issue(org, lifecycleOperation)).resolves.toBeUndefined();
+      expect(gateway.stepFunctions.executions.size).toBe(1);
     });
 
     it('surfaces any other StartExecution failure as a clear, actionable error', async () => {
@@ -182,10 +198,49 @@ describe('AwsProvisioner (#280)', () => {
       const provisioner = new AwsProvisioner(gateway, FULL_CONFIG);
       gateway.stepFunctions.startExecution = async () => { throw new Error('Step Functions is unavailable'); };
 
-      const error = await provisioner.issue(org, 'job-6').catch((caught: unknown) => caught);
+      const error = await provisioner.issue(org, operation('start-failure')).catch((caught: unknown) => caught);
 
       expect(error).toBeInstanceOf(StartExecutionError);
       expect((error as Error).message).toMatch('Step Functions is unavailable');
+    });
+
+    it('reuses the first writer\'s immutable snapshot when configuration changes before a reclaim', async () => {
+      const gateway = new InMemoryAwsGateway();
+      const org = await makeOrg(gateway);
+      const lifecycleOperation = operation('frozen-input');
+      const first = new AwsProvisioner(gateway, FULL_CONFIG);
+      await first.issue(org, lifecycleOperation);
+
+      const changed = new AwsProvisioner(gateway, {
+        ...FULL_CONFIG,
+        baseAmiId: 'ami-changed-after-first-write',
+        tofuModuleGitSha: 'changed-sha',
+        dnsDomainSuffix: 'changed.example',
+      });
+      await changed.issue(org, lifecycleOperation);
+
+      const [[, execution]] = [...gateway.stepFunctions.executions.entries()];
+      expect(execution.input).toMatchObject({
+        operationId: lifecycleOperation.id,
+        amiId: FULL_CONFIG.baseAmiId,
+        tofuModuleGitSha: FULL_CONFIG.tofuModuleGitSha,
+        dnsRecordName: `acme-eval.${FULL_CONFIG.dnsDomainSuffix}`,
+      });
+      const snapshot = await gateway.dynamoDb.getItem({ table: 'orgs', key: { pk: `lifecycle-operation#${lifecycleOperation.id}` } });
+      expect(snapshot?.ttl).toBeGreaterThan(Math.floor(Date.now() / 1000) + (90 * 24 * 60 * 60));
+    });
+
+    it('does not attach a reclaimed request to a failed execution', async () => {
+      const gateway = new InMemoryAwsGateway();
+      const org = await makeOrg(gateway);
+      const provisioner = new AwsProvisioner(gateway, FULL_CONFIG);
+      const lifecycleOperation = operation('failed-run');
+      await provisioner.issue(org, lifecycleOperation);
+      const [[executionArn]] = [...gateway.stepFunctions.executions.entries()];
+      gateway.completeExecution(executionArn, 'FAILED');
+
+      await expect(provisioner.issue(org, lifecycleOperation)).rejects.toBeInstanceOf(StartExecutionError);
+      expect(gateway.stepFunctions.executions.size).toBe(1);
     });
   });
 });

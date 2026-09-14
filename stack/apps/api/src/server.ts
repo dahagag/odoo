@@ -18,6 +18,7 @@ import {
 } from './org/errors';
 import type { Provisioner } from './org/provisioner';
 import { applyTransition, createOrg, updateDnsSubdomainLabel } from './org/record';
+import { lifecycleOperationFor } from './org/lifecycleOperation';
 import { readOrgRegistration } from './orgRegistration';
 import { problem } from './problem';
 
@@ -218,8 +219,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         if (!orgId) return undefined;
 
         try {
-          const record = await withIdempotency(deps.idempotencyStore, idempotencyContext(request), async () => {
-            const org = await applyTransition(deps.awsGateway, deps.provisioner, orgId, action);
+          const context = idempotencyContext(request);
+          const operation = lifecycleOperationFor(context);
+          const record = await withIdempotency(deps.idempotencyStore, context, async () => {
+            const org = await applyTransition(deps.awsGateway, deps.provisioner, orgId, action, operation);
             return { status: 200, body: OrgSchema.parse(org) };
           });
           reply.code(record.status);

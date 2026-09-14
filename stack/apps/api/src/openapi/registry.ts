@@ -188,7 +188,7 @@ for (const action of ['issue', 'suspend', 'wake', 'destroy'] as const) {
     method: 'post',
     path: `/${API_VERSION}/admin/orgs/{orgId}/${action}`,
     summary: `Lifecycle action: ${action}`,
-    description: 'Calls the configured provisioner (a no-op by default, #278) with a freshly minted job id (ADR-0019). Rejected from any source state the transition graph does not allow, leaving the record unchanged.',
+    description: 'Calls the configured provisioner (a no-op by default, #278) with a stable operation identity derived from the Idempotency-Key. Rejected from any source state the transition graph does not allow, leaving the record unchanged.',
     tags: ['admin'],
     security: [{ sigv4: [] }],
     request: {

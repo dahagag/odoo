@@ -11,6 +11,7 @@ import {
   ProvisionerFailedError,
 } from './errors';
 import { callProvisioner, type Provisioner } from './provisioner';
+import type { LifecycleOperation } from './lifecycleOperation';
 
 /** The org record store's key schema (docs/dynamodb-access-patterns.md): a single-item org
  * record under `org#<orgId>`, plus one `dnslabel#<label>` reservation item per unique
@@ -50,8 +51,8 @@ export interface OrgRecord {
   tofuModuleGitSha?: string;
   pendingAmiId?: string;
   pendingTofuModuleGitSha?: string;
-  /** ADR-0019 job identity: the most recently minted job id/action, written together with the
-   * state it caused - never reused across calls. */
+  /** The most recently accepted client lifecycle operation/action, written with the state it
+   * caused. It is stable for retries of that one idempotent request. */
   lastJobId?: string;
   lastJobAction?: OrgAction;
   /** The Step Functions execution `AwsProvisioner` (#280) most recently started or reattached
@@ -228,9 +229,9 @@ const TRANSITIONS: Record<OrgAction, { from: OrgState[]; to: OrgState }> = {
  * Applies one lifecycle action (this ticket's What to build/Acceptance Criteria).
  *
  * Ordering matters and is deliberate: the provisioner is called *before* the conditional state
- * write, mirroring `AwsProvisioner`/`_apply_transition`'s job-id discipline (ADR-0019) - a job id
- * is minted fresh in memory and only persisted, together with the new state, once its call
- * succeeds. A provisioner failure therefore never partially writes (Acceptance Criteria: "a
+ * write. The route derives one stable operation identity from its idempotency context, and this
+ * function persists that identity with the new state only after the provisioner succeeds. A
+ * provisioner failure therefore never partially writes (Acceptance Criteria: "a
  * provisioner failure ... prevents the state change entirely - no partial write"): either the
  * call throws and nothing is written, or it resolves and the write is attempted.
  *
@@ -246,16 +247,21 @@ const TRANSITIONS: Record<OrgAction, { from: OrgState[]; to: OrgState }> = {
  * loser is `AwsProvisioner`'s port (#280) and ADR-0020's lock, layered on top of this seam, not
  * a gap in it.
  */
-export async function applyTransition(gateway: AwsGateway, provisioner: Provisioner, orgId: string, action: OrgAction): Promise<OrgRecord> {
+export async function applyTransition(
+  gateway: AwsGateway,
+  provisioner: Provisioner,
+  orgId: string,
+  action: OrgAction,
+  operation: LifecycleOperation,
+): Promise<OrgRecord> {
   const org = await getOrgRecord(gateway, orgId);
   if (!org) throw new OrgNotFoundError(orgId);
 
   const { from, to } = TRANSITIONS[action];
   if (!from.includes(org.state)) throw new IllegalTransitionError(orgId, action, org.state);
 
-  const jobId = randomUUID();
   try {
-    await callProvisioner(provisioner, action, org, jobId);
+    await callProvisioner(provisioner, action, org, operation);
   } catch (error) {
     // Wrapped so the route layer can map *specifically* a provisioner failure to 502 - a later
     // failure in this same function (the conditional write below) is a different kind of
@@ -267,7 +273,7 @@ export async function applyTransition(gateway: AwsGateway, provisioner: Provisio
     await gateway.dynamoDb.updateItem({
       table: ORGS_TABLE,
       key: { pk: orgPk(orgId) },
-      set: { state: to, lastJobId: jobId, lastJobAction: action },
+      set: { state: to, lastJobId: operation.id, lastJobAction: action },
       condition: { type: 'attribute_in', attribute: 'state', values: from },
     });
   } catch (error) {
@@ -275,5 +281,5 @@ export async function applyTransition(gateway: AwsGateway, provisioner: Provisio
     throw error;
   }
 
-  return { ...org, state: to, lastJobId: jobId, lastJobAction: action };
+  return { ...org, state: to, lastJobId: operation.id, lastJobAction: action };
 }

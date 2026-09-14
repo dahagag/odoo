@@ -12,7 +12,7 @@
 
 export interface StartExecutionInput {
   stateMachineArn: string;
-  /** Caller-derived, e.g. `trial-<orgId>-<jobId>` (docs/adr/0019) - never auto-generated. */
+  /** Stable opaque caller-derived lifecycle-operation identifier (docs/adr/0019) - never auto-generated. */
   executionName: string;
   input: Record<string, unknown>;
 }
