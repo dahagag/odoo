@@ -32,6 +32,13 @@ function defaultOnDemoted(info: { key: string }): void {
   console.error(`idempotency: claim ${info.key} was reclaimed while compute() was still running - a demoted leader's compute() will still finish, but its result will not be stored`);
 }
 
+/** Injected for tests to observe/assert on a renewal-loop failure without depending on
+ * `console.error` (this ticket, #287). Defaults to a loud `console.error` - fired once if
+ * `sleep`, `store.renew()`, or `onDemoted` itself throws before the loop has settled. */
+function defaultOnRenewalError(info: { key: string; error: unknown }): void {
+  console.error(`idempotency: lease renewal loop for claim ${info.key} failed`, info.error);
+}
+
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -106,6 +113,10 @@ export interface WithIdempotencyOptions {
    * (this ticket, #287). Defaults to a loud `console.error` - fired once when a renewal attempt
    * reports this leader is no longer the owner. */
   onDemoted?: (info: { key: string }) => void;
+  /** Injected for tests to observe/assert on a renewal-loop failure without depending on
+   * `console.error` (this ticket, #287). Defaults to a loud `console.error` - fired once if the
+   * renewal loop rejects before it has settled. */
+  onRenewalError?: (info: { key: string; error: unknown }) => void;
   /** Injected for tests; defaults to the real clock/timer. */
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -131,7 +142,11 @@ export async function withIdempotency(
   const pollWindowMs = options.pollWindowMs ?? DEFAULT_POLL_WINDOW_MS;
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const renewIntervalMs = options.renewIntervalMs ?? Math.max(1, Math.floor(leaseMs / DEFAULT_RENEW_INTERVAL_FRACTION));
+  if (!Number.isFinite(renewIntervalMs) || renewIntervalMs <= 0 || renewIntervalMs >= leaseMs) {
+    throw new Error(`withIdempotency: renewIntervalMs (${renewIntervalMs}) must be a finite positive number less than leaseMs (${leaseMs})`);
+  }
   const onDemoted = options.onDemoted ?? defaultOnDemoted;
+  const onRenewalError = options.onRenewalError ?? defaultOnRenewalError;
   const now = options.now ?? Date.now;
   const sleep = options.sleep ?? defaultSleep;
 
@@ -166,7 +181,11 @@ export async function withIdempotency(
           }
         }
       };
-      void renewalLoop();
+      void renewalLoop().catch((error: unknown) => {
+        if (!settled) {
+          onRenewalError({ key: context.key, error });
+        }
+      });
 
       let record: IdempotencyRecord;
       try {
