@@ -18,7 +18,7 @@ writes no org records itself (Out of Scope: "Trial Org and Client Org lifecycle 
 | Org record | `org#<orgId>` | *(none - single item)* | `type`, `state`, `region`, `dnsSubdomainLabel`, `name`, `domain`, `seatsUsed`, `seatsTotal`, `expiryDate`, `opportunityId`, `amiId`/`tofuModuleGitSha`/`pendingAmiId`/`pendingTofuModuleGitSha` (ADR-0024), `lastJobId`/`lastJobAction` (ADR-0019). |
 | DNS label reservation | `dnslabel#<label>` | *(none)* | `orgId` - the mechanism the lifecycle port (#278: `stack/apps/api/src/org/record.ts`) uses to make `dnsSubdomainLabel` uniqueness atomic at create time: reserved in the same `transactWrite` as the org item itself (`attribute_not_exists` on its own `pk`), released and re-reserved atomically when the label changes while `issued`. |
 | Seat | `org#<orgId>` | `seat#<seatId>` | Lets "list seats for an org" be a `Query` on `pk` alone. |
-| Idempotency record | `idempotency#<key>` | *(none)* | `status`, `body` (`stack/apps/api/src/idempotency/store.ts`). Shares this table rather than a table of its own. |
+| Idempotency claim | `idempotency#<key>` | *(none)* | `claimStatus` (`pending`/`succeeded`), `fingerprint`, `ownerToken`, `expiresAt`, and once `succeeded`: `statusCode`, `body` (`stack/apps/api/src/idempotency/store.ts`). `ttl` is a storage-cost backstop only, mirroring ADR-0020's role for its own lock's TTL - the application-level `expiresAt` check on the request path, not DynamoDB's native TTL sweep, is what makes lease expiry and reclaim correct (#285: "closing that window needs writing 'in-flight' state atomically with starting the downstream job"). Shares this table rather than a table of its own. |
 
 ## Access patterns and how each is served
 

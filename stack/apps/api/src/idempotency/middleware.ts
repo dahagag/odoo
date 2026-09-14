@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { IDEMPOTENCY_KEY_HEADER } from '@stack/domain';
 import { problem } from '../problem';
+import { IdempotencyKeyReusedError, IdempotencyStillProcessingError } from './errors';
 import type { IdempotencyRecord, IdempotencyStore } from './store';
 
 declare module 'fastify' {
@@ -9,25 +11,136 @@ declare module 'fastify' {
   }
 }
 
-/** Every state-changing endpoint calls this instead of writing its response directly (this
- * ticket's Implementation Decisions: "every state-changing endpoint takes an idempotency key").
+/** The API's own request timeout budget is on this order (this ticket's Further Notes) - long
+ * enough to cover a real `compute()` call, including a lifecycle action's provisioner
+ * invocation, short enough that an abandoned claim doesn't wedge a key for long. */
+const DEFAULT_LEASE_MS = 30_000;
+/** A bounded window, well under `DEFAULT_LEASE_MS`, that a concurrent caller spends waiting for
+ * a `pending` claim to resolve before failing fast (this ticket's Implementation Decisions: "on
+ * the order of a few seconds"). */
+const DEFAULT_POLL_WINDOW_MS = 3_000;
+const DEFAULT_POLL_INTERVAL_MS = 100;
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Deterministic across key order, so two requests carrying the same fields in a different
+ * order (still the "same" request as far as a caller is concerned) fingerprint identically. */
+function stableStringify(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value as Record<string, unknown>).sort();
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+export interface IdempotencyContext {
+  /** Opaque, already scoped by principal + method + route + the client's raw header value -
+   * `withIdempotency` and `IdempotencyStore` never need to know what went into it. */
+  key: string;
+  fingerprint: string;
+}
+
+/**
+ * Scopes the client-supplied `Idempotency-Key` header by the authenticated admin principal
+ * (`request.adminPrincipal.arn`, the same trusted identity source the admin surface already
+ * establishes per docs/adr/0036 - not a second, weaker notion of caller identity) and by HTTP
+ * method + registered route template (`request.routeOptions.url`, e.g.
+ * `/v1/admin/orgs/:orgId/suspend` - the *template*, not the raw path with `orgId` already
+ * substituted in, so `suspend` and `destroy` on the very same org never collide even though only
+ * their final path segment differs).
  *
- * Guards a sequential retry of the same request (the same key arrives again after the first
- * call already completed and stored its result) - `store.putIfAbsent`'s conditional write is
- * what makes that case exactly-once. Two calls that race in true parallel with the same
- * never-seen-before key can both pass the fast-path `get` and both run `compute`; closing that
- * window needs writing "in-flight" state atomically with starting the downstream job, the way
- * `AwsProvisioner._apply_transition` does today (docs/adr/0019) - a lifecycle-specific
- * responsibility later tickets add on top of this seam, not a gap in `putIfAbsent` itself. */
+ * This closes #285's gap (b): a `createOrg` and a later unrelated `suspend` can never share a
+ * stored claim even if the client reuses the same raw header value, because their scoped keys
+ * differ by method and route alone before the raw key is even considered.
+ *
+ * The request body's fingerprint travels separately (`IdempotencyContext.fingerprint`) rather
+ * than folded into `key` itself, because route scoping alone doesn't disambiguate two different
+ * calls to the *same* route (`createOrg` has no `orgId` segment) - `withIdempotency` compares it
+ * against whatever fingerprint an existing claim/record stored, and a mismatch is a `409`.
+ */
+export function idempotencyContext(request: FastifyRequest): IdempotencyContext {
+  const rawKey = idempotencyKeyOf(request);
+  const principal = request.adminPrincipal?.arn;
+  if (!principal) {
+    throw new Error('request.adminPrincipal is unset - did requireAdminPrincipal run as a preHandler?');
+  }
+  const route = request.routeOptions.url;
+  if (!route) {
+    // Only unset for a 404 (no route matched) - unreachable from inside a registered route
+    // handler, which is the only place this runs. A silent fallback to `request.url` (the raw
+    // path, `orgId` already substituted in) would reintroduce exactly the collision this
+    // function exists to prevent (`suspend`/`destroy` on the same org colliding), so this is a
+    // wiring bug to surface loudly, not a case to paper over.
+    throw new Error('request.routeOptions.url is unset - idempotencyContext must run from inside a matched route handler');
+  }
+  const scoped = createHash('sha256')
+    .update(stableStringify([principal, request.method, route, request.params, rawKey]))
+    .digest('hex');
+  const fingerprint = createHash('sha256').update(stableStringify(request.body)).digest('hex');
+  return { key: scoped, fingerprint };
+}
+
+export interface WithIdempotencyOptions {
+  leaseMs?: number;
+  pollWindowMs?: number;
+  pollIntervalMs?: number;
+  /** Injected for tests; defaults to the real clock/timer. */
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/** Every state-changing endpoint calls this instead of writing its response directly (#195's
+ * Implementation Decisions: "every state-changing endpoint takes an idempotency key").
+ *
+ * Grown from #195's plain `get`/`putIfAbsent` into a claim/lease state machine (#285): `claim`
+ * either makes this call the leader (fresh key, or a stale abandoned one reclaimed), hands back
+ * an already-`succeeded` record to replay, reports a live `pending` claim to wait out, or flags
+ * a fingerprint mismatch to reject outright. Closes #195's explicitly-deferred gap - "two calls
+ * that race in true parallel with the same never-seen-before key can both pass the fast-path
+ * `get` and both run `compute`" - because only the caller that wins `claim`'s atomic write ever
+ * runs `compute` at all; every other racer waits for that claim to resolve instead. */
 export async function withIdempotency(
   store: IdempotencyStore,
-  key: string,
+  context: IdempotencyContext,
   compute: () => Promise<IdempotencyRecord>,
+  options: WithIdempotencyOptions = {},
 ): Promise<IdempotencyRecord> {
-  const existing = await store.get(key);
-  if (existing) return existing;
-  const result = await compute();
-  return store.putIfAbsent(key, result);
+  const leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
+  const pollWindowMs = options.pollWindowMs ?? DEFAULT_POLL_WINDOW_MS;
+  const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+  const now = options.now ?? Date.now;
+  const sleep = options.sleep ?? defaultSleep;
+
+  const deadline = now() + pollWindowMs;
+  for (;;) {
+    const outcome = await store.claim(context.key, context.fingerprint, { leaseMs, now: now() });
+
+    if (outcome.kind === 'mismatch') throw new IdempotencyKeyReusedError(context.key);
+    if (outcome.kind === 'record') return outcome.record;
+
+    if (outcome.kind === 'claimed') {
+      let record: IdempotencyRecord;
+      try {
+        record = await compute();
+      } catch (error) {
+        await store.release(context.key, outcome.ownerToken);
+        throw error;
+      }
+      await store.complete(context.key, outcome.ownerToken, record);
+      return record;
+    }
+
+    // `outcome.kind === 'pending'`: still genuinely in flight elsewhere.
+    if (now() >= deadline) {
+      const retryAfterSeconds = Math.max(1, Math.ceil(outcome.retryAfterMs / 1000));
+      throw new IdempotencyStillProcessingError(context.key, retryAfterSeconds);
+    }
+    await sleep(pollIntervalMs);
+  }
 }
 
 /** Fastify `preHandler`: every mutating request must carry the idempotency key header before

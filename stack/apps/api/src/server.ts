@@ -4,7 +4,8 @@ import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { requireAdminPrincipal } from './auth/admin';
 import { forbidCrossOrgAccess, requireOrgToken, type OrgTokenStore } from './auth/orgToken';
 import type { Env } from './config/env';
-import { idempotencyKeyOf, requireIdempotencyKey, withIdempotency } from './idempotency/middleware';
+import { IdempotencyKeyReusedError, IdempotencyStillProcessingError } from './idempotency/errors';
+import { idempotencyContext, requireIdempotencyKey, withIdempotency } from './idempotency/middleware';
 import type { IdempotencyStore } from './idempotency/store';
 import { CreateOrgRequestSchema, OrgSchema, OrgRegistrationSchema, UpdateOrgRequestSchema } from './openapi/registry';
 import {
@@ -36,6 +37,14 @@ export interface ServerDeps {
  * maps, so an unrecognized error reaching a transition route is *not* a provisioner failure by
  * construction, and reporting it as a plain 500 rather than a misleading 502 is correct. */
 function knownOrgErrorResponse(error: unknown, reply: FastifyReply): ReturnType<typeof problem> | undefined {
+  if (error instanceof IdempotencyKeyReusedError) {
+    reply.code(409);
+    return problem(409, 'Idempotency-Key reused for a different request', error.message);
+  }
+  if (error instanceof IdempotencyStillProcessingError) {
+    reply.code(409).header('Retry-After', String(error.retryAfterSeconds));
+    return problem(409, 'Idempotency-Key is still processing', error.message);
+  }
   if (error instanceof OrgNotFoundError) {
     reply.code(404);
     return problem(404, 'No such org', error.message);
@@ -156,7 +165,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     }
 
     try {
-      const record = await withIdempotency(deps.idempotencyStore, idempotencyKeyOf(request), async () => {
+      const record = await withIdempotency(deps.idempotencyStore, idempotencyContext(request), async () => {
         const org = await createOrg(deps.awsGateway, parsed.data, {
           defaultRegion: deps.env.DEFAULT_ORG_REGION,
           trialDurationDays: deps.env.TRIAL_DEFAULT_DURATION_DAYS,
@@ -186,7 +195,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       }
 
       try {
-        const record = await withIdempotency(deps.idempotencyStore, idempotencyKeyOf(request), async () => {
+        const record = await withIdempotency(deps.idempotencyStore, idempotencyContext(request), async () => {
           const org = await updateDnsSubdomainLabel(deps.awsGateway, orgId, parsed.data.dnsSubdomainLabel);
           return { status: 200, body: OrgSchema.parse(org) };
         });
@@ -209,7 +218,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         if (!orgId) return undefined;
 
         try {
-          const record = await withIdempotency(deps.idempotencyStore, idempotencyKeyOf(request), async () => {
+          const record = await withIdempotency(deps.idempotencyStore, idempotencyContext(request), async () => {
             const org = await applyTransition(deps.awsGateway, deps.provisioner, orgId, action);
             return { status: 200, body: OrgSchema.parse(org) };
           });
