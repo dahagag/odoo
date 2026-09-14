@@ -20,9 +20,41 @@ const DEFAULT_LEASE_MS = 30_000;
  * the order of a few seconds"). */
 const DEFAULT_POLL_WINDOW_MS = 3_000;
 const DEFAULT_POLL_INTERVAL_MS = 100;
+/** Leaves at least two renewal attempts inside a single lease window before it would expire
+ * (this ticket's, #287, Implementation Decisions), so one slow or missed tick doesn't itself let
+ * the lease lapse. */
+const DEFAULT_RENEW_INTERVAL_FRACTION = 3;
 
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/** Fires the moment a renewal attempt reports this leader has been demoted (#287) - `compute()`
+ * can't be cancelled once started, so this is the operational signal that a real
+ * double-invocation risk may be underway, not an error `withIdempotency` itself can act on. */
+function defaultOnDemoted(info: { key: string }): void {
+  console.error(`idempotency: claim ${info.key} was reclaimed while compute() was still running - a demoted leader's compute() will still finish, but its result will not be stored`);
+}
+
+/** Injected for tests to observe/assert on a renewal-loop failure without depending on
+ * `console.error` (this ticket, #287). Defaults to a loud `console.error` - fired once if
+ * `sleep`, `store.renew()`, or `onDemoted` itself throws before the loop has settled. */
+function defaultOnRenewalError(info: { key: string; error: unknown }): void {
+  console.error(`idempotency: lease renewal loop for claim ${info.key} failed`, info.error);
+}
+
+/** `signal` lets a caller actually cancel the pending timer (rather than just outliving it) -
+ * the renewal loop aborts it the instant `compute()` settles, instead of leaving it to fire on
+ * its own up to `renewIntervalMs` later (#289 review). */
+function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    timer.unref?.();
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 /** Deterministic across key order, so two requests carrying the same fields in a different
@@ -88,9 +120,22 @@ export interface WithIdempotencyOptions {
   leaseMs?: number;
   pollWindowMs?: number;
   pollIntervalMs?: number;
-  /** Injected for tests; defaults to the real clock/timer. */
+  /** How often the leader renews its own claim while `compute()` is running (this ticket, #287).
+   * Defaults to a fraction of `leaseMs` so a single slow tick still leaves headroom. */
+  renewIntervalMs?: number;
+  /** Injected for tests to observe/assert on demotion without depending on `console.error`
+   * (this ticket, #287). Defaults to a loud `console.error` - fired once when a renewal attempt
+   * reports this leader is no longer the owner. */
+  onDemoted?: (info: { key: string }) => void;
+  /** Injected for tests to observe/assert on a renewal-loop failure without depending on
+   * `console.error` (this ticket, #287). Defaults to a loud `console.error` - fired once if the
+   * renewal loop rejects before it has settled. */
+  onRenewalError?: (info: { key: string; error: unknown }) => void;
+  /** Injected for tests; defaults to the real clock/timer. `signal`, when supplied by the
+   * renewal loop, aborts an in-flight wait immediately once `compute()` settles (#289 review) -
+   * an injected `sleep` may ignore it, in which case that wait simply runs to completion. */
   now?: () => number;
-  sleep?: (ms: number) => Promise<void>;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
 /** Every state-changing endpoint calls this instead of writing its response directly (#195's
@@ -112,6 +157,12 @@ export async function withIdempotency(
   const leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
   const pollWindowMs = options.pollWindowMs ?? DEFAULT_POLL_WINDOW_MS;
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+  const renewIntervalMs = options.renewIntervalMs ?? Math.max(1, Math.floor(leaseMs / DEFAULT_RENEW_INTERVAL_FRACTION));
+  if (!Number.isFinite(renewIntervalMs) || renewIntervalMs <= 0 || renewIntervalMs >= leaseMs) {
+    throw new Error(`withIdempotency: renewIntervalMs (${renewIntervalMs}) must be a finite positive number less than leaseMs (${leaseMs})`);
+  }
+  const onDemoted = options.onDemoted ?? defaultOnDemoted;
+  const onRenewalError = options.onRenewalError ?? defaultOnRenewalError;
   const now = options.now ?? Date.now;
   const sleep = options.sleep ?? defaultSleep;
 
@@ -123,14 +174,57 @@ export async function withIdempotency(
     if (outcome.kind === 'record') return outcome.record;
 
     if (outcome.kind === 'claimed') {
+      const ownerToken = outcome.ownerToken;
+      // Keeps this leader's claim alive for as long as `compute()` genuinely runs, so a slow
+      // provisioner call outliving `leaseMs` isn't mistaken for an abandoned one (#287). Runs
+      // concurrently with `compute()` below, stopped unconditionally once it settles either way.
+      let settled = false;
+      let demoted = false;
+      // Aborts the renewal loop's in-flight wait the instant `compute()` settles, rather than
+      // leaving that wait's timer to fire on its own up to `renewIntervalMs` later (#289 review).
+      const renewalAbort = new AbortController();
+      const renewalLoop = async (): Promise<void> => {
+        for (;;) {
+          await sleep(renewIntervalMs, renewalAbort.signal);
+          if (settled) return;
+          const renewed = await store.renew(context.key, ownerToken, { leaseMs, now: now() });
+          if (settled) return;
+          if (!renewed && !demoted) {
+            // Demoted: someone else already reclaimed or completed this claim. `compute()` can't
+            // be cancelled from here, so it keeps running - `complete` below is a no-op against
+            // the stale `ownerToken`, so this attempt's result can never clobber the newer
+            // leader's. This is just the loud operational signal that happened at all.
+            demoted = true;
+            onDemoted({ key: context.key });
+            return;
+          }
+        }
+      };
+      void renewalLoop().catch((error: unknown) => {
+        if (settled) return;
+        // Guards against a sync throw *and* a rejection from an injected async callback (its
+        // return type is `void`, but nothing stops a caller from passing an `async` function
+        // there) - either way must not resurrect the unhandled-rejection this boundary exists to
+        // prevent (#289 review).
+        try {
+          void Promise.resolve(onRenewalError({ key: context.key, error })).catch(() => {});
+        } catch {
+          // Swallowed for the same reason.
+        }
+      });
+
       let record: IdempotencyRecord;
       try {
         record = await compute();
       } catch (error) {
-        await store.release(context.key, outcome.ownerToken);
+        settled = true;
+        renewalAbort.abort();
+        await store.release(context.key, ownerToken);
         throw error;
       }
-      await store.complete(context.key, outcome.ownerToken, record);
+      settled = true;
+      renewalAbort.abort();
+      await store.complete(context.key, ownerToken, record);
       return record;
     }
 
