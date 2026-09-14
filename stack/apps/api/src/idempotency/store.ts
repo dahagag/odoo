@@ -251,15 +251,25 @@ export class DynamoIdempotencyStore implements IdempotencyStore {
     };
   }
 
+  /** `claimOutcomeFor` treats anything other than `'succeeded'` as `'pending'`, so an
+   * unrecognized `claimStatus` would otherwise silently fall through to the reclaim path once
+   * `expiresAt` passes - fail closed here instead of ever handing back a status this store
+   * doesn't know how to interpret. */
+  private static readonly KNOWN_CLAIM_STATUSES = new Set(['pending', 'succeeded']);
+
   private async getClaim(key: string): Promise<StoredClaim | undefined> {
     const item = await this.gateway.dynamoDb.getItem({ table: this.table, key: { pk: this.itemKey(key) } });
     if (!item) return undefined;
+    const status = item.claimStatus as string;
+    if (!DynamoIdempotencyStore.KNOWN_CLAIM_STATUSES.has(status)) {
+      throw new Error(`idempotency store: unrecognized claimStatus '${status}' for key ${key}`);
+    }
     return {
-      status: item.claimStatus as 'pending' | 'succeeded',
+      status: status as 'pending' | 'succeeded',
       fingerprint: item.fingerprint as string,
       ownerToken: item.ownerToken as string,
       expiresAt: item.expiresAt as number,
-      record: item.claimStatus === 'succeeded' ? { status: item.statusCode as number, body: JSON.parse(item.body as string) } : undefined,
+      record: status === 'succeeded' ? { status: item.statusCode as number, body: JSON.parse(item.body as string) } : undefined,
     };
   }
 
