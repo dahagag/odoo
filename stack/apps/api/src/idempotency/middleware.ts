@@ -78,7 +78,7 @@ export function idempotencyContext(request: FastifyRequest): IdempotencyContext 
     throw new Error('request.routeOptions.url is unset - idempotencyContext must run from inside a matched route handler');
   }
   const scoped = createHash('sha256')
-    .update(`${principal} ${request.method} ${route} ${rawKey}`)
+    .update(stableStringify([principal, request.method, route, request.params, rawKey]))
     .digest('hex');
   const fingerprint = createHash('sha256').update(stableStringify(request.body)).digest('hex');
   return { key: scoped, fingerprint };
