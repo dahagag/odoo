@@ -506,6 +506,16 @@
           },
           "409": {
             "description": "dnsSubdomainLabel already in use, the org has left `issued`, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string",
+                  "description": "Seconds to wait before retrying - only set when the 409 is an Idempotency-Key still-processing conflict.",
+                  "example": "3"
+                },
+                "required": true
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -582,6 +592,16 @@
           },
           "409": {
             "description": "dnsSubdomainLabel already in use, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string",
+                  "description": "Seconds to wait before retrying - only set when the 409 is an Idempotency-Key still-processing conflict.",
+                  "example": "3"
+                },
+                "required": true
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -657,6 +677,16 @@
           },
           "409": {
             "description": "Illegal transition, a concurrent transition already won, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string",
+                  "description": "Seconds to wait before retrying - only set when the 409 is an Idempotency-Key still-processing conflict.",
+                  "example": "3"
+                },
+                "required": true
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -742,6 +772,16 @@
           },
           "409": {
             "description": "Illegal transition, a concurrent transition already won, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string",
+                  "description": "Seconds to wait before retrying - only set when the 409 is an Idempotency-Key still-processing conflict.",
+                  "example": "3"
+                },
+                "required": true
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -827,6 +867,16 @@
           },
           "409": {
             "description": "Illegal transition, a concurrent transition already won, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string",
+                  "description": "Seconds to wait before retrying - only set when the 409 is an Idempotency-Key still-processing conflict.",
+                  "example": "3"
+                },
+                "required": true
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -912,6 +962,16 @@
           },
           "409": {
             "description": "Illegal transition, a concurrent transition already won, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string",
+                  "description": "Seconds to wait before retrying - only set when the 409 is an Idempotency-Key still-processing conflict.",
+                  "example": "3"
+                },
+                "required": true
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
