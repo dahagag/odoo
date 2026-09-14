@@ -234,8 +234,16 @@ describe('PATCH /v1/admin/orgs/:orgId and lifecycle actions (this ticket\'s Acce
 class GatedProvisioner {
   private release!: () => void;
   private readonly gate = new Promise<void>((resolve) => { this.release = resolve; });
+  private markEntered!: () => void;
+  /** Resolves once the leader's call has actually reached this provisioner - a test awaits this
+   * instead of a fixed delay before starting the follower, so it can't race ahead of the leader
+   * under slow CI scheduling. */
+  readonly entered = new Promise<void>((resolve) => { this.markEntered = resolve; });
 
-  private wait(): Promise<void> { return this.gate; }
+  private wait(): Promise<void> {
+    this.markEntered();
+    return this.gate;
+  }
   issue() { return this.wait(); }
   suspend() { return this.wait(); }
   wake() { return this.wait(); }
@@ -280,7 +288,7 @@ describe('idempotency conflict responses through the real server (#285)', () => 
     const headers = { ...ADMIN_HEADERS, 'idempotency-key': 'issue-concurrency-1' };
 
     const leader = app.inject({ method: 'POST', url: `/v1/admin/orgs/${org.orgId}/issue`, headers });
-    await new Promise((resolve) => setTimeout(resolve, 20)); // let the leader actually claim first
+    await provisioner.entered; // let the leader actually reach the provisioner before starting the follower
     const followerPromise = app.inject({ method: 'POST', url: `/v1/admin/orgs/${org.orgId}/issue`, headers });
 
     provisioner.open();
@@ -298,7 +306,7 @@ describe('idempotency conflict responses through the real server (#285)', () => 
     const headers = { ...ADMIN_HEADERS, 'idempotency-key': 'issue-concurrency-2' };
 
     const leader = app.inject({ method: 'POST', url: `/v1/admin/orgs/${org.orgId}/issue`, headers });
-    await new Promise((resolve) => setTimeout(resolve, 20)); // let the leader actually claim first
+    await provisioner.entered; // let the leader actually reach the provisioner before starting the follower
 
     const follower = await app.inject({ method: 'POST', url: `/v1/admin/orgs/${org.orgId}/issue`, headers });
 
