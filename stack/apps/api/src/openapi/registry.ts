@@ -145,7 +145,7 @@ registry.registerPath({
     201: { description: 'Created', content: { 'application/json': { schema: OrgSchema } } },
     400: problemResponse('Malformed request body'),
     401: problemResponse('Missing admin principal'),
-    409: problemResponse('dnsSubdomainLabel already in use'),
+    409: problemResponse('dnsSubdomainLabel already in use, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)'),
   },
 });
 
@@ -165,7 +165,7 @@ registry.registerPath({
     400: problemResponse('Malformed request'),
     401: problemResponse('Missing admin principal'),
     404: problemResponse('No such org'),
-    409: problemResponse('dnsSubdomainLabel already in use, or the org has left `issued`'),
+    409: problemResponse('dnsSubdomainLabel already in use, the org has left `issued`, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)'),
   },
 });
 
@@ -185,7 +185,7 @@ for (const action of ['issue', 'suspend', 'wake', 'destroy'] as const) {
       200: { description: 'OK', content: { 'application/json': { schema: OrgSchema } } },
       401: problemResponse('Missing admin principal'),
       404: problemResponse('No such org'),
-      409: problemResponse('Illegal transition, or a concurrent transition already won'),
+      409: problemResponse('Illegal transition, a concurrent transition already won, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)'),
       502: problemResponse('The provisioner failed; no state change was made'),
     },
   });

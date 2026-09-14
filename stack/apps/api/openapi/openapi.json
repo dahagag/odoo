@@ -505,7 +505,7 @@
             }
           },
           "409": {
-            "description": "dnsSubdomainLabel already in use, or the org has left `issued`",
+            "description": "dnsSubdomainLabel already in use, the org has left `issued`, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -581,7 +581,7 @@
             }
           },
           "409": {
-            "description": "dnsSubdomainLabel already in use",
+            "description": "dnsSubdomainLabel already in use, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -656,7 +656,7 @@
             }
           },
           "409": {
-            "description": "Illegal transition, or a concurrent transition already won",
+            "description": "Illegal transition, a concurrent transition already won, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -741,7 +741,7 @@
             }
           },
           "409": {
-            "description": "Illegal transition, or a concurrent transition already won",
+            "description": "Illegal transition, a concurrent transition already won, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -826,7 +826,7 @@
             }
           },
           "409": {
-            "description": "Illegal transition, or a concurrent transition already won",
+            "description": "Illegal transition, a concurrent transition already won, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -911,7 +911,7 @@
             }
           },
           "409": {
-            "description": "Illegal transition, or a concurrent transition already won",
+            "description": "Illegal transition, a concurrent transition already won, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
             "content": {
               "application/json": {
                 "schema": {
