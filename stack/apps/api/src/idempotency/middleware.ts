@@ -20,6 +20,17 @@ const DEFAULT_LEASE_MS = 30_000;
  * the order of a few seconds"). */
 const DEFAULT_POLL_WINDOW_MS = 3_000;
 const DEFAULT_POLL_INTERVAL_MS = 100;
+/** Leaves at least two renewal attempts inside a single lease window before it would expire
+ * (this ticket's, #287, Implementation Decisions), so one slow or missed tick doesn't itself let
+ * the lease lapse. */
+const DEFAULT_RENEW_INTERVAL_FRACTION = 3;
+
+/** Fires the moment a renewal attempt reports this leader has been demoted (#287) - `compute()`
+ * can't be cancelled once started, so this is the operational signal that a real
+ * double-invocation risk may be underway, not an error `withIdempotency` itself can act on. */
+function defaultOnDemoted(info: { key: string }): void {
+  console.error(`idempotency: claim ${info.key} was reclaimed while compute() was still running - a demoted leader's compute() will still finish, but its result will not be stored`);
+}
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -88,6 +99,13 @@ export interface WithIdempotencyOptions {
   leaseMs?: number;
   pollWindowMs?: number;
   pollIntervalMs?: number;
+  /** How often the leader renews its own claim while `compute()` is running (this ticket, #287).
+   * Defaults to a fraction of `leaseMs` so a single slow tick still leaves headroom. */
+  renewIntervalMs?: number;
+  /** Injected for tests to observe/assert on demotion without depending on `console.error`
+   * (this ticket, #287). Defaults to a loud `console.error` - fired once when a renewal attempt
+   * reports this leader is no longer the owner. */
+  onDemoted?: (info: { key: string }) => void;
   /** Injected for tests; defaults to the real clock/timer. */
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -112,6 +130,8 @@ export async function withIdempotency(
   const leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
   const pollWindowMs = options.pollWindowMs ?? DEFAULT_POLL_WINDOW_MS;
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+  const renewIntervalMs = options.renewIntervalMs ?? Math.max(1, Math.floor(leaseMs / DEFAULT_RENEW_INTERVAL_FRACTION));
+  const onDemoted = options.onDemoted ?? defaultOnDemoted;
   const now = options.now ?? Date.now;
   const sleep = options.sleep ?? defaultSleep;
 
@@ -123,14 +143,41 @@ export async function withIdempotency(
     if (outcome.kind === 'record') return outcome.record;
 
     if (outcome.kind === 'claimed') {
+      const ownerToken = outcome.ownerToken;
+      // Keeps this leader's claim alive for as long as `compute()` genuinely runs, so a slow
+      // provisioner call outliving `leaseMs` isn't mistaken for an abandoned one (#287). Runs
+      // concurrently with `compute()` below, stopped unconditionally once it settles either way.
+      let settled = false;
+      let demoted = false;
+      const renewalLoop = async (): Promise<void> => {
+        for (;;) {
+          await sleep(renewIntervalMs);
+          if (settled) return;
+          const renewed = await store.renew(context.key, ownerToken, { leaseMs, now: now() });
+          if (settled) return;
+          if (!renewed && !demoted) {
+            // Demoted: someone else already reclaimed or completed this claim. `compute()` can't
+            // be cancelled from here, so it keeps running - `complete` below is a no-op against
+            // the stale `ownerToken`, so this attempt's result can never clobber the newer
+            // leader's. This is just the loud operational signal that happened at all.
+            demoted = true;
+            onDemoted({ key: context.key });
+            return;
+          }
+        }
+      };
+      void renewalLoop();
+
       let record: IdempotencyRecord;
       try {
         record = await compute();
       } catch (error) {
-        await store.release(context.key, outcome.ownerToken);
+        settled = true;
+        await store.release(context.key, ownerToken);
         throw error;
       }
-      await store.complete(context.key, outcome.ownerToken, record);
+      settled = true;
+      await store.complete(context.key, ownerToken, record);
       return record;
     }
 
