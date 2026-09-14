@@ -41,7 +41,7 @@ function problemResponse(description: string) {
  * `problemResponse` above already documents (reused key, illegal transition, label in use) don't
  * set this header. */
 const retryAfterHeaderSchema = z.object({
-  'Retry-After': z.string().openapi({
+  'Retry-After': z.string().optional().openapi({
     description: 'Seconds to wait before retrying - only set when the 409 is an Idempotency-Key still-processing conflict.',
     example: '3',
   }),

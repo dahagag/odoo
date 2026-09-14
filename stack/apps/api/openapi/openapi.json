@@ -513,7 +513,7 @@
                   "description": "Seconds to wait before retrying - only set when the 409 is an Idempotency-Key still-processing conflict.",
                   "example": "3"
                 },
-                "required": true
+                "required": false
               }
             },
             "content": {
@@ -599,7 +599,7 @@
                   "description": "Seconds to wait before retrying - only set when the 409 is an Idempotency-Key still-processing conflict.",
                   "example": "3"
                 },
-                "required": true
+                "required": false
               }
             },
             "content": {
@@ -684,7 +684,7 @@
                   "description": "Seconds to wait before retrying - only set when the 409 is an Idempotency-Key still-processing conflict.",
                   "example": "3"
                 },
-                "required": true
+                "required": false
               }
             },
             "content": {
@@ -779,7 +779,7 @@
                   "description": "Seconds to wait before retrying - only set when the 409 is an Idempotency-Key still-processing conflict.",
                   "example": "3"
                 },
-                "required": true
+                "required": false
               }
             },
             "content": {
@@ -874,7 +874,7 @@
                   "description": "Seconds to wait before retrying - only set when the 409 is an Idempotency-Key still-processing conflict.",
                   "example": "3"
                 },
-                "required": true
+                "required": false
               }
             },
             "content": {
@@ -969,7 +969,7 @@
                   "description": "Seconds to wait before retrying - only set when the 409 is an Idempotency-Key still-processing conflict.",
                   "example": "3"
                 },
-                "required": true
+                "required": false
               }
             },
             "content": {
