@@ -39,8 +39,22 @@ function defaultOnRenewalError(info: { key: string; error: unknown }): void {
   console.error(`idempotency: lease renewal loop for claim ${info.key} failed`, info.error);
 }
 
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/** `signal` lets a caller actually cancel the pending timer (rather than just outliving it) -
+ * the renewal loop aborts it the instant `compute()` settles, instead of leaving it to fire on
+ * its own up to `renewIntervalMs` later (#289 review). */
+function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    timer.unref?.();
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 /** Deterministic across key order, so two requests carrying the same fields in a different
@@ -117,9 +131,11 @@ export interface WithIdempotencyOptions {
    * `console.error` (this ticket, #287). Defaults to a loud `console.error` - fired once if the
    * renewal loop rejects before it has settled. */
   onRenewalError?: (info: { key: string; error: unknown }) => void;
-  /** Injected for tests; defaults to the real clock/timer. */
+  /** Injected for tests; defaults to the real clock/timer. `signal`, when supplied by the
+   * renewal loop, aborts an in-flight wait immediately once `compute()` settles (#289 review) -
+   * an injected `sleep` may ignore it, in which case that wait simply runs to completion. */
   now?: () => number;
-  sleep?: (ms: number) => Promise<void>;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
 /** Every state-changing endpoint calls this instead of writing its response directly (#195's
@@ -164,9 +180,12 @@ export async function withIdempotency(
       // concurrently with `compute()` below, stopped unconditionally once it settles either way.
       let settled = false;
       let demoted = false;
+      // Aborts the renewal loop's in-flight wait the instant `compute()` settles, rather than
+      // leaving that wait's timer to fire on its own up to `renewIntervalMs` later (#289 review).
+      const renewalAbort = new AbortController();
       const renewalLoop = async (): Promise<void> => {
         for (;;) {
-          await sleep(renewIntervalMs);
+          await sleep(renewIntervalMs, renewalAbort.signal);
           if (settled) return;
           const renewed = await store.renew(context.key, ownerToken, { leaseMs, now: now() });
           if (settled) return;
@@ -182,8 +201,15 @@ export async function withIdempotency(
         }
       };
       void renewalLoop().catch((error: unknown) => {
-        if (!settled) {
-          onRenewalError({ key: context.key, error });
+        if (settled) return;
+        // Guards against a sync throw *and* a rejection from an injected async callback (its
+        // return type is `void`, but nothing stops a caller from passing an `async` function
+        // there) - either way must not resurrect the unhandled-rejection this boundary exists to
+        // prevent (#289 review).
+        try {
+          void Promise.resolve(onRenewalError({ key: context.key, error })).catch(() => {});
+        } catch {
+          // Swallowed for the same reason.
         }
       });
 
@@ -192,10 +218,12 @@ export async function withIdempotency(
         record = await compute();
       } catch (error) {
         settled = true;
+        renewalAbort.abort();
         await store.release(context.key, ownerToken);
         throw error;
       }
       settled = true;
+      renewalAbort.abort();
       await store.complete(context.key, ownerToken, record);
       return record;
     }
