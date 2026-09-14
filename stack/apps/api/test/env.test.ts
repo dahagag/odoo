@@ -13,11 +13,20 @@ describe('loadEnv - production configuration guard', () => {
     } as NodeJS.ProcessEnv)).toThrow(/ORG_ROOT_DNS_ZONE/);
   });
 
-  it('accepts NODE_ENV=production once both are set to production-safe values', () => {
+  it('rejects NODE_ENV=production with no state machine ARN configured (#280)', () => {
     expect(() => loadEnv({
       NODE_ENV: 'production',
       STACK_AWS_MODE: 'real',
       ORG_ROOT_DNS_ZONE: 'orgs.example.com',
+    } as NodeJS.ProcessEnv)).toThrow(/STEP_FUNCTIONS_STATE_MACHINE_ARN/);
+  });
+
+  it('accepts NODE_ENV=production once every production-safe value is set', () => {
+    expect(() => loadEnv({
+      NODE_ENV: 'production',
+      STACK_AWS_MODE: 'real',
+      ORG_ROOT_DNS_ZONE: 'orgs.example.com',
+      STEP_FUNCTIONS_STATE_MACHINE_ARN: 'arn:aws:states:us-east-1:123456789012:stateMachine:org-lifecycle',
     } as NodeJS.ProcessEnv)).not.toThrow();
   });
 

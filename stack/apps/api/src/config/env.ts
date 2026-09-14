@@ -34,6 +34,15 @@ const BaseEnvSchema = z.object({
    * release tag naming it exists. `/healthz` surfaces this so "what's running in staging" is
    * answerable without cross-referencing ECR or ECS directly (issue #216). */
   RELEASE_VERSION: z.string().default('unknown'),
+  /** `AwsProvisioner`'s own config (#280, ADR-0019) - absent (the default) keeps every org on
+   * `StubProvisioner`, exactly like before this ticket; setting it switches every org to the
+   * real Step Functions-backed provisioner (this ticket's Acceptance Criteria). */
+  STEP_FUNCTIONS_STATE_MACHINE_ARN: z.string().optional(),
+  /** `issue`'s Deployment Version inputs (ADR-0024) - required only once an execution is
+   * actually started; `AwsProvisioner.issue` fails fast, before any AWS call, when either is
+   * unset (this ticket's Acceptance Criteria). */
+  BASE_AMI_ID: z.string().optional(),
+  TOFU_MODULE_GIT_SHA: z.string().optional(),
 });
 
 /** A production process must not be able to start "successfully" against dev/test defaults -
@@ -56,6 +65,17 @@ const EnvSchema = BaseEnvSchema.superRefine((env, ctx) => {
       code: z.ZodIssueCode.custom,
       path: ['ORG_ROOT_DNS_ZONE'],
       message: 'ORG_ROOT_DNS_ZONE must be set explicitly when NODE_ENV=production',
+    });
+  }
+  // Mirrors the STACK_AWS_MODE guard above: an unset STEP_FUNCTIONS_STATE_MACHINE_ARN silently
+  // keeps every org on StubProvisioner (#280's buildProvisioner) - a true no-op that never
+  // provisions any real infrastructure, with no runtime signal that this happened. A production
+  // process must not be able to start "successfully" in that state.
+  if (!env.STEP_FUNCTIONS_STATE_MACHINE_ARN) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['STEP_FUNCTIONS_STATE_MACHINE_ARN'],
+      message: 'STEP_FUNCTIONS_STATE_MACHINE_ARN must be set when NODE_ENV=production',
     });
   }
 });
