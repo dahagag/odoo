@@ -123,14 +123,15 @@ export async function withIdempotency(
     if (outcome.kind === 'record') return outcome.record;
 
     if (outcome.kind === 'claimed') {
+      let record: IdempotencyRecord;
       try {
-        const record = await compute();
-        await store.complete(context.key, outcome.ownerToken, record);
-        return record;
+        record = await compute();
       } catch (error) {
         await store.release(context.key, outcome.ownerToken);
         throw error;
       }
+      await store.complete(context.key, outcome.ownerToken, record);
+      return record;
     }
 
     // `outcome.kind === 'pending'`: still genuinely in flight elsewhere.
