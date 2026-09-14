@@ -74,14 +74,6 @@ export interface IdempotencyStore {
    * User Stories, #12) - preserving #195's existing behavior that a thrown error is never
    * memoized. Also a no-op if this attempt no longer owns the claim. */
   release(key: string, ownerToken: string): Promise<void>;
-  /** Extends the leader identified by `ownerToken`'s lease while `compute()` is still genuinely
-   * running (#287), owner-token-conditional exactly like `complete`/`release`: a stale attempt
-   * whose claim was already reclaimed or completed can never resurrect it, because `complete`
-   * and a reclaim both mint a fresh `ownerToken`, so the old one no longer matches. Returns
-   * whether the lease was actually extended - `false` means this caller has been demoted and
-   * should stop renewing (`withIdempotency` owns what that means for the in-flight `compute()`
-   * call, this method only reports the fact). */
-  renew(key: string, ownerToken: string, options: ClaimOptions): Promise<boolean>;
 }
 
 interface StoredClaim {
@@ -138,13 +130,6 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
     const existing = this.claims.get(key);
     if (!existing || existing.ownerToken !== ownerToken) return;
     this.claims.delete(key);
-  }
-
-  async renew(key: string, ownerToken: string, options: ClaimOptions): Promise<boolean> {
-    const existing = this.claims.get(key);
-    if (!existing || existing.ownerToken !== ownerToken) return false;
-    this.claims.set(key, { ...existing, expiresAt: options.now + options.leaseMs });
-    return true;
   }
 }
 
@@ -252,25 +237,6 @@ export class DynamoIdempotencyStore implements IdempotencyStore {
     } catch (error) {
       if (!(error instanceof TransactionCanceledError)) throw error;
       // Already reclaimed or gone - nothing to release.
-    }
-  }
-
-  async renew(key: string, ownerToken: string, options: ClaimOptions): Promise<boolean> {
-    try {
-      await this.gateway.dynamoDb.updateItem({
-        table: this.table,
-        key: { pk: this.itemKey(key) },
-        set: {
-          expiresAt: options.now + options.leaseMs,
-          ttl: Math.floor((Date.now() + DynamoIdempotencyStore.TTL_BACKSTOP_MS) / 1000),
-        },
-        condition: { type: 'attribute_equals', attribute: 'ownerToken', value: ownerToken },
-      });
-      return true;
-    } catch (error) {
-      if (!(error instanceof ConditionalCheckFailedError)) throw error;
-      // Already reclaimed or completed (both mint a fresh ownerToken) - this caller is demoted.
-      return false;
     }
   }
 

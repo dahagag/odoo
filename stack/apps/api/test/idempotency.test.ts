@@ -115,45 +115,6 @@ describe.each(STORES)('%s claim/lease contract (#285)', (_name, buildStore) => {
   });
 });
 
-describe.each(STORES)('%s renew (#287)', (_name, buildStore) => {
-  it('renews the current owner\'s lease, extending expiresAt', async () => {
-    const store = buildStore();
-    const leader = await store.claim('key-1', 'fp-1', { leaseMs: 50, now: 0 });
-    if (leader.kind !== 'claimed') throw new Error('expected to be leader');
-
-    const renewed = await store.renew('key-1', leader.ownerToken, { leaseMs: 50, now: 40 });
-    expect(renewed).toBe(true);
-
-    // Without the renewal, `now: 60` (past the original expiresAt of 50) would have reclaimed;
-    // the renewed lease (expiresAt 40 + 50 = 90) means it's still pending instead.
-    const outcome = await store.claim('key-1', 'fp-1', { leaseMs: 50, now: 60 });
-    expect(outcome.kind).toBe('pending');
-  });
-
-  it('is a no-op against a stale owner token (already reclaimed)', async () => {
-    const store = buildStore();
-    const first = await store.claim('key-1', 'fp-1', { leaseMs: 50, now: 0 });
-    if (first.kind !== 'claimed') throw new Error('expected to be leader');
-    const reclaimed = await store.claim('key-1', 'fp-1', { leaseMs: 10_000, now: 10_000 });
-    if (reclaimed.kind !== 'claimed') throw new Error('expected the reclaim to succeed');
-
-    const renewed = await store.renew('key-1', first.ownerToken, { leaseMs: 50, now: 10_001 });
-
-    expect(renewed).toBe(false);
-  });
-
-  it('is a no-op against a completed claim (complete() rotates the owner token)', async () => {
-    const store = buildStore();
-    const leader = await store.claim('key-1', 'fp-1', { leaseMs: 50, now: 0 });
-    if (leader.kind !== 'claimed') throw new Error('expected to be leader');
-    await store.complete('key-1', leader.ownerToken, { status: 200, body: { done: true } });
-
-    const renewed = await store.renew('key-1', leader.ownerToken, { leaseMs: 50, now: 10 });
-
-    expect(renewed).toBe(false);
-  });
-});
-
 describe.each(STORES)('%s via withIdempotency (#285)', (_name, buildStore) => {
   it('two genuinely concurrent calls with the same brand-new key produce exactly one effect and identical responses', async () => {
     const store = buildStore();
@@ -246,80 +207,6 @@ describe.each(STORES)('%s via withIdempotency (#285)', (_name, buildStore) => {
         { pollWindowMs: 40, pollIntervalMs: 10 },
       ),
     ).rejects.toBeInstanceOf(IdempotencyStillProcessingError);
-  });
-
-  it('a compute() that outlives the original leaseMs is not reclaimed while it keeps renewing (#287)', async () => {
-    const store = buildStore();
-    let clock = 0;
-    const now = () => clock;
-    const fastSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.min(ms, 5)));
-
-    let releaseCompute!: () => void;
-    const computeGate = new Promise<void>((resolve) => { releaseCompute = resolve; });
-    const compute = async () => {
-      await computeGate;
-      return { status: 200, body: { ok: true } };
-    };
-
-    const resultPromise = withIdempotency(
-      store,
-      { key: 'scoped-1', fingerprint: 'fp-1' },
-      compute,
-      { leaseMs: 100, renewIntervalMs: 5, now, sleep: fastSleep },
-    );
-
-    await new Promise((resolve) => setTimeout(resolve, 15)); // let the leader claim and enter compute()
-
-    // Advance the virtual clock well past the original lease (100), then give the renewal loop's
-    // real-time ticks a chance to renew against the advanced clock.
-    clock = 500;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-    const concurrent = await store.claim('scoped-1', 'fp-1', { leaseMs: 100, now: clock + 1 });
-    expect(concurrent.kind).toBe('pending');
-
-    releaseCompute();
-    await expect(resultPromise).resolves.toEqual({ status: 200, body: { ok: true } });
-  });
-
-  it('a demoted leader still returns its own compute() result, never overwrites the newer leader\'s record, and logs the demotion once (#287)', async () => {
-    const store = buildStore();
-    let clock = 0;
-    const now = () => clock;
-    const fastSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.min(ms, 5)));
-    const demotions: { key: string }[] = [];
-
-    let releaseCompute!: () => void;
-    const computeGate = new Promise<void>((resolve) => { releaseCompute = resolve; });
-    const compute = async () => {
-      await computeGate;
-      return { status: 200, body: { from: 'original leader' } };
-    };
-
-    const resultPromise = withIdempotency(
-      store,
-      { key: 'scoped-1', fingerprint: 'fp-1' },
-      compute,
-      { leaseMs: 50, renewIntervalMs: 5, now, sleep: fastSleep, onDemoted: (info) => demotions.push(info) },
-    );
-
-    await new Promise((resolve) => setTimeout(resolve, 15)); // let the original leader claim and enter compute()
-
-    // Simulate a second process legitimately reclaiming the (now long-expired-by-clock) claim and
-    // completing its own record, before the original leader's next renewal tick runs.
-    clock = 10_000;
-    const reclaimed = await store.claim('scoped-1', 'fp-1', { leaseMs: 10_000, now: clock });
-    if (reclaimed.kind !== 'claimed') throw new Error('expected the reclaim to succeed');
-    await store.complete('scoped-1', reclaimed.ownerToken, { status: 200, body: { from: 'new leader' } });
-
-    await new Promise((resolve) => setTimeout(resolve, 15)); // let the original leader's renewal loop discover the demotion
-    expect(demotions).toEqual([{ key: 'scoped-1' }]);
-
-    releaseCompute();
-    await expect(resultPromise).resolves.toEqual({ status: 200, body: { from: 'original leader' } });
-
-    const stored = await store.claim('scoped-1', 'fp-1', { leaseMs: 10_000, now: clock + 1 });
-    expect(stored).toEqual({ kind: 'record', record: { status: 200, body: { from: 'new leader' } } });
   });
 
   it('a stale abandoned claim is reclaimed and run exactly once by the next caller', async () => {
