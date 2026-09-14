@@ -2,7 +2,7 @@ import { buildAwsGateway } from './aws/gateway';
 import { InMemoryOrgTokenStore } from './auth/orgToken';
 import { loadEnv } from './config/env';
 import { DynamoIdempotencyStore } from './idempotency/store';
-import { StubProvisioner } from './org/provisioner';
+import { buildProvisioner } from './org/awsProvisioner';
 import { buildServer } from './server';
 
 async function main(): Promise<void> {
@@ -15,9 +15,9 @@ async function main(): Promise<void> {
     // (and the tokens issued alongside them) exist to resolve against.
     orgTokenStore: new InMemoryOrgTokenStore(),
     idempotencyStore: new DynamoIdempotencyStore(awsGateway),
-    // Real AWS provisioning (Step Functions) is #280 - this ticket ships only the no-op default
-    // (this ticket's What to build: "defaulting to a true no-op").
-    provisioner: new StubProvisioner(),
+    // No `STEP_FUNCTIONS_STATE_MACHINE_ARN` configured keeps this on the no-op default (#278);
+    // configuring one switches to the real Step Functions-backed provisioner (#280).
+    provisioner: buildProvisioner(env, awsGateway),
   });
 
   await app.listen({ port: env.PORT, host: env.HOST });

@@ -54,9 +54,23 @@ export interface OrgRecord {
    * state it caused - never reused across calls. */
   lastJobId?: string;
   lastJobAction?: OrgAction;
+  /** The Step Functions execution `AwsProvisioner` (#280) most recently started or reattached
+   * to for this org - written by the provisioner itself, not by `applyTransition`, since it's
+   * populated (or reconstructed, on an `ExecutionAlreadyExists` retry) only once the
+   * `StartExecution` call actually resolves. Blank under `StubProvisioner`. */
+  lastExecutionArn?: string;
+  /** The org's EC2 instance id (mirrors `hosting.trial.org.instance_id`,
+   * `custom_addons/hosting_admin/models/trial_org.py`) - `suspend`/`wake` (#280, ADR-0021) read
+   * this to target the right instance and fail fast when it's still blank rather than starting
+   * an execution that can only fail deep inside AWS. Nothing in this ticket populates it; a
+   * later ticket wires it up once `issue` can read the instance id RunTofu created. */
+  instanceId?: string;
 }
 
-function compact<T extends Record<string, unknown>>(item: T): T {
+/** Exported so `awsProvisioner.ts` can strip `undefined` extras out of an execution input the
+ * same way this module strips them out of a DynamoDB item - one definition of "missing means
+ * absent, not `undefined`" for both. */
+export function compact<T extends Record<string, unknown>>(item: T): T {
   // Real DynamoDB has no `undefined` attribute value - `marshalValue` (aws-gateway) rejects it
   // outright. Blank/absent optional fields (Deployment Version at creation, a Client Org's
   // `expiryDate`) must be *missing* attributes, not attributes holding `undefined`.
