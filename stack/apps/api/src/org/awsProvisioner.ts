@@ -103,6 +103,14 @@ export class AwsProvisioner implements Provisioner {
     // behind for `destroy` to clean up.
     const amiId = org.amiId ?? org.pendingAmiId;
     const tofuModuleGitSha = org.tofuModuleGitSha ?? org.pendingTofuModuleGitSha;
+    // Both can still be blank: an org that reached `active` while `StubProvisioner` was in
+    // effect never had `issue` stage a pending version to fall back to. Reject before the AWS
+    // call rather than starting an execution missing required input, which would only fail
+    // deep inside the state machine with an opaque error (this ticket's own "fails fast ...
+    // rather than surfacing an opaque AWS error later" principle, applied here too).
+    if (!amiId || !tofuModuleGitSha) {
+      throw new ProvisionerConfigError(`Cannot destroy org ${org.orgId}: no deployment version has been recorded`);
+    }
     await this.startExecution(org, jobId, 'destroy', {
       dnsRecordName,
       amiId,

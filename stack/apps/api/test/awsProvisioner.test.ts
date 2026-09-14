@@ -115,6 +115,16 @@ describe('AwsProvisioner (#280)', () => {
       const [[, execution]] = [...gateway.stepFunctions.executions.entries()];
       expect(execution.input).toMatchObject({ amiId: 'ami-pending', tofuModuleGitSha: 'pending-sha' });
     });
+
+    it('fails fast without calling AWS when no deployment version has ever been recorded (an org issued under StubProvisioner)', async () => {
+      const gateway = new InMemoryAwsGateway();
+      const org = await makeOrg(gateway);
+      const provisioner = new AwsProvisioner(gateway, FULL_CONFIG);
+
+      await expect(provisioner.destroy(org, 'job-7')).rejects.toBeInstanceOf(ProvisionerConfigError);
+
+      expect(gateway.stepFunctions.executions.size).toBe(0);
+    });
   });
 
   describe('suspend/wake', () => {
