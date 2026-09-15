@@ -263,4 +263,22 @@ describe('getSeat/acceptSeat', () => {
 
     await expect(acceptSeat(gateway, org.orgId, 'no-such-seat')).rejects.toBeInstanceOf(SeatNotFoundError);
   });
+
+  it('acceptSeat stays idempotent under two genuinely concurrent acceptances of the same seat (CodeRabbit, PR #296)', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await createOrg(gateway, orgInput(), CONFIG);
+    const firstSeat = await acceptedFirstSeat(gateway, org.orgId);
+    const invitedSeat = await inviteTargeted(gateway, org.orgId, firstSeat.seatId, 'teammate@acme.example.com');
+
+    const results = await Promise.allSettled([
+      acceptSeat(gateway, org.orgId, invitedSeat.seatId),
+      acceptSeat(gateway, org.orgId, invitedSeat.seatId),
+    ]);
+
+    for (const result of results) {
+      expect(result.status).toBe('fulfilled');
+      expect((result as PromiseFulfilledResult<Awaited<ReturnType<typeof acceptSeat>>>).value.state).toBe('accepted');
+    }
+    expect((await getSeat(gateway, org.orgId, invitedSeat.seatId))?.state).toBe('accepted');
+  });
 });

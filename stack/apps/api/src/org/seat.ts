@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { AwsGateway } from '@stack/aws-gateway';
-import { TransactionCanceledError } from '@stack/aws-gateway';
+import { ConditionalCheckFailedError, TransactionCanceledError } from '@stack/aws-gateway';
 import {
   CrossDomainInviteError,
   MalformedEmailError,
@@ -156,11 +156,24 @@ export async function acceptSeat(gateway: AwsGateway, orgId: string, seatId: str
   if (!seat) throw new SeatNotFoundError(orgId, seatId);
   if (seat.state === 'accepted') return seat;
 
-  await gateway.dynamoDb.updateItem({
-    table: ORGS_TABLE,
-    key: { pk: orgPk(orgId), sk: seatSk(seatId) },
-    set: { state: 'accepted' },
-    condition: { type: 'attribute_equals', attribute: 'state', value: 'invited' },
-  });
+  try {
+    await gateway.dynamoDb.updateItem({
+      table: ORGS_TABLE,
+      key: { pk: orgPk(orgId), sk: seatSk(seatId) },
+      set: { state: 'accepted' },
+      condition: { type: 'attribute_equals', attribute: 'state', value: 'invited' },
+    });
+  } catch (error) {
+    // Two genuinely concurrent acceptances can both pass the `state === 'accepted'` check above
+    // before either writes - the loser's conditional update then fails not because anything is
+    // wrong, but because the winner already got there first (CodeRabbit, PR #296). Re-reading and
+    // treating "it's accepted now" as success is what actually delivers the idempotency this
+    // function's own docstring promises, rather than leaking the race as a raw error.
+    if (error instanceof ConditionalCheckFailedError) {
+      const current = await getSeat(gateway, orgId, seatId);
+      if (current?.state === 'accepted') return current;
+    }
+    throw error;
+  }
   return { ...seat, state: 'accepted' };
 }

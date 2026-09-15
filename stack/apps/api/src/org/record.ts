@@ -88,7 +88,13 @@ function toItem(org: OrgRecord): Record<string, unknown> {
 
 function fromItem(item: Record<string, unknown>): OrgRecord {
   const { pk: _pk, ...rest } = item;
-  return rest as unknown as OrgRecord;
+  // `inviteType` postdates this field's introduction - an org created by an earlier `createOrg`
+  // has no such attribute stored at all. Defaulted here (before the spread, so a stored value
+  // always wins) rather than left missing, since every later reader (`OrgSchema.parse` in
+  // `server.ts`) requires it: a pre-existing org would otherwise fail its next DNS-label change
+  // or lifecycle transition (CodeRabbit, PR #296). `'targeted'` matches `createOrg`'s own default
+  // and `hosting.trial.org.invite_type`'s.
+  return { inviteType: 'targeted', ...rest } as unknown as OrgRecord;
 }
 
 export interface CreateOrgInput {
