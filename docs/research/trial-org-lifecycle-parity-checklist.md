@@ -25,8 +25,10 @@ cap concurrency), #280 (Step Functions provisioner), #281 (pending-job polling, 
 - Rows for the same behaviour tested twice in Odoo (e.g. once directly, once through an ACL lens)
   are folded into one stack row where the stack test covers both.
 - Two rows are flagged **GAP, tracked in #303** — decided as real gaps to close (not accepted
-  divergences), with the implementation tracked separately so it doesn't block this checklist —
-  see [Resolved: system-wide seat cap and DNS label default](#resolved-system-wide-seat-cap-and-dns-label-default-tracked-in-303).
+  divergences). The implementation is tracked separately in #303, so it doesn't block *this
+  checklist's own completion* (the gap is already named and justified here) — but #303 does
+  block #197, which may not delete `hosting_admin`'s seat-cap/DNS-label logic until the stack
+  gains an equivalent — see [Resolved: system-wide seat cap and DNS label default](#resolved-system-wide-seat-cap-and-dns-label-default-tracked-in-303).
 
 ## Test-by-test mapping
 
@@ -95,7 +97,7 @@ cap concurrency), #280 (Step Functions provisioner), #281 (pending-job polling, 
 | Odoo test | Behaviour | Stack counterpart |
 |---|---|---|
 | `test_apply_transition_row_lock_blocks_a_concurrent_transaction` | Row lock before the provisioner call serializes a concurrent transition (same two-cursor simulation) | `orgRecord.test.ts`: "two genuinely concurrent identical transitions on the same org resolve to exactly one winner" |
-| `test_locked_read_after_commit_sees_the_winning_transitions_state` | Post-commit re-read sees the winner's state, never a stale one | `orgRecord.test.ts`: "re-reads with a strongly consistent read, so a stale eventually-consistent read can never mask the promotion" (same invariant, applied to `checkStatus`'s post-poll re-read) |
+| `test_locked_read_after_commit_sees_the_winning_transitions_state` | Post-commit re-read sees the winner's state, never a stale one | `orgRecord.test.ts`: "two genuinely concurrent identical transitions on the same org resolve to exactly one winner" — the same test's own final assertion re-reads the org and checks it landed on the winning transition's state, which is this row's actual behaviour (not the separately-cited `checkStatus` re-read, which covers deployment-status propagation, a different race) |
 | `test_dns_label_guard_row_lock_blocks_a_concurrent_transaction` | Row lock also protects the label-uniqueness guard | `orgRecord.test.ts`: "never lets two concurrent creations with the same dnsSubdomainLabel both succeed" |
 
 ### `test_trial_org_provisioner.py`
