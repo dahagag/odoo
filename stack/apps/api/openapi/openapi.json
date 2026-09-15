@@ -199,6 +199,19 @@
           },
           "lastJobAction": {
             "$ref": "#/components/schemas/OrgAction"
+          },
+          "lastJobStatus": {
+            "type": "string",
+            "enum": [
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "description": "That job's own outcome (#281) - settled by check-status (#298) once the underlying execution reaches a terminal status."
+          },
+          "lastJobError": {
+            "type": "string",
+            "description": "A clear, actionable reason for lastJobStatus's most recent 'failed' outcome; blank whenever the last observed outcome wasn't a failure."
           }
         },
         "required": [
@@ -1003,6 +1016,91 @@
           },
           "502": {
             "description": "The provisioner failed; no state change was made",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/orgs/{orgId}/check-status": {
+      "post": {
+        "summary": "Poll the org's currently-running job to a terminal status, if it has one",
+        "description": "Production entry point for `Provisioner.checkStatus` (#298, #281): a safe no-op when the org isn't currently running a job. Reachable per-org by an external scheduler that already knows which orgs have a job in flight.",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "sigv4": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "$ref": "#/components/schemas/OrgId"
+            },
+            "required": true,
+            "name": "orgId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Org"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing admin principal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string",
+                  "description": "Seconds to wait before retrying - only set when the 409 is an Idempotency-Key still-processing conflict.",
+                  "example": "3"
+                },
+                "required": false
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {

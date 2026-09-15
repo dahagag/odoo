@@ -10,7 +10,7 @@ import {
 } from '../src/org/errors';
 import type { Provisioner } from '../src/org/provisioner';
 import { StubProvisioner } from '../src/org/provisioner';
-import { applyTransition, createOrg, getOrgRecord, orgPk, ORGS_TABLE, updateDnsSubdomainLabel } from '../src/org/record';
+import { applyTransition, checkOrgStatus, createOrg, getOrgRecord, orgPk, ORGS_TABLE, updateDnsSubdomainLabel } from '../src/org/record';
 
 const CONFIG = { defaultRegion: 'us-east-1', trialDurationDays: 14 };
 
@@ -328,5 +328,92 @@ describe('applyTransition (this ticket\'s What to build/Acceptance Criteria)', (
       if (result.status === 'rejected') expect(result.reason).toBeInstanceOf(ConcurrentWriteError);
     }
     expect((await getOrgRecord(gateway, org.orgId))?.state).toBe('destroyed');
+  });
+});
+
+describe('checkOrgStatus (#298: production entry point for Provisioner.checkStatus)', () => {
+  /** Stands in for `AwsProvisioner.checkStatus` (#281) without any real AWS: records that it was
+   * called, and - like the real implementation - writes whatever terminal outcome the test
+   * configures directly onto the record, so `checkOrgStatus`'s own re-read is what a caller
+   * actually observes. */
+  class FakeCheckStatusProvisioner extends StubProvisioner {
+    readonly calls: string[] = [];
+    outcome: Record<string, unknown> = {};
+
+    override async checkStatus(org: { orgId: string }): Promise<void> {
+      this.calls.push(org.orgId);
+      if (Object.keys(this.outcome).length === 0) return;
+      await gatewayRef!.dynamoDb.updateItem({ table: ORGS_TABLE, key: { pk: orgPk(org.orgId) }, set: this.outcome });
+    }
+  }
+  let gatewayRef: InMemoryAwsGateway | undefined;
+
+  it('invokes checkStatus for the org and returns the promoted record on success', async () => {
+    const gateway = new InMemoryAwsGateway();
+    gatewayRef = gateway;
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+    await applyTransition(gateway, new StubProvisioner(), org.orgId, 'issue');
+    const provisioner = new FakeCheckStatusProvisioner();
+    provisioner.outcome = { lastJobStatus: 'succeeded', lastJobError: '' };
+
+    const result = await checkOrgStatus(gateway, provisioner, org.orgId);
+
+    expect(provisioner.calls).toEqual([org.orgId]);
+    expect(result.lastJobStatus).toBe('succeeded');
+    await expect(getOrgRecord(gateway, org.orgId)).resolves.toMatchObject({ lastJobStatus: 'succeeded' });
+  });
+
+  it('invokes checkStatus for the org and returns the failure reason on failure', async () => {
+    const gateway = new InMemoryAwsGateway();
+    gatewayRef = gateway;
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+    await applyTransition(gateway, new StubProvisioner(), org.orgId, 'issue');
+    const provisioner = new FakeCheckStatusProvisioner();
+    provisioner.outcome = { lastJobStatus: 'failed', lastJobError: 'States.Timeout' };
+
+    const result = await checkOrgStatus(gateway, provisioner, org.orgId);
+
+    expect(result.lastJobStatus).toBe('failed');
+    expect(result.lastJobError).toBe('States.Timeout');
+  });
+
+  it('is a safe no-op for an org with no running job', async () => {
+    const gateway = new InMemoryAwsGateway();
+    gatewayRef = gateway;
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+    const provisioner = new FakeCheckStatusProvisioner();
+
+    const result = await checkOrgStatus(gateway, provisioner, org.orgId);
+
+    expect(provisioner.calls).toEqual([org.orgId]);
+    expect(result.state).toBe('issued');
+  });
+
+  it('404s for an org that does not exist', async () => {
+    const gateway = new InMemoryAwsGateway();
+    gatewayRef = gateway;
+    await expect(checkOrgStatus(gateway, new StubProvisioner(), '11111111-1111-4111-8111-111111111111'))
+      .rejects.toBeInstanceOf(OrgNotFoundError);
+  });
+
+  it('re-reads with a strongly consistent read, so a stale eventually-consistent read can never mask the promotion (CodeRabbit, PR #299)', async () => {
+    const gateway = new InMemoryAwsGateway();
+    gatewayRef = gateway;
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+    await applyTransition(gateway, new StubProvisioner(), org.orgId, 'issue');
+    const provisioner = new FakeCheckStatusProvisioner();
+    provisioner.outcome = { lastJobStatus: 'succeeded', lastJobError: '' };
+    const calls: (boolean | undefined)[] = [];
+    const originalGetItem = gateway.dynamoDb.getItem.bind(gateway.dynamoDb);
+    gateway.dynamoDb.getItem = async (input) => {
+      calls.push(input.consistentRead);
+      return originalGetItem(input);
+    };
+
+    await checkOrgStatus(gateway, provisioner, org.orgId);
+
+    // The first read (before checkStatus runs) needs no such guarantee - only the re-read after
+    // the provisioner's own write does.
+    expect(calls).toEqual([undefined, true]);
   });
 });

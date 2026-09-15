@@ -150,6 +150,7 @@ class AwsSdkDynamoDbGateway implements DynamoDbGateway {
     const response = await client.send(new GetItemCommand({
       TableName: this.tableName(input.table),
       Key: marshalItem(input.key),
+      ConsistentRead: input.consistentRead,
     }));
     return unmarshalItem(response.Item as never);
   }

@@ -70,6 +70,13 @@ export type DynamoCondition =
 export interface GetItemInput {
   table: string;
   key: DynamoKey;
+  /** Forces a strongly consistent read (`GetItemCommand`'s own `ConsistentRead`) rather than
+   * DynamoDB's default eventually-consistent read - for the rare caller that reads its own very
+   * recent write back and cannot tolerate briefly observing the pre-write value (e.g. #298's
+   * `checkOrgStatus`, re-reading immediately after `Provisioner.checkStatus` conditionally wrote
+   * a terminal job status). Defaults to `false` (an eventually consistent read, cheaper and the
+   * right choice for everything else). */
+  consistentRead?: boolean;
 }
 
 export interface PutItemInput {

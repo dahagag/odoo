@@ -183,8 +183,8 @@ export async function createOrg(gateway: AwsGateway, input: CreateOrgInput, conf
   return org;
 }
 
-export async function getOrgRecord(gateway: AwsGateway, orgId: string): Promise<OrgRecord | undefined> {
-  const item = await gateway.dynamoDb.getItem({ table: ORGS_TABLE, key: { pk: orgPk(orgId) } });
+export async function getOrgRecord(gateway: AwsGateway, orgId: string, options: { consistentRead?: boolean } = {}): Promise<OrgRecord | undefined> {
+  const item = await gateway.dynamoDb.getItem({ table: ORGS_TABLE, key: { pk: orgPk(orgId) }, consistentRead: options.consistentRead });
   return item ? fromItem(item) : undefined;
 }
 
@@ -248,6 +248,28 @@ const TRANSITIONS: Record<OrgAction, { from: OrgState[]; to: OrgState }> = {
   wake: { from: ['suspended'], to: 'active' },
   destroy: { from: ['active', 'suspended'], to: 'destroyed' },
 };
+
+/**
+ * Polls `orgId`'s currently-running job to a terminal status, if it has one (#298: production
+ * entry point for `Provisioner.checkStatus`, #281). Re-reads the record after the call so a
+ * caller observes whatever `checkStatus` actually wrote (status promotion on success, failure
+ * reason on failure) rather than the pre-poll snapshot - `checkStatus` itself is a safe no-op
+ * when there's nothing running to check (#281), so this needs no pre-filtering either.
+ *
+ * That re-read asks for a strongly consistent read (CodeRabbit, PR #299): it lands immediately
+ * after `checkStatus`'s own conditional write, and an eventually-consistent read here could still
+ * observe the pre-write `running` status - which `respondWithOrg` would then store as this
+ * request's idempotency result and keep replaying, permanently masking the promotion this
+ * endpoint exists to surface.
+ */
+export async function checkOrgStatus(gateway: AwsGateway, provisioner: Provisioner, orgId: string): Promise<OrgRecord> {
+  const org = await getOrgRecord(gateway, orgId);
+  if (!org) throw new OrgNotFoundError(orgId);
+
+  await provisioner.checkStatus(org);
+
+  return (await getOrgRecord(gateway, orgId, { consistentRead: true })) ?? org;
+}
 
 /**
  * Applies one lifecycle action (this ticket's What to build/Acceptance Criteria).
