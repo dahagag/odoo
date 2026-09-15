@@ -1,6 +1,6 @@
 import type { AwsGateway } from '@stack/aws-gateway';
 import { OrgActionSchema, OrgIdSchema } from '@stack/domain';
-import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { requireAdminPrincipal } from './auth/admin';
 import { forbidCrossOrgAccess, requireOrgToken, type OrgTokenStore } from './auth/orgToken';
 import type { Env } from './config/env';
@@ -18,6 +18,7 @@ import {
 } from './org/errors';
 import type { Provisioner } from './org/provisioner';
 import { applyTransition, checkOrgStatus, createOrg, updateDnsSubdomainLabel } from './org/record';
+import type { OrgRecord } from './org/record';
 import { readOrgRegistration } from './orgRegistration';
 import { problem } from './problem';
 
@@ -77,6 +78,33 @@ function knownOrgErrorResponse(error: unknown, reply: FastifyReply): ReturnType<
     return problem(502, 'The provisioner failed; no state change was made', error.message);
   }
   return undefined;
+}
+
+/** Every idempotent admin write that resolves to a single `OrgRecord` (create, relabel, a
+ * lifecycle action, check-status) shares this shape: run `op` under `withIdempotency`, serialize
+ * its result through `OrgSchema`, and map a thrown `org/errors.ts` error to its Problem Details
+ * response - anything else rethrows for Fastify's default 500. One definition instead of each
+ * route re-deriving it, so a future change to that shape (e.g. the error mapping) can't drift
+ * between routes. */
+async function respondWithOrg(
+  deps: ServerDeps,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  status: number,
+  op: () => Promise<OrgRecord>,
+): Promise<unknown> {
+  try {
+    const record = await withIdempotency(deps.idempotencyStore, idempotencyContext(request), async () => {
+      const org = await op();
+      return { status, body: OrgSchema.parse(org) };
+    });
+    reply.code(record.status);
+    return record.body;
+  } catch (error) {
+    const known = knownOrgErrorResponse(error, reply);
+    if (known) return known;
+    throw error;
+  }
 }
 
 /** Every path takes `orgId` through this, rather than trusting the raw path segment, so a
@@ -164,21 +192,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       return problem(400, 'Malformed request body', parsed.error.message);
     }
 
-    try {
-      const record = await withIdempotency(deps.idempotencyStore, idempotencyContext(request), async () => {
-        const org = await createOrg(deps.awsGateway, parsed.data, {
-          defaultRegion: deps.env.DEFAULT_ORG_REGION,
-          trialDurationDays: deps.env.TRIAL_DEFAULT_DURATION_DAYS,
-        });
-        return { status: 201, body: OrgSchema.parse(org) };
-      });
-      reply.code(record.status);
-      return record.body;
-    } catch (error) {
-      const known = knownOrgErrorResponse(error, reply);
-      if (known) return known;
-      throw error;
-    }
+    return respondWithOrg(deps, request, reply, 201, () => createOrg(deps.awsGateway, parsed.data, {
+      defaultRegion: deps.env.DEFAULT_ORG_REGION,
+      trialDurationDays: deps.env.TRIAL_DEFAULT_DURATION_DAYS,
+    }));
   });
 
   app.patch<{ Params: { orgId: string } }>(
@@ -194,18 +211,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         return problem(400, 'Malformed request body', parsed.error.message);
       }
 
-      try {
-        const record = await withIdempotency(deps.idempotencyStore, idempotencyContext(request), async () => {
-          const org = await updateDnsSubdomainLabel(deps.awsGateway, orgId, parsed.data.dnsSubdomainLabel);
-          return { status: 200, body: OrgSchema.parse(org) };
-        });
-        reply.code(record.status);
-        return record.body;
-      } catch (error) {
-        const known = knownOrgErrorResponse(error, reply);
-        if (known) return known;
-        throw error;
-      }
+      return respondWithOrg(deps, request, reply, 200, () => updateDnsSubdomainLabel(deps.awsGateway, orgId, parsed.data.dnsSubdomainLabel));
     },
   );
 
@@ -217,18 +223,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         const orgId = parseOrgIdParam(request.params.orgId, reply);
         if (!orgId) return undefined;
 
-        try {
-          const record = await withIdempotency(deps.idempotencyStore, idempotencyContext(request), async () => {
-            const org = await applyTransition(deps.awsGateway, deps.provisioner, orgId, action);
-            return { status: 200, body: OrgSchema.parse(org) };
-          });
-          reply.code(record.status);
-          return record.body;
-        } catch (error) {
-          const known = knownOrgErrorResponse(error, reply);
-          if (known) return known;
-          throw error;
-        }
+        return respondWithOrg(deps, request, reply, 200, () => applyTransition(deps.awsGateway, deps.provisioner, orgId, action));
       },
     );
   }
@@ -244,18 +239,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       const orgId = parseOrgIdParam(request.params.orgId, reply);
       if (!orgId) return undefined;
 
-      try {
-        const record = await withIdempotency(deps.idempotencyStore, idempotencyContext(request), async () => {
-          const org = await checkOrgStatus(deps.awsGateway, deps.provisioner, orgId);
-          return { status: 200, body: OrgSchema.parse(org) };
-        });
-        reply.code(record.status);
-        return record.body;
-      } catch (error) {
-        const known = knownOrgErrorResponse(error, reply);
-        if (known) return known;
-        throw error;
-      }
+      return respondWithOrg(deps, request, reply, 200, () => checkOrgStatus(deps.awsGateway, deps.provisioner, orgId));
     },
   );
 
