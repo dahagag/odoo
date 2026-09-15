@@ -105,7 +105,9 @@ Rollback therefore goes through CI, the same as an ordinary deploy — `ci.yml`'
 than widening any trust policy or bypassing Terraform:
 
 1. Confirm the target release's image is still present under its release tag in ECR (it always
-   is — `retag-administration-stack-image` never deletes a tag, it only adds new ones):
+   is — `retag-administration-stack-image` never deletes a tag, it only adds new ones). This is
+   good practice before dispatching, and the workflow itself checks it again regardless (step 2's
+   `verify-release-tag-published`, so a typo fails loudly instead of reaching `tofu apply`):
    ```bash
    aws ecr describe-images --registry-id <platform-account-id> \
      --repository-name agentic-erp/administration-stack-api --image-ids imageTag=v1.2.0
@@ -117,10 +119,13 @@ than widening any trust policy or bypassing Terraform:
    ```
    This runs `deploy-administration-stack-staging`/`-production` exactly as an ordinary push
    would, except it skips `resolve-release-tag` (uses the given tag directly),
-   `check-release-order` (a deliberate rollback is expected to be "behind" by commit ancestry —
-   the check would otherwise always flag it stale), `retag-administration-stack-image` (the tag
-   already exists and already points at the right manifest), and `record-deployed-commit` — going
-   straight to `tofu apply` with that tag and stopping there.
+   `check-release-order` and `record-deployed-commit` (a deliberate rollback is expected to be
+   "behind" by commit ancestry — the check would otherwise always flag it stale, and recording it
+   would lower the watermark), and `retag-administration-stack-image` (the tag already exists and
+   already points at the right manifest). It does run `verify-release-tag-published` — a
+   workflow_dispatch-only check that the given tag actually resolves to a published image, since
+   there's no build step behind free-typed dispatch input the way there is on the push path — then
+   goes straight to `tofu apply` with that tag and stops there.
 3. **The rollback is a temporary mitigation, not a new steady state, and it never touches the
    release-order guard's watermark.** `record-deployed-commit` only ever runs on the ordinary push
    path — a rollback can be dispatched from a ref whose commit is *older* than the one currently
@@ -150,7 +155,26 @@ older commit — delayed behind slow prerequisite jobs — could reach its retag
 older image bytes (found during #217's review; see issue #218 for the full analysis).
 
 Both jobs now call `.github/actions/check-release-order` before retagging/applying, and
-`.github/actions/record-deployed-commit` right after a successful apply:
+`.github/actions/record-deployed-commit` right after that — **before** `tofu apply`, not after.
+Recording before rather than after apply closes a further gap CodeRabbit's review found: if the
+watermark were only written after a successful apply, and that write then failed on its own
+(a transient SSM error, unrelated to the apply itself), the watermark would stay stale even
+though newer content is now actually running — letting a queued or re-run job for a commit older
+than the one just deployed, but newer than the stale watermark, wrongly compare itself as "ahead"
+and overwrite it. Recording first means the watermark reflects "this commit has been claimed by
+an in-progress deploy" rather than "definitely finished deploying" — a same-commit retry still
+works (`check-release-order`'s own `recorded == COMMIT_SHA` fast path already treats that as
+non-stale), and if `tofu apply` itself then fails outright, the job fails loudly rather than
+silently, while any genuinely newer commit still correctly compares as "ahead" of this recorded
+one regardless.
+
+**A residual gap this tradeoff accepts**: if `tofu apply` fails *after* the watermark has already
+advanced to the failed commit, any other commit that's genuinely older than the failed one but
+newer than what's actually still running will now compare as `behind` the (falsely-advanced)
+watermark and get skipped, until someone redeploys the failed commit (or a fix forward past it).
+Closing this fully would need a separate pending/success state rather than one scalar value — not
+worth the added complexity for a narrow, self-recovering window (any dev/19.0 or main/19.0 push
+after the fix retries automatically).
 
 - **Where the automatic-deployment high-water mark lives**: one SSM parameter in the Platform
   Account, `/platform-administration-stack-api/deployed-commit` (created by `infra/platform`'s

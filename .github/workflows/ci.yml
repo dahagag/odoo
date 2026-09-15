@@ -768,6 +768,14 @@ jobs:
         with:
           role-to-assume: ${{ vars.STAGING_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+      - uses: ./.github/actions/verify-release-tag-published
+        # workflow_dispatch only — a manual rollback's release_tag is free text with no build step
+        # behind it (unlike the push path's resolve-release-tag), so this fails fast on a typo or
+        # an unpublished tag instead of reaching `tofu apply` unchecked.
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          release_tag: ${{ steps.tag.outputs.tag }}
+          platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
       - uses: ./.github/actions/check-release-order
         # Issue #218: dev/19.0 and main/19.0 both retag+apply the same infra/platform instance —
         # a delayed staging run for an older commit must not overwrite a release tag a faster
@@ -776,6 +784,26 @@ jobs:
         # older content, which this ancestry check would otherwise always flag as stale.
         id: guard
         if: github.event_name == 'push'
+        with:
+          platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
+          aws_region: ${{ vars.AWS_REGION }}
+          commit_sha: ${{ github.sha }}
+      - uses: ./.github/actions/record-deployed-commit
+        # Recorded *before* retag/apply, not after (CodeRabbit review on #306): the shared
+        # concurrency group serializes staging/production against each other but not against a
+        # queued or re-run job for a commit older than this one — if this step ran only after a
+        # successful apply and its own SSM write then failed, the watermark would stay stale even
+        # though newer content is now live, letting that other job wrongly compare itself as
+        # "ahead" and overwrite it. Recording here instead means the watermark reflects "this
+        # commit has been claimed by an in-progress deploy" rather than "definitely finished
+        # deploying" — a same-commit retry still works (check-release-order's own
+        # recorded == COMMIT_SHA fast path already treats that as non-stale), and if apply itself
+        # then fails outright, the job fails loudly rather than silently, while any genuinely
+        # newer commit still correctly compares as "ahead" of this recorded one regardless.
+        # Push-triggered only, never for a workflow_dispatch rollback: a rollback can be dispatched
+        # from a ref whose commit is *older* than the currently recorded one, and recording it
+        # would lower the watermark — see docs/release-process.md's Rollback section.
+        if: github.event_name == 'push' && steps.guard.outputs.stale != 'true'
         with:
           platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
           aws_region: ${{ vars.AWS_REGION }}
@@ -815,21 +843,6 @@ jobs:
           # platform-administration-stack-deploy to actually manage infra/platform's Platform
           # Account resources.
           platform_assume_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
-      - uses: ./.github/actions/record-deployed-commit
-        # Only after a successful apply — records this run's commit as the automatic-deployment
-        # high-water mark so a later, still-in-flight job for an older commit sees it and skips
-        # (issue #218). Push-triggered only, never for a workflow_dispatch rollback: a rollback can
-        # be dispatched from a ref whose commit is *older* than the currently recorded one, and
-        # recording it would lower the watermark — a queued or re-run automatic deploy for a
-        # commit in between would then compare as "ahead" and immediately overwrite the rollback,
-        # undoing it faster than intended (CodeRabbit review on #306). Leaving the watermark alone
-        # on dispatch keeps the ordinary push path's comparisons correct regardless of any manual
-        # rollback that happened in between — see docs/release-process.md's Rollback section.
-        if: github.event_name == 'push' && steps.guard.outputs.stale != 'true'
-        with:
-          platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
-          aws_region: ${{ vars.AWS_REGION }}
-          commit_sha: ${{ github.sha }}
       - name: Record which release is now running in staging
         if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
         env:
@@ -896,6 +909,12 @@ jobs:
         with:
           role-to-assume: ${{ vars.PRODUCTION_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+      - uses: ./.github/actions/verify-release-tag-published
+        # See staging's identical step above.
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          release_tag: ${{ steps.tag.outputs.tag }}
+          platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
       - uses: ./.github/actions/check-release-order
         # Issue #218: dev/19.0 and main/19.0 both retag+apply the same infra/platform instance —
         # a delayed production run for an older commit must not overwrite a release tag a faster
@@ -903,6 +922,14 @@ jobs:
         # Push-triggered only — see staging's identical comment above.
         id: guard
         if: github.event_name == 'push'
+        with:
+          platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
+          aws_region: ${{ vars.AWS_REGION }}
+          commit_sha: ${{ github.sha }}
+      - uses: ./.github/actions/record-deployed-commit
+        # Recorded before retag/apply, not after — see staging's identical comment above for why
+        # (CodeRabbit review on #306). Push-triggered only, never for a workflow_dispatch rollback.
+        if: github.event_name == 'push' && steps.guard.outputs.stale != 'true'
         with:
           platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
           aws_region: ${{ vars.AWS_REGION }}
@@ -943,15 +970,6 @@ jobs:
           # (infra/registry/cross_account_iam.tf's platform_administration_stack_deploy_trust now
           # trusts both).
           platform_assume_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
-      - uses: ./.github/actions/record-deployed-commit
-        # Only after a successful apply — records this run's commit as the automatic-deployment
-        # high-water mark (issue #218). Push-triggered only — see staging's identical comment
-        # above for why a workflow_dispatch rollback must never touch this.
-        if: github.event_name == 'push' && steps.guard.outputs.stale != 'true'
-        with:
-          platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
-          aws_region: ${{ vars.AWS_REGION }}
-          commit_sha: ${{ github.sha }}
       - name: Record which release is now running in production
         if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
         env:
