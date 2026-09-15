@@ -65,12 +65,23 @@ runs:
         AWS_SESSION_TOKEN=$(jq -r '.Credentials.SessionToken' <<<"$creds")
         AWS_DEFAULT_REGION="$AWS_REGION"
 
-        # A mismatch between this default and infra/platform's actual parameter name (both are
-        # duplicated literals, kept in sync by convention — see infra/registry/locals.tf's
-        # administration_stack_deployed_commit_parameter_arn comment) fails loud right here
-        # (ParameterNotFound from get-parameter, or an AccessDenied from a name outside the IAM
-        # grant's scoped ARN) rather than silently comparing against the wrong parameter.
-        recorded=$(aws ssm get-parameter --name "$PARAM_NAME" --query 'Parameter.Value' --output text)
+        # infra/platform's own `tofu apply` (later in this same job, on the push path) is what
+        # actually creates this parameter — so on the very first deploy ever, before that apply
+        # has run even once, ParameterNotFound is expected, not an error: fall through to the
+        # "no prior deploy" path below. Any *other* failure (AccessDenied from a name mismatch
+        # outside the IAM grant's scoped ARN, throttling, a service error) still fails loud here
+        # rather than silently comparing against the wrong or an unreadable parameter — the
+        # distinction CodeRabbit's review on #306 asked for.
+        if ! recorded=$(aws ssm get-parameter --name "$PARAM_NAME" --query 'Parameter.Value' --output text 2> get-parameter.err); then
+          if grep -q ParameterNotFound get-parameter.err; then
+            cat get-parameter.err
+            echo "No prior deployed commit recorded at $PARAM_NAME (parameter does not exist yet — first-ever deploy) — nothing to compare against."
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cat get-parameter.err >&2
+          exit 1
+        fi
         if [[ -z "$recorded" || "$recorded" == "None" || "$recorded" == "unset" ]]; then
           echo "No prior deployed commit recorded at $PARAM_NAME — nothing to compare against."
           echo "stale=false" >> "$GITHUB_OUTPUT"
