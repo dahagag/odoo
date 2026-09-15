@@ -118,15 +118,20 @@ than widening any trust policy or bypassing Terraform:
    This runs `deploy-administration-stack-staging`/`-production` exactly as an ordinary push
    would, except it skips `resolve-release-tag` (uses the given tag directly),
    `check-release-order` (a deliberate rollback is expected to be "behind" by commit ancestry —
-   the check would otherwise always flag it stale), and `retag-administration-stack-image` (the
-   tag already exists and already points at the right manifest) — going straight to `tofu apply`
-   with that tag, then `record-deployed-commit`.
-3. **The rollback is a temporary mitigation, not a new steady state.** `record-deployed-commit`
-   records the *dispatched ref's* commit (e.g. `dev/19.0`'s current tip), not the old release's
-   original commit — so the very next ordinary push to that branch still resolves whatever the
-   latest `v*` tag is and deploys it, regardless of the rollback. If the newer release is broken,
-   fix forward (cut a new patch release) or keep the rollback in place by not merging anything
-   further until that's done — the pipeline does not "stick" to a rolled-back release on its own.
+   the check would otherwise always flag it stale), `retag-administration-stack-image` (the tag
+   already exists and already points at the right manifest), and `record-deployed-commit` — going
+   straight to `tofu apply` with that tag and stopping there.
+3. **The rollback is a temporary mitigation, not a new steady state, and it never touches the
+   release-order guard's watermark.** `record-deployed-commit` only ever runs on the ordinary push
+   path — a rollback can be dispatched from a ref whose commit is *older* than the one currently
+   recorded, and recording it would lower that watermark, letting a queued or re-run automatic
+   deploy for a commit in between compare as "ahead" and immediately overwrite the rollback. Since
+   the watermark is left untouched, the very next ordinary push to that branch still resolves
+   whatever the latest `v*` tag is and deploys it, regardless of the rollback, and the guard's
+   comparisons for any deploy still in flight stay correct throughout. If the newer release is
+   broken, fix forward (cut a new patch release) or keep the rollback in place by not merging
+   anything further until that's done — the pipeline does not "stick" to a rolled-back release on
+   its own.
 
 **Caveat — migrations are not reversible by this pipeline.** If the release being rolled back
 *past* included an Odoo migration script (a major manifest-version bump, per ADR-0004), rolling
@@ -147,11 +152,14 @@ older image bytes (found during #217's review; see issue #218 for the full analy
 Both jobs now call `.github/actions/check-release-order` before retagging/applying, and
 `.github/actions/record-deployed-commit` right after a successful apply:
 
-- **Where "currently deployed" lives**: one SSM parameter in the Platform Account,
-  `/platform-administration-stack-api/deployed-commit` (created by
-  `infra/platform`'s `aws_ssm_parameter.administration_stack_deployed_commit`, value managed by
-  CI rather than Terraform). One parameter, not one per branch/environment, because staging and
-  production deploy the same instance today (see above). Considered and rejected: an **ECS
+- **Where the automatic-deployment high-water mark lives**: one SSM parameter in the Platform
+  Account, `/platform-administration-stack-api/deployed-commit` (created by `infra/platform`'s
+  `aws_ssm_parameter.administration_stack_deployed_commit`, value managed by CI rather than
+  Terraform). It tracks the ordinary push-triggered pipeline's own progress, not "whatever was
+  last deployed by any means" — `record-deployed-commit` only ever runs on the push path (never on
+  a `workflow_dispatch` rollback; see below), so it can only ever advance, never move backward.
+  One parameter, not one per branch/environment, because staging and production deploy the same
+  instance today (see above). Considered and rejected: an **ECS
   service tag** (this pipeline already tags the service/task definition with the release
   version, but not the commit — reusing that mechanism would conflate "which release" with "which
   commit", two different questions this guard needs answered separately) and a **DynamoDB item**
@@ -185,8 +193,8 @@ Both jobs now call `.github/actions/check-release-order` before retagging/applyi
   step-summary line explaining why it skipped. This matches the "a failed step stops the
   workflow" framing from #216/#217's own acceptance criteria — a stale race outcome is expected,
   not a bug, so it should not read as a red X.
-- A manual rollback (above), triggered via `workflow_dispatch`, intentionally skips
-  `check-release-order` entirely rather than running it and overriding the result — the guard
-  exists to catch an *accidental* race between two automatic pipeline runs, and a deliberate
-  rollback is by definition deploying older content, which the ancestry check would otherwise
-  always (correctly, for the automatic case) flag as stale.
+- A manual rollback (above), triggered via `workflow_dispatch`, intentionally skips both
+  `check-release-order` and `record-deployed-commit` entirely, rather than running them and
+  overriding the result — the guard exists to catch an *accidental* race between two automatic
+  pipeline runs, and a deliberate rollback is by definition deploying older content, which the
+  ancestry check would otherwise always (correctly, for the automatic case) flag as stale.

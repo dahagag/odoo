@@ -748,12 +748,15 @@ jobs:
         # own explicit tag below instead of resolving "latest" (issue #218).
         id: resolve_tag
         if: github.event_name == 'push'
-      - name: Resolve which release tag this run deploys
+      - uses: ./.github/actions/resolve-deploy-tag
         # Merges resolve_tag's output (push) with the explicit workflow_dispatch input (manual
         # rollback/redeploy) into one place every later step reads, so nothing downstream needs to
-        # know which trigger fired this run.
+        # know which trigger fired this run. See the action's own description for why the
+        # dispatch input is validated rather than interpolated directly into a run: script.
         id: tag
-        run: echo "tag=${{ steps.resolve_tag.outputs.tag || github.event.inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+        with:
+          resolved_tag: ${{ steps.resolve_tag.outputs.tag }}
+          dispatch_tag: ${{ github.event.inputs.release_tag }}
       - name: Compute the content-hash tag build-stack-image published this commit's image under
         # Only meaningful for the push path — a workflow_dispatch rollback re-applies a tag that
         # already exists in ECR (retag-administration-stack-image below never runs for it) and
@@ -813,14 +816,16 @@ jobs:
           # Account resources.
           platform_assume_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
       - uses: ./.github/actions/record-deployed-commit
-        # Only after a successful apply — records this run's commit as "currently deployed" so a
-        # later, still-in-flight job for an older commit sees it and skips (issue #218). Also runs
-        # for a workflow_dispatch rollback, recording the *dispatched ref's* commit (not the old
-        # release's original commit) — a deliberate choice (see docs/release-process.md's Rollback
-        # section): the next ordinary push still resolves "latest tag" regardless, so the rollback
-        # is a temporary mitigation, and this keeps that next push from being wrongly flagged
-        # stale against a rollback that intentionally deployed older content.
-        if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
+        # Only after a successful apply — records this run's commit as the automatic-deployment
+        # high-water mark so a later, still-in-flight job for an older commit sees it and skips
+        # (issue #218). Push-triggered only, never for a workflow_dispatch rollback: a rollback can
+        # be dispatched from a ref whose commit is *older* than the currently recorded one, and
+        # recording it would lower the watermark — a queued or re-run automatic deploy for a
+        # commit in between would then compare as "ahead" and immediately overwrite the rollback,
+        # undoing it faster than intended (CodeRabbit review on #306). Leaving the watermark alone
+        # on dispatch keeps the ordinary push path's comparisons correct regardless of any manual
+        # rollback that happened in between — see docs/release-process.md's Rollback section.
+        if: github.event_name == 'push' && steps.guard.outputs.stale != 'true'
         with:
           platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
           aws_region: ${{ vars.AWS_REGION }}
@@ -877,9 +882,12 @@ jobs:
         # resolve_tag/tag comment above (issue #218).
         id: resolve_tag
         if: github.event_name == 'push'
-      - name: Resolve which release tag this run deploys
+      - uses: ./.github/actions/resolve-deploy-tag
+        # See staging's identical step above.
         id: tag
-        run: echo "tag=${{ steps.resolve_tag.outputs.tag || github.event.inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+        with:
+          resolved_tag: ${{ steps.resolve_tag.outputs.tag }}
+          dispatch_tag: ${{ github.event.inputs.release_tag }}
       - name: Compute the content-hash tag build-stack-image published this commit's image under
         if: github.event_name == 'push'
         id: content_tag
@@ -936,10 +944,10 @@ jobs:
           # trusts both).
           platform_assume_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
       - uses: ./.github/actions/record-deployed-commit
-        # Only after a successful apply — records this run's commit as "currently deployed" so a
-        # later, still-in-flight job for an older commit sees it and skips (issue #218). Also runs
-        # for a workflow_dispatch rollback — see staging's identical comment above.
-        if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
+        # Only after a successful apply — records this run's commit as the automatic-deployment
+        # high-water mark (issue #218). Push-triggered only — see staging's identical comment
+        # above for why a workflow_dispatch rollback must never touch this.
+        if: github.event_name == 'push' && steps.guard.outputs.stale != 'true'
         with:
           platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
           aws_region: ${{ vars.AWS_REGION }}

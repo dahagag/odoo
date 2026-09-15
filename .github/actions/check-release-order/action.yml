@@ -70,7 +70,7 @@ runs:
         # administration_stack_deployed_commit_parameter_arn comment) fails loud right here
         # (ParameterNotFound from get-parameter, or an AccessDenied from a name outside the IAM
         # grant's scoped ARN) rather than silently comparing against the wrong parameter.
-        recorded=$(aws ssm get-parameter --name "$PARAM_NAME" --query 'Parameter.Value' --output text 2>/dev/null || true)
+        recorded=$(aws ssm get-parameter --name "$PARAM_NAME" --query 'Parameter.Value' --output text)
         if [[ -z "$recorded" || "$recorded" == "None" || "$recorded" == "unset" ]]; then
           echo "No prior deployed commit recorded at $PARAM_NAME — nothing to compare against."
           echo "stale=false" >> "$GITHUB_OUTPUT"

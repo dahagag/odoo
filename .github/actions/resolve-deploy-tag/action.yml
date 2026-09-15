@@ -1,0 +1,43 @@
+name: Resolve and validate which release tag a deploy job deploys
+description: >-
+  Merges resolve-release-tag's output (the ordinary push path) with an explicit workflow_dispatch
+  release_tag input (a manual rollback/redeploy, issue #218) into one validated value, so neither
+  deploy-administration-stack-staging nor deploy-administration-stack-production carries its own
+  copy of this shell block — same reasoning as resolve-release-tag and
+  retag-administration-stack-image already being shared actions for exactly this. The
+  workflow_dispatch input is free text typed into the dispatch form, so it is passed through here
+  via inputs (never interpolated into a run: script, which would let it execute as shell — CWE-78,
+  flagged by CodeRabbit/zizmor on PR #306) and validated against the same v<major>.<minor>.<patch>
+  shape scripts/release_version/derive.py enforces (the same regex ci.yml's manifest-version-check
+  job already greps release tags with) before being emitted, so a malformed or hostile input fails
+  loudly here rather than reaching a real deploy.
+inputs:
+  resolved_tag:
+    description: resolve-release-tag's output on the push path — empty on workflow_dispatch.
+    required: false
+    default: ""
+  dispatch_tag:
+    description: github.event.inputs.release_tag on the workflow_dispatch path — empty on push.
+    required: false
+    default: ""
+outputs:
+  tag:
+    description: The validated release tag this run deploys.
+    value: ${{ steps.tag.outputs.tag }}
+runs:
+  using: composite
+  steps:
+    - name: Validate and emit the release tag this run deploys
+      id: tag
+      shell: bash
+      env:
+        RESOLVED_TAG: ${{ inputs.resolved_tag }}
+        DISPATCH_TAG: ${{ inputs.dispatch_tag }}
+      run: |
+        set -euo pipefail
+        tag="${RESOLVED_TAG:-$DISPATCH_TAG}"
+        if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "Not a well-formed release tag: '$tag' (expected v<major>.<minor>.<patch>)" >&2
+          exit 1
+        fi
+        printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
