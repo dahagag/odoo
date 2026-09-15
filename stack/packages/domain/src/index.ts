@@ -66,6 +66,34 @@ export const DnsSubdomainLabelSchema = z
   .openapi('DnsSubdomainLabel');
 export type DnsSubdomainLabel = z.infer<typeof DnsSubdomainLabelSchema>;
 
+/** Derives a `DnsSubdomainLabelSchema`-shaped default from an org name when the caller doesn't
+ * supply one explicitly - the same rules `_slugify_dns_label`
+ * (`custom_addons/hosting_admin/models/trial_org.py`) applies one language over: lowercase, runs
+ * of characters outside `[a-z0-9]` collapsed to a single hyphen, leading/trailing hyphens
+ * stripped, capped at 63 characters. Never throws - an empty or entirely-non-alphanumeric name
+ * just derives an empty string, left for the caller to reject the same way an explicit invalid
+ * label already is. */
+export function slugifyDnsLabel(name: string): string {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  // The 63-char truncation can re-expose a trailing hyphen the first strip already removed
+  // (e.g. a hyphen landing exactly at the cut) - stripped again here, matching
+  // `_slugify_dns_label`'s own `slug[:63].rstrip('-')`.
+  return slug.slice(0, 63).replace(/-+$/, '');
+}
+
+/** `hosting.trial.org.seat_cap`'s system-wide ceiling (`SYSTEM_WIDE_SEAT_CAP`,
+ * `custom_addons/hosting_admin/models/trial_org.py`): "The count is set per-trial at issuance
+ * (system-wide max 25)" (docs/contexts/hosting/CONTEXT.md's Seat entry). A single org's own
+ * `seatsTotal` may be anywhere from 1 up to this ceiling; it is not a cross-org total. */
+export const SYSTEM_WIDE_SEAT_CAP = 25;
+
+/** The `seatsTotal` shape shared by every schema that accepts or reports it (create, the admin
+ * read/write projections) - one definition of the ceiling so it can't drift between them, same
+ * as Odoo's `@api.constrains('seat_cap')` firing on both create and write. */
+export const SeatsTotalSchema = z.number().int().positive().max(SYSTEM_WIDE_SEAT_CAP).openapi('SeatsTotal', {
+  description: `Number of seats issued for this org, 1-${SYSTEM_WIDE_SEAT_CAP} (system-wide ceiling, matching hosting_admin's SYSTEM_WIDE_SEAT_CAP).`,
+});
+
 /** RFC 7807 Problem Details, used for every non-2xx response so every consumer (Odoo, the
  * staff app, the client app) parses errors one way. */
 export const ProblemDetailsSchema = z

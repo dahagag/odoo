@@ -43,6 +43,13 @@
           "destroyed"
         ]
       },
+      "SeatsTotal": {
+        "type": "integer",
+        "minimum": 0,
+        "exclusiveMinimum": true,
+        "maximum": 25,
+        "description": "Number of seats issued for this org, 1-25 (system-wide ceiling, matching hosting_admin's SYSTEM_WIDE_SEAT_CAP)."
+      },
       "OrgRegistration": {
         "type": "object",
         "properties": {
@@ -66,9 +73,7 @@
             "minimum": 0
           },
           "seatsTotal": {
-            "type": "integer",
-            "minimum": 0,
-            "exclusiveMinimum": true
+            "$ref": "#/components/schemas/SeatsTotal"
           },
           "expiryDate": {
             "type": "string",
@@ -167,9 +172,7 @@
             "minimum": 0
           },
           "seatsTotal": {
-            "type": "integer",
-            "minimum": 0,
-            "exclusiveMinimum": true
+            "$ref": "#/components/schemas/SeatsTotal"
           },
           "inviteType": {
             "$ref": "#/components/schemas/InviteType"
@@ -252,12 +255,17 @@
             "minLength": 1
           },
           "seatsTotal": {
-            "type": "integer",
-            "minimum": 0,
-            "exclusiveMinimum": true
+            "$ref": "#/components/schemas/SeatsTotal"
           },
           "dnsSubdomainLabel": {
-            "$ref": "#/components/schemas/DnsSubdomainLabel"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DnsSubdomainLabel"
+              },
+              {
+                "description": "Defaults to a slugified `name` when omitted."
+              }
+            ]
           },
           "inviteType": {
             "allOf": [
@@ -277,8 +285,7 @@
           "type",
           "name",
           "domain",
-          "seatsTotal",
-          "dnsSubdomainLabel"
+          "seatsTotal"
         ]
       },
       "UpdateOrgRequest": {

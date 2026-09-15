@@ -5,6 +5,7 @@ import {
   DnsLabelImmutableError,
   DnsLabelInUseError,
   IllegalTransitionError,
+  InvalidDnsLabelError,
   OrgNotFoundError,
   ProvisionerFailedError,
 } from '../src/org/errors';
@@ -122,6 +123,39 @@ describe('createOrg (this ticket\'s Acceptance Criteria)', () => {
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
     expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(DnsLabelInUseError);
+  });
+
+  it('derives dnsSubdomainLabel from name when omitted (#303, matching _slugify_dns_label)', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const { dnsSubdomainLabel: _dnsSubdomainLabel, ...input } = trialInput({ name: 'Acme! Evaluation Org' });
+
+    const org = await createOrg(gateway, input, CONFIG);
+
+    expect(org.dnsSubdomainLabel).toBe('acme-evaluation-org');
+    await expect(getOrgRecord(gateway, org.orgId)).resolves.toMatchObject({ dnsSubdomainLabel: 'acme-evaluation-org' });
+  });
+
+  it('uses an explicitly supplied dnsSubdomainLabel as-is rather than deriving one', async () => {
+    const gateway = new InMemoryAwsGateway();
+
+    const org = await createOrg(gateway, trialInput({ name: 'Acme Evaluation', dnsSubdomainLabel: 'custom-label' }), CONFIG);
+
+    expect(org.dnsSubdomainLabel).toBe('custom-label');
+  });
+
+  it('runs an auto-derived label through the same uniqueness-reservation transaction as an explicit one', async () => {
+    const gateway = new InMemoryAwsGateway();
+    await createOrg(gateway, trialInput({ dnsSubdomainLabel: 'acme-evaluation-org', domain: 'first.example' }), CONFIG);
+    const { dnsSubdomainLabel: _dnsSubdomainLabel, ...input } = trialInput({ name: 'Acme Evaluation Org', domain: 'second.example' });
+
+    await expect(createOrg(gateway, input, CONFIG)).rejects.toBeInstanceOf(DnsLabelInUseError);
+  });
+
+  it('rejects a punctuation-only name that slugifies to an invalid label, rather than writing an empty dnsSubdomainLabel', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const { dnsSubdomainLabel: _dnsSubdomainLabel, ...input } = trialInput({ name: '!!!' });
+
+    await expect(createOrg(gateway, input, CONFIG)).rejects.toBeInstanceOf(InvalidDnsLabelError);
   });
 });
 

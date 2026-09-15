@@ -24,11 +24,9 @@ cap concurrency), #280 (Step Functions provisioner), #281 (pending-job polling, 
   reason.
 - Rows for the same behaviour tested twice in Odoo (e.g. once directly, once through an ACL lens)
   are folded into one stack row where the stack test covers both.
-- Two rows are flagged **GAP, tracked in #303** — decided as real gaps to close (not accepted
-  divergences). The implementation is tracked separately in #303, so it doesn't block *this
-  checklist's own completion* (the gap is already named and justified here) — but #303 does
-  block #197, which may not delete `hosting_admin`'s seat-cap/DNS-label logic until the stack
-  gains an equivalent — see [Resolved: system-wide seat cap and DNS label default](#resolved-system-wide-seat-cap-and-dns-label-default-tracked-in-303).
+- The system-wide seat cap and DNS-label auto-slugify gaps this checklist originally flagged
+  were closed in [#303](https://github.com/dahagag/odoo/issues/303) — see
+  [Resolved: system-wide seat cap and DNS label default](#resolved-system-wide-seat-cap-and-dns-label-default-tracked-in-303).
 
 ## Test-by-test mapping
 
@@ -57,12 +55,12 @@ cap concurrency), #280 (Step Functions provisioner), #281 (pending-job polling, 
 | Odoo test | Behaviour | Stack counterpart |
 |---|---|---|
 | `test_create_within_seat_cap_succeeds` | Positive `seat_cap` accepted | `seat.test.ts`: "succeeds when an invite lands exactly at the cap" (+ create-path validation in `orgAdminApi.test.ts`) |
-| `test_create_above_system_wide_seat_cap_is_rejected`, `test_write_above_system_wide_seat_cap_is_rejected` | System-wide seat cap of 25 (`SYSTEM_WIDE_SEAT_CAP`, `trial_org.py:13`) enforced on create and write | **GAP, tracked in [#303](https://github.com/dahagag/odoo/issues/303).** No global seat-cap ceiling exists yet in `stack/packages/domain/src/index.ts` — only per-org `seatsTotal` positivity is validated. Decided: the stack should add the same 25-seat ceiling itself, not leave it to a caller-side check. |
+| `test_create_above_system_wide_seat_cap_is_rejected`, `test_write_above_system_wide_seat_cap_is_rejected` | System-wide seat cap of 25 (`SYSTEM_WIDE_SEAT_CAP`, `trial_org.py:13`) enforced on create and write | `SeatsTotalSchema` (`stack/packages/domain/src/index.ts`, `SYSTEM_WIDE_SEAT_CAP = 25`), applied to `CreateOrgRequestSchema`/`OrgSchema`/`OrgRegistrationSchema` in `stack/apps/api/src/openapi/registry.ts`; exercised via `orgAdminApi.test.ts`: "rejects seatsTotal above the system-wide seat cap of 25 (#303, matching SYSTEM_WIDE_SEAT_CAP)" and "accepts seatsTotal at the system-wide seat cap of 25". Landed in #303. |
 | `test_create_with_non_positive_seat_cap_is_rejected` | `seatsTotal` must be positive | Zod schema, exercised via `orgAdminApi.test.ts`: "rejects a malformed request body" |
 | `test_create_with_valid_domain_succeeds`, `test_create_with_domain_missing_a_dot_is_rejected`, `test_create_with_domain_containing_invalid_characters_is_rejected`, `test_create_with_domain_having_leading_hyphen_label_is_rejected`, `test_create_with_empty_domain_is_rejected` | Prospect domain shape validation | Zod schema on `domain`, exercised generically via `orgAdminApi.test.ts`: "rejects a malformed request body" |
 | `test_new_trial_org_starts_issued_with_blank_deployment_version` | Fresh org has no deployment version | `orgRecord.test.ts`: "creates a Trial Org in the issued state with a defaulted region, unique label, and blank deployment fields"; `awsProvisioner.test.ts`: "fails fast without calling AWS when no deployment version has ever been recorded" |
-| `test_dns_subdomain_label_defaults_to_a_slugified_name` | Auto-slug default from Org Name (`trial_org.py:285-297`) | **GAP, tracked in [#303](https://github.com/dahagag/odoo/issues/303).** `createOrg` requires a caller-supplied `dnsSubdomainLabel` today (`record.ts:200`); no slugify-from-name fallback. Decided: the stack should slugify the org name as the default when the label is omitted, while still honouring an explicit caller-supplied label the same way it does today. |
-| `test_dns_subdomain_label_explicit_value_is_kept` | Explicit value respected | Implicit — `createOrg` always uses the caller's value |
+| `test_dns_subdomain_label_defaults_to_a_slugified_name` | Auto-slug default from Org Name (`trial_org.py:285-297`) | `slugifyDnsLabel` (`stack/packages/domain/src/index.ts`), applied by `createOrg` (`record.ts`) when `dnsSubdomainLabel` is omitted; exercised via `orgRecord.test.ts`: "derives dnsSubdomainLabel from name when omitted (#303, matching _slugify_dns_label)" and `orgAdminApi.test.ts`: "derives dnsSubdomainLabel from name when omitted from the request body (#303)". A punctuation-only name that would slugify to an invalid label is rejected (`InvalidDnsLabelError`), mirroring `_check_dns_subdomain_label`'s constraint catching a bad derived value — `orgRecord.test.ts`: "rejects a punctuation-only name that slugifies to an invalid label, rather than writing an empty dnsSubdomainLabel". Landed in #303. |
+| `test_dns_subdomain_label_explicit_value_is_kept` | Explicit value respected | `orgRecord.test.ts`: "uses an explicitly supplied dnsSubdomainLabel as-is rather than deriving one" |
 | `test_dns_subdomain_label_with_invalid_characters_is_rejected`, `test_dns_subdomain_label_with_leading_hyphen_is_rejected`, `test_dns_subdomain_label_too_long_is_rejected` | RFC1123 label rules, 63-char max | `DnsSubdomainLabelSchema` (`stack/packages/domain/src/index.ts:58-67`), exercised via `orgAdminApi.test.ts`: "rejects a malformed request body" |
 
 ### `test_trial_org_seat_invite.py`
@@ -262,30 +260,31 @@ planned**. Record this as an accepted, deliberate design divergence, not a bug t
 | Asleep Page (12 tests) | `test_trial_org_asleep_page.py` | **Accepted, permanent** — stays in Odoo/Route53 per ADR-0030. |
 | Log webhook (10 tests), log channel authorization (4 tests) | `test_trial_org_log_webhook.py`, `test_trial_org_log_channel_authorization.py` | **Accepted, out of epic scope** — Odoo-bus-only concern, not in the epic's reproduce list. |
 | "Steps unavailable" text-rendering | `test_steps_unavailable_leaves_steps_text_blank` | **Accepted, partial** — underlying data condition is covered; the stack returns JSON, not rendered text. |
-| System-wide seat cap ceiling (25) | `test_create_above_system_wide_seat_cap_is_rejected`, `test_write_above_system_wide_seat_cap_is_rejected` | **Justified gap, tracked in [#303](https://github.com/dahagag/odoo/issues/303).** Decided: the stack itself should enforce the same 25-seat ceiling Odoo does, on both create and write. Not yet implemented — #303 blocks #197. |
-| Auto-slugified DNS label default | `test_dns_subdomain_label_defaults_to_a_slugified_name` | **Justified gap, tracked in [#303](https://github.com/dahagag/odoo/issues/303).** Decided: `createOrg` should slugify the org name into a default `dnsSubdomainLabel` when the caller omits one, while still accepting and honouring an explicit caller-supplied label (checked for availability the same way as the derived one). Not yet implemented — #303 blocks #197. |
+| System-wide seat cap ceiling (25) | `test_create_above_system_wide_seat_cap_is_rejected`, `test_write_above_system_wide_seat_cap_is_rejected` | **Resolved in [#303](https://github.com/dahagag/odoo/issues/303).** `SeatsTotalSchema` (`stack/packages/domain/src/index.ts`) caps `seatsTotal` at `SYSTEM_WIDE_SEAT_CAP = 25`, matching Odoo's constraint value. |
+| Auto-slugified DNS label default | `test_dns_subdomain_label_defaults_to_a_slugified_name` | **Resolved in [#303](https://github.com/dahagag/odoo/issues/303).** `createOrg` (`record.ts`) now derives `dnsSubdomainLabel` via `slugifyDnsLabel` when the caller omits one, running the derived value through the same uniqueness-reservation transaction as an explicit one. |
 
 ## Resolved: system-wide seat cap and DNS label default (tracked in #303)
 
 Two rows above were left open at first, because this checklist could not trace them to an
-explicit "deferred to Odoo" decision the way the batch-transaction and ACL gaps were. Both are
-now decided:
+explicit "deferred to Odoo" decision the way the batch-transaction and ACL gaps were. Both have
+since landed in [#303](https://github.com/dahagag/odoo/issues/303):
 
 1. **System-wide seat cap (25).** Odoo enforces `seat_cap <= 25` on both create and write
-   (`SYSTEM_WIDE_SEAT_CAP`, `trial_org.py:13`). No equivalent ceiling exists in the stack's Zod
-   schemas or `record.ts` today — only per-org positivity is checked. **Decision: the stack
-   should enforce the same ceiling itself**, not leave it to a caller-side check. Tracked in
-   [#303](https://github.com/dahagag/odoo/issues/303).
+   (`SYSTEM_WIDE_SEAT_CAP`, `trial_org.py:13`). The stack now enforces the same ceiling via
+   `SeatsTotalSchema` (`stack/packages/domain/src/index.ts`, exporting `SYSTEM_WIDE_SEAT_CAP =
+   25`), applied everywhere `seatsTotal` is validated (`CreateOrgRequestSchema`, `OrgSchema`,
+   `OrgRegistrationSchema` in `stack/apps/api/src/openapi/registry.ts`).
 2. **Auto-slugified DNS label default.** Odoo defaults `dns_subdomain_label` to a slugified Org
    Name when the caller doesn't supply one, but still honours an explicit value when given. The
-   stack's `createOrg` today requires the caller to always supply `dnsSubdomainLabel`. **Decision:
-   the stack should gain the same slugify-from-name default when the label is omitted, while
-   still accepting and honouring an explicit caller-supplied label** (run through the same
-   uniqueness-reservation transaction either way — an auto-derived label gets no bypass on the
-   availability check). Tracked in [#303](https://github.com/dahagag/odoo/issues/303).
+   stack's `createOrg` (`stack/apps/api/src/org/record.ts`) now does the same: `dnsSubdomainLabel`
+   is optional on `CreateOrgInput`/`CreateOrgRequestSchema`, and an omitted value is derived via
+   `slugifyDnsLabel` (`stack/packages/domain/src/index.ts`) — the same RFC1123 rules
+   `DnsSubdomainLabelSchema` enforces. An explicit value is still used as-is, and either path runs
+   through the same `dnslabel#<label>` uniqueness-reservation transaction, so an auto-derived
+   label gets no bypass on the availability check.
 
-Neither blocks #283 itself — they were the named, checkable gaps this ticket exists to surface,
-not silent omissions, and #303 (blocked by #283, blocking #197) now carries them to closure.
+Neither blocked #283 itself — they were the named, checkable gaps that ticket existed to surface,
+not silent omissions — and #303 (blocked by #283, blocking #197) has now carried them to closure.
 
 ## Scope check: #196's Out of Scope, confirmed untouched
 

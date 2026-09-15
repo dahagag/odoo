@@ -13,6 +13,7 @@ import {
   DnsLabelImmutableError,
   DnsLabelInUseError,
   IllegalTransitionError,
+  InvalidDnsLabelError,
   OrgNotFoundError,
   ProvisionerFailedError,
 } from './org/errors';
@@ -54,6 +55,10 @@ function knownOrgErrorResponse(error: unknown, reply: FastifyReply): ReturnType<
   if (error instanceof DnsLabelInUseError) {
     reply.code(409);
     return problem(409, 'dnsSubdomainLabel already in use', error.message);
+  }
+  if (error instanceof InvalidDnsLabelError) {
+    reply.code(400);
+    return problem(400, 'Could not derive a valid dnsSubdomainLabel from name', error.message);
   }
   if (error instanceof DnsLabelImmutableError) {
     reply.code(409);

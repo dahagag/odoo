@@ -91,6 +91,47 @@ describe('POST /v1/admin/orgs (this ticket\'s Acceptance Criteria)', () => {
 
     expect(response.statusCode).toBe(409);
   });
+
+  it('rejects seatsTotal above the system-wide seat cap of 25 (#303, matching SYSTEM_WIDE_SEAT_CAP)', async () => {
+    const { app } = buildTestServer();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/orgs',
+      headers: { ...ADMIN_HEADERS, 'idempotency-key': 'create-seatcap-1' },
+      payload: createPayload({ seatsTotal: 26 }),
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('accepts seatsTotal at the system-wide seat cap of 25', async () => {
+    const { app } = buildTestServer();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/orgs',
+      headers: { ...ADMIN_HEADERS, 'idempotency-key': 'create-seatcap-2' },
+      payload: createPayload({ seatsTotal: 25 }),
+    });
+
+    expect(response.statusCode).toBe(201);
+  });
+
+  it('derives dnsSubdomainLabel from name when omitted from the request body (#303)', async () => {
+    const { app } = buildTestServer();
+    const { dnsSubdomainLabel: _dnsSubdomainLabel, ...payload } = createPayload({ name: 'Acme Slugify Co' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/orgs',
+      headers: { ...ADMIN_HEADERS, 'idempotency-key': 'create-slugify-1' },
+      payload,
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({ dnsSubdomainLabel: 'acme-slugify-co' });
+  });
 });
 
 describe('PATCH /v1/admin/orgs/:orgId and lifecycle actions (this ticket\'s Acceptance Criteria)', () => {
