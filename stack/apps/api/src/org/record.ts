@@ -2,11 +2,13 @@ import { randomUUID } from 'node:crypto';
 import type { AwsGateway, QueryInput } from '@stack/aws-gateway';
 import { ConditionalCheckFailedError, TransactionCanceledError } from '@stack/aws-gateway';
 import type { InviteType, OrgAction, OrgState, OrgType } from '@stack/domain';
+import { DnsSubdomainLabelSchema, slugifyDnsLabel } from '@stack/domain';
 import {
   ConcurrentWriteError,
   DnsLabelImmutableError,
   DnsLabelInUseError,
   IllegalTransitionError,
+  InvalidDnsLabelError,
   OrgNotFoundError,
   ProvisionerFailedError,
 } from './errors';
@@ -165,7 +167,10 @@ export interface CreateOrgInput {
   name: string;
   domain: string;
   seatsTotal: number;
-  dnsSubdomainLabel: string;
+  /** Defaults to a slugified `name` when omitted (`_slugify_dns_label`,
+   * `custom_addons/hosting_admin/models/trial_org.py`'s own `create()` default) - an explicit
+   * value is always used as-is, never overridden. */
+  dnsSubdomainLabel?: string;
   /** Defaults to `targeted` (`hosting.trial.org.invite_type`'s own default), matching how most
    * Trial Orgs are issued for a specific known prospect rather than shared as an open link. */
   inviteType?: InviteType;
@@ -189,6 +194,18 @@ export async function createOrg(gateway: AwsGateway, input: CreateOrgInput, conf
   const expiryDate = input.type === 'trial'
     ? new Date(Date.now() + config.trialDurationDays * 24 * 60 * 60 * 1000).toISOString()
     : undefined;
+  // An explicit label is always used as-is; an omitted one is derived from `name` the same way
+  // `_slugify_dns_label` (`custom_addons/hosting_admin/models/trial_org.py`) does. Either way
+  // this same value is what the reservation transaction below checks for availability - an
+  // auto-derived label gets no bypass of that uniqueness guard.
+  const dnsSubdomainLabel = input.dnsSubdomainLabel ?? slugifyDnsLabel(input.name);
+  if (!input.dnsSubdomainLabel && !DnsSubdomainLabelSchema.safeParse(dnsSubdomainLabel).success) {
+    // An explicit label already gets this same shape guarantee at the API boundary
+    // (`CreateOrgRequestSchema`); a derived one needs the check here since nothing else in this
+    // path validates it - mirrors `_check_dns_subdomain_label`'s constraint catching a bad
+    // derived value (e.g. a punctuation-only `name`) the same way it catches a bad explicit one.
+    throw new InvalidDnsLabelError(input.name, dnsSubdomainLabel);
+  }
 
   const org: OrgRecord = {
     orgId,
@@ -197,7 +214,7 @@ export async function createOrg(gateway: AwsGateway, input: CreateOrgInput, conf
     // Region *selection* is explicitly out of scope until #207 (#196: "Nothing selects it
     // yet.") - every org gets the configured default, with no caller-supplied override.
     region: config.defaultRegion,
-    dnsSubdomainLabel: input.dnsSubdomainLabel,
+    dnsSubdomainLabel,
     name: input.name,
     domain: input.domain,
     seatsUsed: 0,
@@ -220,7 +237,7 @@ export async function createOrg(gateway: AwsGateway, input: CreateOrgInput, conf
         {
           put: {
             table: ORGS_TABLE,
-            item: { pk: dnsLabelPk(input.dnsSubdomainLabel), orgId },
+            item: { pk: dnsLabelPk(dnsSubdomainLabel), orgId },
             condition: { type: 'attribute_not_exists', attribute: 'pk' },
           },
         },
@@ -228,7 +245,7 @@ export async function createOrg(gateway: AwsGateway, input: CreateOrgInput, conf
     });
   } catch (error) {
     if (error instanceof TransactionCanceledError && error.cancellationReasons[1]) {
-      throw new DnsLabelInUseError(input.dnsSubdomainLabel);
+      throw new DnsLabelInUseError(dnsSubdomainLabel);
     }
     throw error;
   }

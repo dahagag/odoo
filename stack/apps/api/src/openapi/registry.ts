@@ -9,6 +9,7 @@ import {
   OrgStateSchema,
   OrgTypeSchema,
   ProblemDetailsSchema,
+  SeatsTotalSchema,
 } from '@stack/domain';
 import { z } from 'zod';
 
@@ -60,7 +61,7 @@ export const OrgRegistrationSchema = z
     name: z.string(),
     domain: z.string(),
     seatsUsed: z.number().int().nonnegative(),
-    seatsTotal: z.number().int().positive(),
+    seatsTotal: SeatsTotalSchema,
     expiryDate: z.string().datetime().optional().openapi({
       description: 'Absent for a Client Org, which has no Auto-Destroy expiry.',
     }),
@@ -117,7 +118,7 @@ export const OrgSchema = z
     name: z.string(),
     domain: z.string(),
     seatsUsed: z.number().int().nonnegative(),
-    seatsTotal: z.number().int().positive(),
+    seatsTotal: SeatsTotalSchema,
     inviteType: InviteTypeSchema,
     opportunityId: z.string().optional(),
     expiryDate: z.string().datetime().optional().openapi({
@@ -149,8 +150,10 @@ export const CreateOrgRequestSchema = z
     type: OrgTypeSchema,
     name: z.string().min(1),
     domain: z.string().min(1),
-    seatsTotal: z.number().int().positive(),
-    dnsSubdomainLabel: DnsSubdomainLabelSchema,
+    seatsTotal: SeatsTotalSchema,
+    dnsSubdomainLabel: DnsSubdomainLabelSchema.optional().openapi({
+      description: 'Defaults to a slugified `name` when omitted.',
+    }),
     inviteType: InviteTypeSchema.optional().openapi({
       description: "Defaults to 'targeted' when omitted.",
     }),

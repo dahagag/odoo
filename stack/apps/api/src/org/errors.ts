@@ -10,6 +10,20 @@ export class OrgNotFoundError extends Error {
   }
 }
 
+/** Raised by `record.ts`'s `createOrg` when `dnsSubdomainLabel` was omitted and the label
+ * slugified from `name` (`slugifyDnsLabel`, `@stack/domain`) doesn't itself satisfy
+ * `DnsSubdomainLabelSchema` - e.g. a punctuation-only `name` slugifies to an empty string.
+ * Mirrors `_check_dns_subdomain_label`'s own `ValidationError`
+ * (`custom_addons/hosting_admin/models/trial_org.py`), which catches a bad *derived* value the
+ * same way it catches a bad explicit one - an explicit value gets this same shape guarantee via
+ * `CreateOrgRequestSchema` at the API boundary. */
+export class InvalidDnsLabelError extends Error {
+  constructor(readonly orgName: string, readonly derivedLabel: string) {
+    super(`Could not derive a valid dnsSubdomainLabel from name '${orgName}' (got '${derivedLabel}')`);
+    this.name = 'InvalidDnsLabelError';
+  }
+}
+
 export class DnsLabelInUseError extends Error {
   constructor(readonly dnsSubdomainLabel: string) {
     super(`dnsSubdomainLabel already in use: ${dnsSubdomainLabel}`);
