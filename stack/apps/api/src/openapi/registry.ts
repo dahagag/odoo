@@ -129,6 +129,12 @@ export const OrgSchema = z
     pendingTofuModuleGitSha: z.string().optional(),
     lastJobId: z.string().optional(),
     lastJobAction: OrgActionSchema.optional(),
+    lastJobStatus: z.enum(['running', 'succeeded', 'failed']).optional().openapi({
+      description: "That job's own outcome (#281) - settled by check-status (#298) once the underlying execution reaches a terminal status.",
+    }),
+    lastJobError: z.string().optional().openapi({
+      description: "A clear, actionable reason for lastJobStatus's most recent 'failed' outcome; blank whenever the last observed outcome wasn't a failure.",
+    }),
   })
   .openapi('Org');
 
@@ -209,6 +215,28 @@ for (const action of ['issue', 'suspend', 'wake', 'destroy'] as const) {
     },
   });
 }
+
+registry.registerPath({
+  method: 'post',
+  path: `/${API_VERSION}/admin/orgs/{orgId}/check-status`,
+  summary: "Poll the org's currently-running job to a terminal status, if it has one",
+  description:
+    'Production entry point for `Provisioner.checkStatus` (#298, #281): a safe no-op when the ' +
+    "org isn't currently running a job. Reachable per-org by an external scheduler that already " +
+    'knows which orgs have a job in flight.',
+  tags: ['admin'],
+  security: [{ sigv4: [] }],
+  request: {
+    params: z.object({ orgId: OrgIdSchema }),
+    headers: idempotencyKeyHeaderSchema,
+  },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: OrgSchema } } },
+    401: problemResponse('Missing admin principal'),
+    404: problemResponse('No such org'),
+    409: stillProcessingResponse('An Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)'),
+  },
+});
 
 const HealthSchema = z.object({ status: z.literal('ok') }).openapi('Health');
 const ReadinessSchema = z

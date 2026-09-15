@@ -250,6 +250,22 @@ const TRANSITIONS: Record<OrgAction, { from: OrgState[]; to: OrgState }> = {
 };
 
 /**
+ * Polls `orgId`'s currently-running job to a terminal status, if it has one (#298: production
+ * entry point for `Provisioner.checkStatus`, #281). Re-reads the record after the call so a
+ * caller observes whatever `checkStatus` actually wrote (status promotion on success, failure
+ * reason on failure) rather than the pre-poll snapshot - `checkStatus` itself is a safe no-op
+ * when there's nothing running to check (#281), so this needs no pre-filtering either.
+ */
+export async function checkOrgStatus(gateway: AwsGateway, provisioner: Provisioner, orgId: string): Promise<OrgRecord> {
+  const org = await getOrgRecord(gateway, orgId);
+  if (!org) throw new OrgNotFoundError(orgId);
+
+  await provisioner.checkStatus(org);
+
+  return (await getOrgRecord(gateway, orgId)) ?? org;
+}
+
+/**
  * Applies one lifecycle action (this ticket's What to build/Acceptance Criteria).
  *
  * Ordering matters and is deliberate: the provisioner is called *before* the conditional state

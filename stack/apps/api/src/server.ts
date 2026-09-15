@@ -17,7 +17,7 @@ import {
   ProvisionerFailedError,
 } from './org/errors';
 import type { Provisioner } from './org/provisioner';
-import { applyTransition, createOrg, updateDnsSubdomainLabel } from './org/record';
+import { applyTransition, checkOrgStatus, createOrg, updateDnsSubdomainLabel } from './org/record';
 import { readOrgRegistration } from './orgRegistration';
 import { problem } from './problem';
 
@@ -232,6 +232,32 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       },
     );
   }
+
+  // Production entry point for `Provisioner.checkStatus` (#298, #281): reachable by an external
+  // scheduler for each org it knows has a job running - a per-org poll rather than a batch sweep,
+  // this ticket's own "stay decoupled from #282 unless the chosen design genuinely needs the same
+  // kind of query" - since checkStatus is a safe no-op on any org that isn't actually running one.
+  app.post<{ Params: { orgId: string } }>(
+    '/v1/admin/orgs/:orgId/check-status',
+    { preHandler: requireAdminPrincipal },
+    async (request, reply) => {
+      const orgId = parseOrgIdParam(request.params.orgId, reply);
+      if (!orgId) return undefined;
+
+      try {
+        const record = await withIdempotency(deps.idempotencyStore, idempotencyContext(request), async () => {
+          const org = await checkOrgStatus(deps.awsGateway, deps.provisioner, orgId);
+          return { status: 200, body: OrgSchema.parse(org) };
+        });
+        reply.code(record.status);
+        return record.body;
+      } catch (error) {
+        const known = knownOrgErrorResponse(error, reply);
+        if (known) return known;
+        throw error;
+      }
+    },
+  );
 
   return app;
 }
