@@ -11,6 +11,28 @@ on:
   # push event, so they resolve to skipped rather than erroring.
   push:
     branches: [dev/19.0, main/19.0]
+  # Issue #218: a manual rollback/redeploy of an already-published release tag has no other
+  # trigger path — the ordinary push path always resolves the *latest* v* tag
+  # (resolve-release-tag), and the deploy roles' trust policies deliberately trust only these
+  # GitHub OIDC identities, not any human/org-admin credential (confirmed live: an org
+  # administrator gets AccessDenied assuming platform-administration-stack-deploy directly). This
+  # keeps rollback auditable and inside the same OIDC-scoped role boundary as an ordinary deploy,
+  # rather than a break-glass IAM change or a human bypassing Terraform entirely.
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to redeploy an already-published release tag to.
+        required: true
+        type: choice
+        options: [staging, production]
+      release_tag:
+        description: >-
+          Already-published release tag to deploy, e.g. v1.0.0 — must already exist in the
+          agentic-erp/administration-stack-api ECR repository under this exact tag. This does not
+          build or retag anything; it only applies infra/platform with this tag, same as an
+          ordinary deploy's final step.
+        required: true
+        type: string
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -700,12 +722,20 @@ jobs:
       cancel-in-progress: false
     # Same infra-checks gate as infra-apply above — a merge whose own infra-checks failed must
     # never reach a real ECR retag or `tofu apply` (issue #216's acceptance criteria: "a failed
-    # step stops the workflow rather than leaving a partial deploy").
+    # step stops the workflow rather than leaving a partial deploy"). For a workflow_dispatch
+    # rollback this still resolves — `changes`' paths-filter step has nothing to diff against a
+    # manual dispatch so every `*_relevant` output stays false, `infra-checks`' steps (each gated
+    # on one of those outputs) all skip, and a job with every step skipped is still `success` — the
+    # same "docs-only PR" shape this repo already relies on elsewhere in this file. Deliberately
+    # not skipped outright: deploying old, already-tested content still shouldn't run alongside a
+    # concurrently *failing* infra-checks run for unrelated reasons.
     needs: [changes, infra-checks]
     # dev/19.0 hardcoded, matching infra-apply's own branch case statement above — this repo's
     # branch names are literal strings in ci.yml throughout (on.push.branches, infra-apply's role
-    # selection), never a repository variable.
-    if: github.event_name == 'push' && github.ref_name == 'dev/19.0'
+    # selection), never a repository variable. The workflow_dispatch arm (issue #218) is the only
+    # way to redeploy an *older* already-published release tag — see the `on.workflow_dispatch`
+    # comment above for why this needs its own trigger rather than reusing the push path.
+    if: (github.event_name == 'push' && github.ref_name == 'dev/19.0') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -714,9 +744,21 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/resolve-release-tag
         # This is "the current release's derived version" issue #216's acceptance criteria
-        # deploys under.
+        # deploys under. Only for the ordinary push path — a workflow_dispatch run supplies its
+        # own explicit tag below instead of resolving "latest" (issue #218).
+        id: resolve_tag
+        if: github.event_name == 'push'
+      - name: Resolve which release tag this run deploys
+        # Merges resolve_tag's output (push) with the explicit workflow_dispatch input (manual
+        # rollback/redeploy) into one place every later step reads, so nothing downstream needs to
+        # know which trigger fired this run.
         id: tag
+        run: echo "tag=${{ steps.resolve_tag.outputs.tag || github.event.inputs.release_tag }}" >> "$GITHUB_OUTPUT"
       - name: Compute the content-hash tag build-stack-image published this commit's image under
+        # Only meaningful for the push path — a workflow_dispatch rollback re-applies a tag that
+        # already exists in ECR (retag-administration-stack-image below never runs for it) and
+        # needs no content-hash lookup.
+        if: github.event_name == 'push'
         id: content_tag
         run: echo "tag=${{ hashFiles('stack/**') }}" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v4
@@ -727,7 +769,10 @@ jobs:
         # Issue #218: dev/19.0 and main/19.0 both retag+apply the same infra/platform instance —
         # a delayed staging run for an older commit must not overwrite a release tag a faster
         # production run for a newer commit already published. See the action's own description.
+        # Push-triggered only: a workflow_dispatch rollback is a deliberate request to deploy
+        # older content, which this ancestry check would otherwise always flag as stale.
         id: guard
+        if: github.event_name == 'push'
         with:
           platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
           aws_region: ${{ vars.AWS_REGION }}
@@ -737,18 +782,20 @@ jobs:
         # ecr_push role) already pushed under its content-hash tag — this only adds a second tag
         # to the same image manifest (staging_deploy's own narrow RetagAdministrationStackImage
         # grant, infra/cicd/oidc.tf), so the image a staging deploy ships is always something a PR
-        # already tested.
-        if: steps.guard.outputs.stale != 'true'
+        # already tested. Push-only: a workflow_dispatch rollback's release tag already points at
+        # the right manifest (retagging never moves an existing tag, per this action's own
+        # idempotency), so there is nothing to retag.
+        if: github.event_name == 'push' && steps.guard.outputs.stale != 'true'
         with:
           content_hash_tag: ${{ steps.content_tag.outputs.tag }}
           release_tag: ${{ steps.tag.outputs.tag }}
           platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
       - uses: opentofu/setup-opentofu@v1
-        if: steps.guard.outputs.stale != 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
         with:
           tofu_version: 1.8.5
       - uses: ./.github/actions/infra-tofu
-        if: steps.guard.outputs.stale != 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
         with:
           dir: infra/platform
           command: apply
@@ -767,14 +814,19 @@ jobs:
           platform_assume_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
       - uses: ./.github/actions/record-deployed-commit
         # Only after a successful apply — records this run's commit as "currently deployed" so a
-        # later, still-in-flight job for an older commit sees it and skips (issue #218).
-        if: steps.guard.outputs.stale != 'true'
+        # later, still-in-flight job for an older commit sees it and skips (issue #218). Also runs
+        # for a workflow_dispatch rollback, recording the *dispatched ref's* commit (not the old
+        # release's original commit) — a deliberate choice (see docs/release-process.md's Rollback
+        # section): the next ordinary push still resolves "latest tag" regardless, so the rollback
+        # is a temporary mitigation, and this keeps that next push from being wrongly flagged
+        # stale against a rollback that intentionally deployed older content.
+        if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
         with:
           platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
           aws_region: ${{ vars.AWS_REGION }}
           commit_sha: ${{ github.sha }}
       - name: Record which release is now running in staging
-        if: steps.guard.outputs.stale != 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
         env:
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
@@ -783,7 +835,7 @@ jobs:
             echo "Release \`$RELEASE_TAG\` is now running in the administration-stack API's ECS service (\`aws ecs describe-services --cluster platform --services platform-administration-stack-api --include TAGS\`)."
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Record that this run was skipped as stale
-        if: steps.guard.outputs.stale == 'true'
+        if: github.event_name == 'push' && steps.guard.outputs.stale == 'true'
         run: |
           {
             echo "## Staging deploy skipped (issue #218 release-order guard)"
@@ -809,8 +861,9 @@ jobs:
     needs: [changes, infra-checks]
     # main/19.0 hardcoded, matching infra-apply's own branch case statement above — this repo's
     # branch names are literal strings in ci.yml throughout (on.push.branches, infra-apply's role
-    # selection), never a repository variable.
-    if: github.event_name == 'push' && github.ref_name == 'main/19.0'
+    # selection), never a repository variable. See deploy-administration-stack-staging's identical
+    # `needs`/workflow_dispatch comments above for why both still apply here unchanged.
+    if: (github.event_name == 'push' && github.ref_name == 'main/19.0') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -820,9 +873,15 @@ jobs:
       - uses: ./.github/actions/resolve-release-tag
         # This is "the current release's derived version" issue #217's acceptance criteria
         # deploys under — same resolution staging uses, since this repo cuts one release tag at a
-        # time off its release branches.
+        # time off its release branches. Only for the ordinary push path — see staging's identical
+        # resolve_tag/tag comment above (issue #218).
+        id: resolve_tag
+        if: github.event_name == 'push'
+      - name: Resolve which release tag this run deploys
         id: tag
+        run: echo "tag=${{ steps.resolve_tag.outputs.tag || github.event.inputs.release_tag }}" >> "$GITHUB_OUTPUT"
       - name: Compute the content-hash tag build-stack-image published this commit's image under
+        if: github.event_name == 'push'
         id: content_tag
         run: echo "tag=${{ hashFiles('stack/**') }}" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v4
@@ -833,7 +892,9 @@ jobs:
         # Issue #218: dev/19.0 and main/19.0 both retag+apply the same infra/platform instance —
         # a delayed production run for an older commit must not overwrite a release tag a faster
         # staging run for a newer commit already published (same shared guard staging uses above).
+        # Push-triggered only — see staging's identical comment above.
         id: guard
+        if: github.event_name == 'push'
         with:
           platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
           aws_region: ${{ vars.AWS_REGION }}
@@ -844,18 +905,18 @@ jobs:
         # to the same image manifest (production_deploy's own narrow RetagAdministrationStackImage
         # grant, infra/cicd/oidc.tf), so the image a production deploy ships is always something a
         # PR already tested, and staging already deployed at least once (it merges to dev/19.0
-        # first).
-        if: steps.guard.outputs.stale != 'true'
+        # first). Push-only — see staging's identical comment above.
+        if: github.event_name == 'push' && steps.guard.outputs.stale != 'true'
         with:
           content_hash_tag: ${{ steps.content_tag.outputs.tag }}
           release_tag: ${{ steps.tag.outputs.tag }}
           platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
       - uses: opentofu/setup-opentofu@v1
-        if: steps.guard.outputs.stale != 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
         with:
           tofu_version: 1.8.5
       - uses: ./.github/actions/infra-tofu
-        if: steps.guard.outputs.stale != 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
         with:
           dir: infra/platform
           command: apply
@@ -876,14 +937,15 @@ jobs:
           platform_assume_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
       - uses: ./.github/actions/record-deployed-commit
         # Only after a successful apply — records this run's commit as "currently deployed" so a
-        # later, still-in-flight job for an older commit sees it and skips (issue #218).
-        if: steps.guard.outputs.stale != 'true'
+        # later, still-in-flight job for an older commit sees it and skips (issue #218). Also runs
+        # for a workflow_dispatch rollback — see staging's identical comment above.
+        if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
         with:
           platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
           aws_region: ${{ vars.AWS_REGION }}
           commit_sha: ${{ github.sha }}
       - name: Record which release is now running in production
-        if: steps.guard.outputs.stale != 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
         env:
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
@@ -892,7 +954,7 @@ jobs:
             echo "Release \`$RELEASE_TAG\` is now running in the administration-stack API's ECS service (\`aws ecs describe-services --cluster platform --services platform-administration-stack-api --include TAGS\`)."
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Record that this run was skipped as stale
-        if: steps.guard.outputs.stale == 'true'
+        if: github.event_name == 'push' && steps.guard.outputs.stale == 'true'
         run: |
           {
             echo "## Production deploy skipped (issue #218 release-order guard)"

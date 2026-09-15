@@ -90,32 +90,43 @@ Rolling back means redeploying an **older** release tag's already-published imag
 running ECS service. This is *not* something the ordinary push-triggered pipeline does on its
 own — `resolve-release-tag` always resolves the **latest** `v*` tag by version sort, so pushing
 an older tag, or re-running a workflow for an old commit, does not make an older release "current"
-again from CI's point of view. A rollback is therefore a deliberate, manual operation:
+again from CI's point of view.
 
-1. Assume the AWS role chain that reaches the Platform Account (the same chain
-   `platform_administration_stack_deploy_role_arn` describes for CI — an operator with
-   organization access typically has this via their own admin profile, assuming into
-   `platform-administration-stack-deploy`).
-2. Confirm the target release's image is still present under its release tag in ECR (it always
+**There is no human-executable path to this, by design, and that's deliberate.** An early draft
+of this document described "assume the AWS role chain yourself" — confirmed live to be wrong:
+`platform-administration-stack-deploy`'s trust policy only trusts the `staging_deploy`/
+`production_deploy` GitHub OIDC identities, not any human or org-admin credential:
+```
+$ aws sts assume-role --role-arn arn:aws:iam::<platform-account-id>:role/platform-administration-stack-deploy ...
+AccessDenied: ... is not authorized to perform: sts:AssumeRole on resource: .../platform-administration-stack-deploy
+```
+Rollback therefore goes through CI, the same as an ordinary deploy — `ci.yml`'s
+`workflow_dispatch` trigger (issue #218), which reuses the same branch-scoped OIDC roles rather
+than widening any trust policy or bypassing Terraform:
+
+1. Confirm the target release's image is still present under its release tag in ECR (it always
    is — `retag-administration-stack-image` never deletes a tag, it only adds new ones):
    ```bash
    aws ecr describe-images --registry-id <platform-account-id> \
      --repository-name agentic-erp/administration-stack-api --image-ids imageTag=v1.2.0
    ```
-3. Apply `infra/platform` directly with that older tag:
+2. Dispatch the workflow against the target environment with that tag:
    ```bash
-   cd infra/platform
-   tofu apply -var administration_stack_image_tag=v1.2.0 ...  # same backend-config/vars CI uses
+   gh workflow run ci.yml --ref dev/19.0 -f environment=staging -f release_tag=v1.2.0
+   # or: -f environment=production (ref main/19.0) for a production rollback
    ```
-4. Immediately update the release-order guard's recorded commit (see below) to the commit that
-   release tag was originally cut from — otherwise the *next* ordinary push-triggered deploy has
-   nothing to compare against that reflects the rollback, and could resolve "ahead" against a
-   stale recorded commit and proceed when it shouldn't have been blocked. Record it the same way
-   the deploy jobs do, from Platform Account credentials:
-   ```bash
-   aws ssm put-parameter --name /platform-administration-stack-api/deployed-commit \
-     --type String --overwrite --value <commit-sha-v1.2.0-was-cut-from>
-   ```
+   This runs `deploy-administration-stack-staging`/`-production` exactly as an ordinary push
+   would, except it skips `resolve-release-tag` (uses the given tag directly),
+   `check-release-order` (a deliberate rollback is expected to be "behind" by commit ancestry —
+   the check would otherwise always flag it stale), and `retag-administration-stack-image` (the
+   tag already exists and already points at the right manifest) — going straight to `tofu apply`
+   with that tag, then `record-deployed-commit`.
+3. **The rollback is a temporary mitigation, not a new steady state.** `record-deployed-commit`
+   records the *dispatched ref's* commit (e.g. `dev/19.0`'s current tip), not the old release's
+   original commit — so the very next ordinary push to that branch still resolves whatever the
+   latest `v*` tag is and deploys it, regardless of the rollback. If the newer release is broken,
+   fix forward (cut a new patch release) or keep the rollback in place by not merging anything
+   further until that's done — the pipeline does not "stick" to a rolled-back release on its own.
 
 **Caveat — migrations are not reversible by this pipeline.** If the release being rolled back
 *past* included an Odoo migration script (a major manifest-version bump, per ADR-0004), rolling
@@ -174,6 +185,8 @@ Both jobs now call `.github/actions/check-release-order` before retagging/applyi
   step-summary line explaining why it skipped. This matches the "a failed step stops the
   workflow" framing from #216/#217's own acceptance criteria — a stale race outcome is expected,
   not a bug, so it should not read as a red X.
-- A manual rollback (above) intentionally bypasses this guard by writing the parameter directly —
-  the guard exists to catch an *accidental* race between two automatic pipeline runs, not to
-  block a deliberate operator action.
+- A manual rollback (above), triggered via `workflow_dispatch`, intentionally skips
+  `check-release-order` entirely rather than running it and overriding the result — the guard
+  exists to catch an *accidental* race between two automatic pipeline runs, and a deliberate
+  rollback is by definition deploying older content, which the ancestry check would otherwise
+  always (correctly, for the automatic case) flag as stale.
