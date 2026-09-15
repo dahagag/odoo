@@ -226,6 +226,17 @@ describe('InMemoryAwsGateway dynamoDb', () => {
 
     expect(result.items.map((item) => item.sk)).toEqual(['org#1']);
   });
+
+  it('rejects a query passing both sortKeyPrefix and sortKeyAtMost (#282 code review: no silent clobber)', async () => {
+    const gateway = new InMemoryAwsGateway();
+
+    await expect(gateway.dynamoDb.query({
+      table: 'orgs',
+      partitionKey: { name: 'pk', value: 'x' },
+      sortKeyPrefix: { name: 'sk', value: 'a' },
+      sortKeyAtMost: { name: 'sk', value: 'b' },
+    })).rejects.toThrow('mutually exclusive');
+  });
 });
 
 describe('InMemoryAwsGateway stepFunctions', () => {

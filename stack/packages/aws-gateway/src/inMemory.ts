@@ -100,6 +100,12 @@ class InMemoryDynamoDbGateway implements DynamoDbGateway {
   }
 
   async query(input: QueryInput): Promise<QueryResult> {
+    // A real KeyConditionExpression has exactly one sort-key condition - passing both would
+    // silently mean "whichever `compileCondition`/this fake happens to build last wins" instead
+    // of failing loudly (#282 code review).
+    if (input.sortKeyPrefix && input.sortKeyAtMost) {
+      throw new Error('QueryInput: sortKeyPrefix and sortKeyAtMost are mutually exclusive');
+    }
     const table = this.table(input.table);
     let items = [...table.values()].filter(
       (item) => item[input.partitionKey.name] === input.partitionKey.value,
