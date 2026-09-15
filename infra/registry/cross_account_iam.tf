@@ -354,6 +354,13 @@ data "aws_iam_policy_document" "platform_administration_stack_deploy" {
     actions = [
       "ssm:GetParameter",
       "ssm:PutParameter",
+      # Confirmed live (issue #218's own first bootstrap apply): infra/platform's
+      # aws_ssm_parameter carries `tags = local.tags`, so the AWS provider's create/refresh cycle
+      # also calls these three — a bare GetParameter/PutParameter grant fails with AccessDenied on
+      # ssm:AddTagsToResource the moment Terraform tries to apply that tag set.
+      "ssm:AddTagsToResource",
+      "ssm:RemoveTagsFromResource",
+      "ssm:ListTagsForResource",
     ]
     resources = [local.administration_stack_deployed_commit_parameter_arn]
   }

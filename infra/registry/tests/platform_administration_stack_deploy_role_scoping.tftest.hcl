@@ -113,7 +113,10 @@ run "verify_platform_administration_stack_deploy_trust_and_permissions" {
     condition = anytrue([
       for statement in jsondecode(data.aws_iam_policy_document.platform_administration_stack_deploy.json).Statement :
       statement.Sid == "ManageAdministrationStackDeployedCommitParameter"
-      && toset(flatten([statement.Action])) == toset(["ssm:GetParameter", "ssm:PutParameter"])
+      && toset(flatten([statement.Action])) == toset([
+        "ssm:GetParameter", "ssm:PutParameter",
+        "ssm:AddTagsToResource", "ssm:RemoveTagsFromResource", "ssm:ListTagsForResource",
+      ])
       && toset(flatten([statement.Resource])) == toset([
         "arn:aws:ssm:us-east-1:333333333333:parameter/platform-administration-stack-api/deployed-commit",
       ])
