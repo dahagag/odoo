@@ -241,6 +241,36 @@ describe('checkStatus (#281)', () => {
     expect(updated?.tofuModuleGitSha).toBe(FULL_CONFIG.tofuModuleGitSha);
   });
 
+  it('discards a stale poll rather than clobbering a newer job that has since replaced lastExecutionArn (CodeRabbit, PR #297)', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await makeOrg(gateway);
+    const provisioner = new AwsProvisioner(gateway, FULL_CONFIG);
+    await provisioner.issue(org, 'stale-job');
+    const staleSnapshot = (await getOrgRecord(gateway, org.orgId))!;
+    const staleExecutionArn = staleSnapshot.lastExecutionArn!;
+
+    // A concurrent applyTransition starts a fresh job on the same org, replacing
+    // lastExecutionArn - the stale poll below is still holding the org record as it stood
+    // *before* this happened.
+    await provisioner.issue(org, 'fresh-job');
+    const freshExecutionArn = (await getOrgRecord(gateway, org.orgId))?.lastExecutionArn;
+    expect(freshExecutionArn).not.toBe(staleExecutionArn);
+    await gateway.dynamoDb.updateItem({
+      table: 'orgs',
+      key: { pk: `org#${org.orgId}` },
+      set: { lastJobStatus: 'running' },
+    });
+    gateway.completeExecution(staleExecutionArn, 'SUCCEEDED');
+
+    await provisioner.checkStatus(staleSnapshot);
+
+    // The stale poll must not have marked the (still-running) fresh job succeeded, nor promoted
+    // deployment fields from the stale job's own pending values.
+    const updated = await getOrgRecord(gateway, org.orgId);
+    expect(updated?.lastExecutionArn).toBe(freshExecutionArn);
+    expect(updated?.lastJobStatus).toBe('running');
+  });
+
   it('surfaces a clear failure reason and does not mark the job running', async () => {
     const gateway = new InMemoryAwsGateway();
     const org = await makeOrg(gateway);

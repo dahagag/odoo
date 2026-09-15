@@ -1,4 +1,4 @@
-import { ExecutionAlreadyExistsError } from '@stack/aws-gateway';
+import { ConditionalCheckFailedError, ExecutionAlreadyExistsError } from '@stack/aws-gateway';
 import type { AwsGateway, DescribeExecutionResult, ExecutionHistoryEvent } from '@stack/aws-gateway';
 import type { OrgAction } from '@stack/domain';
 import type { Env } from '../config/env';
@@ -143,32 +143,44 @@ export class AwsProvisioner implements Provisioner {
     if (execution.status === 'RUNNING') return;
 
     if (execution.status === 'SUCCEEDED') {
-      await this.gateway.dynamoDb.updateItem({
-        table: ORGS_TABLE,
-        key: { pk: orgPk(org.orgId) },
-        // Promotes the pending Deployment Version (ADR-0024) staged by issue() onto the
-        // recorded/audit fields - a no-op re-copy for a suspend/wake/destroy success, since only
-        // issue() ever changes the pending fields. compact() drops either key entirely rather
-        // than clobbering an already-recorded version with `undefined` for an org that reached
-        // 'active' under StubProvisioner before this Provisioner ever ran.
-        set: compact({
-          lastJobStatus: 'succeeded',
-          lastJobError: '',
-          amiId: org.pendingAmiId,
-          tofuModuleGitSha: org.pendingTofuModuleGitSha,
-        }),
-      });
+      // Promotes the pending Deployment Version (ADR-0024) staged by issue() onto the
+      // recorded/audit fields - a no-op re-copy for a suspend/wake/destroy success, since only
+      // issue() ever changes the pending fields. compact() drops either key entirely rather
+      // than clobbering an already-recorded version with `undefined` for an org that reached
+      // 'active' under StubProvisioner before this Provisioner ever ran.
+      await this.writeTerminalStatus(org, compact({
+        lastJobStatus: 'succeeded',
+        lastJobError: '',
+        amiId: org.pendingAmiId,
+        tofuModuleGitSha: org.pendingTofuModuleGitSha,
+      }));
       return;
     }
 
     // FAILED, TIMED_OUT or ABORTED - including a failure Step Functions itself terminates the
     // execution for (e.g. after exhausting a Task's Retry). Surfaced as a clear, readable error
     // on the record rather than left for an admin to go dig up in the AWS console.
-    await this.gateway.dynamoDb.updateItem({
-      table: ORGS_TABLE,
-      key: { pk: orgPk(org.orgId) },
-      set: { lastJobStatus: 'failed', lastJobError: describeFailure(execution) },
-    });
+    await this.writeTerminalStatus(org, { lastJobStatus: 'failed', lastJobError: describeFailure(execution) });
+  }
+
+  /** Writes `checkStatus`'s terminal outcome, conditioned on `org.lastExecutionArn` still being
+   * the record's current execution (CodeRabbit, PR #297): between this poll's `describeExecution`
+   * call and this write, a concurrent `applyTransition` can have started a fresh job and replaced
+   * `lastExecutionArn` with a new ARN. Without this condition, a stale poll's write would still
+   * land - mis-marking the *newer* job succeeded/failed, and on a stale success, promoting
+   * `amiId`/`tofuModuleGitSha` from the *old* job's pending fields. A `ConditionalCheckFailedError`
+   * here means exactly that race happened; the stale result is simply discarded. */
+  private async writeTerminalStatus(org: OrgRecord, set: Record<string, unknown>): Promise<void> {
+    try {
+      await this.gateway.dynamoDb.updateItem({
+        table: ORGS_TABLE,
+        key: { pk: orgPk(org.orgId) },
+        set,
+        condition: { type: 'attribute_equals', attribute: 'lastExecutionArn', value: org.lastExecutionArn! },
+      });
+    } catch (error) {
+      if (!(error instanceof ConditionalCheckFailedError)) throw error;
+    }
   }
 
   /**
