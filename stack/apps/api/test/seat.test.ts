@@ -177,6 +177,9 @@ describe('joinOpenInvite (this ticket\'s Acceptance Criteria, porting test_trial
     await joinOpenInvite(gateway, stillMismatched.orgId, 'first@acme.example.com');
     await expect(joinOpenInvite(gateway, stillMismatched.orgId, 'stranger@other.example.com'))
       .rejects.toBeInstanceOf(CrossDomainInviteError);
+    // The rejected second use must not have created a seat either - not just inferred from the
+    // rejection, the same "creates no seat" proof the first-use mismatch test above asserts.
+    expect((await getOrgRecord(gateway, stillMismatched.orgId))?.seatsUsed).toBe(1);
   });
 
   it('rejects joining via the open-invite path on a targeted-only org', async () => {
