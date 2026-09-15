@@ -217,13 +217,15 @@ data "aws_iam_policy_document" "staging_deploy" {
 }
 
 # ---------------------------------------------------------------------------
-# Issue #216: staging_deploy's real app-deploy permission set — the placeholder comment above
-# (and ADR-0039) named this as the thing #216/#217 would fill in. Scoped to exactly the resource
-# shapes infra/platform creates (a dedicated VPC/subnets/security-group, one ECS cluster/service/
-# task-definition family, its two IAM roles, its own log group) plus a narrow ECR retag grant on
-# the one repository this deploy tags — nothing broader, and production_deploy gets none of this
-# yet (that's #217's own ticket to define, possibly against a different infra/platform instance
-# or var.environment).
+# Issue #216/#217: the real app-deploy permission set for both staging_deploy and
+# production_deploy — the placeholder comment above (and ADR-0039) named this as the thing
+# #216/#217 would fill in. Scoped to exactly the resource shapes infra/platform creates (a
+# dedicated VPC/subnets/security-group, one ECS cluster/service/task-definition family, its two
+# IAM roles, its own log group) plus a narrow ECR retag grant on the one repository this deploy
+# tags — nothing broader. #217 grants production_deploy this exact same document (not a separate
+# infra/platform instance or var.environment) — issue #202/#216 already frames this pipeline as
+# its own end-to-end proof rather than a production-shaped deployment; the workflow's branch-scoped
+# role assumption is the thing #217 exists to wire, not a second environment.
 #
 # Issue #271/#272: the actual EC2/ECS/IAM/Logs statements this comment used to describe in detail
 # (VPC/subnet/security-group creation with resource "*", ec2:ResourceTag-scoped writes, etc.) now
@@ -324,6 +326,11 @@ resource "aws_iam_role" "production_deploy" {
 # See infra_management_statements above (issue #215) for the full rationale — production_deploy
 # carries the same infra-management/backend grant, so a push to production_branch can apply
 # infra/cicd and infra/registry too.
+#
+# Issue #217: production_deploy also carries administration_stack_deploy (defined above,
+# shared verbatim with staging_deploy via source_policy_documents) — the same app-deploy grant
+# a push to production_branch needs to retag the administration-stack image and apply
+# infra/platform, mirroring staging_deploy exactly.
 
 # Mirrors manage_own_role_staging_deploy above, own/other roles swapped.
 data "aws_iam_policy_document" "manage_own_role_production_deploy" {
@@ -369,10 +376,14 @@ data "aws_iam_policy_document" "production_deploy" {
   source_policy_documents = [
     data.aws_iam_policy_document.infra_management_statements.json,
     data.aws_iam_policy_document.manage_own_role_production_deploy.json,
+    data.aws_iam_policy_document.administration_stack_deploy.json,
   ]
 
+  # Not a security boundary on its own (sts:GetCallerIdentity is implicitly allowed to any
+  # assumed role regardless of policy) — kept as a named, visible statement rather than removed,
+  # since aws-actions/configure-aws-credentials' own post-assume validation step calls it.
   statement {
-    sid       = "PlaceholderCallerIdentity"
+    sid       = "CallerIdentity"
     effect    = "Allow"
     actions   = ["sts:GetCallerIdentity"]
     resources = ["*"]

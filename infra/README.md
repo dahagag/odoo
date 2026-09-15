@@ -32,9 +32,9 @@ infra/
 │                       run against this repo's ci.yml (image builds and infra plans both happen at
 │                       PR time, on either branch). Not merely branch protection.
 │                       Independent of `foundation` (own state key, own `tofu init`/`plan`/
-│                       `apply`); the deploy roles' app-deploy permissions are still a deliberate
-│                       placeholder until #216/#217 define what a deploy touches (see oidc.tf), but
-│                       they are scoped for real for a second, narrower purpose (issue #215):
+│                       `apply`); the deploy roles' app-deploy permissions are the administration-
+│                       stack deploy grant #216/#217 define (see oidc.tf), and they are also scoped
+│                       for real for a second, narrower purpose (issue #215):
 │                       applying `infra/cicd` and `infra/registry` themselves, plan-on-PR (via the
 │                       read-only infra_plan role) and apply-on-merge (via themselves) — see
 │                       `.github/workflows/ci.yml`'s infra-plan/infra-apply jobs and the "`tofu
@@ -60,9 +60,12 @@ infra/
 │                       `registry` (own state key); the ECR repository URL and the image tag to
 │                       deploy are supplied as plain variables at apply time (same no-remote-
 │                       state convention as `registry`). Plans on PRs touching it via the shared,
-│                       read-only `infra_plan` role; applies only on a push to `dev/19.0`, via
-│                       `staging_deploy`'s narrow `administration_stack_deploy` permissions
-│                       (`infra/cicd/oidc.tf`) — `production_deploy` has none of this yet (#217).
+│                       read-only `infra_plan` role; applies on a push to `dev/19.0` or
+│                       `main/19.0`, via `staging_deploy`'s/`production_deploy`'s identical narrow
+│                       `administration_stack_deploy` permissions (`infra/cicd/oidc.tf`, issue
+│                       #216/#217) — both branches deploy the same `platform` instance, since this
+│                       is still the pipeline's first end-to-end proof rather than a separate
+│                       production-shaped environment.
 └── modules/
     └── trial_org/       Reusable module (not a root module — nothing here runs `tofu` against it
                           directly). Declares one Trial Org's own infrastructure: one EC2
@@ -120,12 +123,12 @@ state machine), and `bootstrap` has no remote backend of its own (it creates the
 applying it from CI is a chicken-and-egg problem regardless. Revisit including `foundation` once
 the deploy roles' permissions cover more than infra/cicd + infra/registry's own resources.
 
-**`platform` also applies from CI (issue #216), but staging-only so far**: `infra-plan-platform`
-plans it on any pull request touching it (`infra_plan`, same as `cicd`/`registry`), and
-`deploy-administration-stack-staging` applies it on a push to `dev/19.0` only, using
-`staging_deploy`'s narrow `administration_stack_deploy` permissions. There is no
-`main/19.0`-triggered apply of `platform` yet — `production_deploy` carries none of these
-permissions until #217 defines what a production deploy of the administration stack touches.
+**`platform` also applies from CI (issue #216/#217)**: `infra-plan-platform` plans it on any pull
+request touching it (`infra_plan`, same as `cicd`/`registry`); `deploy-administration-stack-staging`
+applies it on a push to `dev/19.0` via `staging_deploy`'s narrow `administration_stack_deploy`
+permissions, and `deploy-administration-stack-production` applies it on a push to `main/19.0` via
+`production_deploy`'s identical grant — same permission document, same target `platform` instance
+(there is no separate production environment yet; that's #204's own scope).
 
 **Cross-account role chaining (issue #271/#272)**: `staging_deploy`, `production_deploy`, and
 `infra_plan` all live in the Hosting Account, but `platform`'s VPC/ECS/IAM/Logs resources and

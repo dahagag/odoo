@@ -1,0 +1,61 @@
+name: Retag the administration-stack image with a release version
+description: >-
+  Adds a second tag (the current release version) onto the administration-stack-api image
+  ecr_push already pushed under its content-hash tag at PR time — no rebuild, idempotent against a
+  re-run or a concurrent retag. Reused (issue #217) by deploy-administration-stack-staging and
+  deploy-administration-stack-production so the two don't each carry their own copy of this shell
+  block.
+inputs:
+  content_hash_tag:
+    description: The content-hash tag build-stack-image published this commit's image under.
+    required: true
+  release_tag:
+    description: The release version tag to add (from resolve-release-tag).
+    required: true
+  platform_account_id:
+    description: The Platform Account ID the administration-stack-api ECR repository lives in.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Retag the PR-built image with the release version
+      shell: bash
+      env:
+        CONTENT_HASH_TAG: ${{ inputs.content_hash_tag }}
+        RELEASE_TAG: ${{ inputs.release_tag }}
+        PLATFORM_ACCOUNT_ID: ${{ inputs.platform_account_id }}
+      run: |
+        manifest=$(aws ecr batch-get-image \
+          --registry-id "$PLATFORM_ACCOUNT_ID" \
+          --repository-name agentic-erp/administration-stack-api \
+          --image-ids imageTag="$CONTENT_HASH_TAG" \
+          --query 'images[0].imageManifest' --output text)
+        if [[ -z "$manifest" || "$manifest" == "None" ]]; then
+          echo "No agentic-erp/administration-stack-api image found for content-hash tag $CONTENT_HASH_TAG — did build-stack-image run for this commit's stack/** tree?" >&2
+          exit 1
+        fi
+        # Idempotent: a re-run for a commit whose release tag was already retagged must not fail
+        # the job — neither "the tag already points at this manifest" nor a concurrent retag
+        # racing this one (ImageAlreadyExistsException) is a real deploy failure.
+        existing=$(aws ecr batch-get-image \
+          --registry-id "$PLATFORM_ACCOUNT_ID" \
+          --repository-name agentic-erp/administration-stack-api \
+          --image-ids imageTag="$RELEASE_TAG" \
+          --query 'images[0].imageManifest' --output text 2>/dev/null || true)
+        if [[ "$existing" == "$manifest" ]]; then
+          echo "Release tag $RELEASE_TAG already points at this manifest — nothing to retag."
+          exit 0
+        fi
+        if ! aws ecr put-image \
+          --registry-id "$PLATFORM_ACCOUNT_ID" \
+          --repository-name agentic-erp/administration-stack-api \
+          --image-tag "$RELEASE_TAG" \
+          --image-manifest "$manifest" 2> put-image.err; then
+          if grep -q ImageAlreadyExistsException put-image.err; then
+            cat put-image.err >&2
+            echo "Concurrent retag already created $RELEASE_TAG — treating as success."
+          else
+            cat put-image.err >&2
+            exit 1
+          fi
+        fi

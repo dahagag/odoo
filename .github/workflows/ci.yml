@@ -97,10 +97,11 @@ jobs:
               - 'infra/registry/**'
               - '.github/workflows/ci.yml'
               - '.github/actions/infra-tofu/**'
-            # Issue #216: infra-plan-platform/deploy-administration-stack-staging below only ever
-            # touch infra/platform — narrower than infra_relevant, same reasoning as
-            # infra_cicd_registry_relevant above (a PR touching only infra/foundation or
-            # infra/modules/trial_org shouldn't assume infra_plan's AWS credentials for this).
+            # Issue #216/#217: infra-plan-platform/deploy-administration-stack-staging/
+            # deploy-administration-stack-production below only ever touch infra/platform —
+            # narrower than infra_relevant, same reasoning as infra_cicd_registry_relevant above
+            # (a PR touching only infra/foundation or infra/modules/trial_org shouldn't assume
+            # infra_plan's AWS credentials for this).
             infra_platform_relevant:
               - 'infra/platform/**'
               - '.github/workflows/ci.yml'
@@ -660,9 +661,9 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           # Same shared, read-only infra_plan role as infra-plan above — its trust condition
-          # carries no branch information to isolate by, and this ticket's real staging-only
-          # write access lives on staging_deploy instead (infra/cicd/oidc.tf's
-          # administration_stack_deploy document, issue #216).
+          # carries no branch information to isolate by, and this ticket's real write access
+          # lives on staging_deploy/production_deploy instead (infra/cicd/oidc.tf's
+          # administration_stack_deploy document, issue #216/#217).
           role-to-assume: ${{ vars.INFRA_PLAN_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
       - uses: ./.github/actions/infra-tofu
@@ -684,6 +685,19 @@ jobs:
 
   deploy-administration-stack-staging:
     name: Deploy administration-stack API (staging)
+    # Issue #217 (CodeRabbit review): the workflow-level concurrency group above
+    # (ci-${{ github.ref }}) only serializes runs sharing the same ref, but this job and
+    # deploy-administration-stack-production apply the *same* infra/platform state from two
+    # different refs (dev/19.0 and main/19.0). Terraform's own state locking would serialize the
+    # two `tofu apply` calls, but not their order — a slower staging run resolving an older
+    # release tag could apply after a faster production run and silently revert the shared ECS
+    # service. This job-level group (identical string on both jobs, deliberately not
+    # ${{ github.ref }}-scoped) queues the two branches' deploys against each other instead.
+    # cancel-in-progress: false — an in-flight `tofu apply` must run to completion, never be
+    # cancelled mid-apply.
+    concurrency:
+      group: deploy-administration-stack-platform
+      cancel-in-progress: false
     # Same infra-checks gate as infra-apply above — a merge whose own infra-checks failed must
     # never reach a real ECR retag or `tofu apply` (issue #216's acceptance criteria: "a failed
     # step stops the workflow rather than leaving a partial deploy").
@@ -709,51 +723,16 @@ jobs:
         with:
           role-to-assume: ${{ vars.STAGING_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-      - name: Retag the PR-built image with the release version
+      - uses: ./.github/actions/retag-administration-stack-image
         # No rebuild: the bytes this deploys are exactly what build-stack-image (PR-time,
         # ecr_push role) already pushed under its content-hash tag — this only adds a second tag
         # to the same image manifest (staging_deploy's own narrow RetagAdministrationStackImage
         # grant, infra/cicd/oidc.tf), so the image a staging deploy ships is always something a PR
         # already tested.
-        env:
-          CONTENT_HASH_TAG: ${{ steps.content_tag.outputs.tag }}
-          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
-          PLATFORM_ACCOUNT_ID: ${{ vars.PLATFORM_ACCOUNT_ID }}
-        run: |
-          manifest=$(aws ecr batch-get-image \
-            --registry-id "$PLATFORM_ACCOUNT_ID" \
-            --repository-name agentic-erp/administration-stack-api \
-            --image-ids imageTag="$CONTENT_HASH_TAG" \
-            --query 'images[0].imageManifest' --output text)
-          if [[ -z "$manifest" || "$manifest" == "None" ]]; then
-            echo "No agentic-erp/administration-stack-api image found for content-hash tag $CONTENT_HASH_TAG — did build-stack-image run for this commit's stack/** tree?" >&2
-            exit 1
-          fi
-          # Idempotent: a re-run for a commit whose release tag was already retagged must not fail
-          # the job — neither "the tag already points at this manifest" nor a concurrent retag
-          # racing this one (ImageAlreadyExistsException) is a real deploy failure.
-          existing=$(aws ecr batch-get-image \
-            --registry-id "$PLATFORM_ACCOUNT_ID" \
-            --repository-name agentic-erp/administration-stack-api \
-            --image-ids imageTag="$RELEASE_TAG" \
-            --query 'images[0].imageManifest' --output text 2>/dev/null || true)
-          if [[ "$existing" == "$manifest" ]]; then
-            echo "Release tag $RELEASE_TAG already points at this manifest — nothing to retag."
-            exit 0
-          fi
-          if ! aws ecr put-image \
-            --registry-id "$PLATFORM_ACCOUNT_ID" \
-            --repository-name agentic-erp/administration-stack-api \
-            --image-tag "$RELEASE_TAG" \
-            --image-manifest "$manifest" 2> put-image.err; then
-            if grep -q ImageAlreadyExistsException put-image.err; then
-              cat put-image.err >&2
-              echo "Concurrent retag already created $RELEASE_TAG — treating as success."
-            else
-              cat put-image.err >&2
-              exit 1
-            fi
-          fi
+        with:
+          content_hash_tag: ${{ steps.content_tag.outputs.tag }}
+          release_tag: ${{ steps.tag.outputs.tag }}
+          platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
       - uses: opentofu/setup-opentofu@v1
         with:
           tofu_version: 1.8.5
@@ -780,6 +759,87 @@ jobs:
         run: |
           {
             echo "## Deployed to staging"
+            echo "Release \`$RELEASE_TAG\` is now running in the administration-stack API's ECS service (\`aws ecs describe-services --cluster platform --services platform-administration-stack-api --include TAGS\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-administration-stack-production:
+    name: Deploy administration-stack API (production)
+    # Mirrors deploy-administration-stack-staging above exactly (issue #217) — same infra-checks
+    # gate ("a failed step stops the workflow rather than leaving a partial deploy"), same deploy
+    # shape (retag the PR-built image with the release version, apply infra/platform, record the
+    # running release). This deploys the same infra/platform instance staging does (see
+    # infra/cicd/oidc.tf's administration_stack_deploy comment) — #217 wires the branch-scoped
+    # production_deploy role assumption, not a second environment.
+    #
+    # Same concurrency group as deploy-administration-stack-staging above — see that job's
+    # comment; the group must be the identical literal string on both jobs so a dev/19.0 and a
+    # main/19.0 push queue against each other rather than racing to apply the same infra/platform
+    # state out of order.
+    concurrency:
+      group: deploy-administration-stack-platform
+      cancel-in-progress: false
+    needs: [changes, infra-checks]
+    # main/19.0 hardcoded, matching infra-apply's own branch case statement above — this repo's
+    # branch names are literal strings in ci.yml throughout (on.push.branches, infra-apply's role
+    # selection), never a repository variable.
+    if: github.event_name == 'push' && github.ref_name == 'main/19.0'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/resolve-release-tag
+        # This is "the current release's derived version" issue #217's acceptance criteria
+        # deploys under — same resolution staging uses, since this repo cuts one release tag at a
+        # time off its release branches.
+        id: tag
+      - name: Compute the content-hash tag build-stack-image published this commit's image under
+        id: content_tag
+        run: echo "tag=${{ hashFiles('stack/**') }}" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.PRODUCTION_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: ./.github/actions/retag-administration-stack-image
+        # No rebuild: the bytes this deploys are exactly what build-stack-image (PR-time,
+        # ecr_push role) already pushed under its content-hash tag — this only adds a second tag
+        # to the same image manifest (production_deploy's own narrow RetagAdministrationStackImage
+        # grant, infra/cicd/oidc.tf), so the image a production deploy ships is always something a
+        # PR already tested, and staging already deployed at least once (it merges to dev/19.0
+        # first).
+        with:
+          content_hash_tag: ${{ steps.content_tag.outputs.tag }}
+          release_tag: ${{ steps.tag.outputs.tag }}
+          platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.5
+      - uses: ./.github/actions/infra-tofu
+        with:
+          dir: infra/platform
+          command: apply
+          bucket: ${{ vars.TOFU_STATE_BUCKET }}
+          region: ${{ vars.AWS_REGION }}
+          dynamodb_table: ${{ vars.TOFU_STATE_LOCK_TABLE }}
+          platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
+          tofu_state_bucket_arn: ${{ vars.TOFU_STATE_BUCKET_ARN }}
+          tofu_state_lock_table_arn: ${{ vars.TOFU_STATE_LOCK_TABLE_ARN }}
+          hosting_account_ecs_task_execution_role_arn: ${{ vars.HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN }}
+          administration_stack_api_repository_url: ${{ vars.ADMINISTRATION_STACK_API_REPOSITORY_URL }}
+          administration_stack_image_tag: ${{ steps.tag.outputs.tag }}
+          # Issue #217: production_deploy (just assumed above) chains into
+          # platform-administration-stack-deploy to actually manage infra/platform's Platform
+          # Account resources — the same shared role staging_deploy already chains into
+          # (infra/registry/cross_account_iam.tf's platform_administration_stack_deploy_trust now
+          # trusts both).
+          platform_assume_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
+      - name: Record which release is now running in production
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          {
+            echo "## Deployed to production"
             echo "Release \`$RELEASE_TAG\` is now running in the administration-stack API's ECS service (\`aws ecs describe-services --cluster platform --services platform-administration-stack-api --include TAGS\`)."
           } >> "$GITHUB_STEP_SUMMARY"
 

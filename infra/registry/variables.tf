@@ -49,12 +49,12 @@ variable "tags" {
 
 variable "staging_deploy_role_arn" {
   type        = string
-  description = "infra/cicd's staging_deploy_role_arn output (Hosting Account) — the only non-shared principal platform_administration_stack_deploy's trust policy allows, and one of two principals platform_registry_deploy's trust policy allows. Not looked up via remote state (no cross-module data dependency), supplied at apply time same convention as this module's other Hosting-Account-sourced variables."
+  description = "infra/cicd's staging_deploy_role_arn output (Hosting Account) — one of two principals both platform_administration_stack_deploy's and platform_registry_deploy's trust policies allow (issue #216/#217). Not looked up via remote state (no cross-module data dependency), supplied at apply time same convention as this module's other Hosting-Account-sourced variables."
 }
 
 variable "production_deploy_role_arn" {
   type        = string
-  description = "infra/cicd's production_deploy_role_arn output (Hosting Account) — the second principal platform_registry_deploy's trust policy allows (production_deploy already manages infra/registry today, via infra_management_statements' shared ManageRegistryRepositories grant — issue #215), but NOT platform_administration_stack_deploy's (that stays staging_deploy-only until #217)."
+  description = "infra/cicd's production_deploy_role_arn output (Hosting Account) — the second principal both platform_registry_deploy's trust policy (production_deploy already manages infra/registry today, via infra_management_statements' shared ManageRegistryRepositories grant — issue #215) and platform_administration_stack_deploy's trust policy (issue #217) allow."
 }
 
 variable "infra_plan_role_arn" {
