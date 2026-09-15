@@ -198,6 +198,11 @@ interface ExecutionRecord {
   input: Record<string, unknown>;
   startDate: Date;
   stopDate?: Date;
+  /** Real `DescribeExecution` carries these top-level for a terminal execution (docs/adr/0022,
+   * this fake's Testing Decisions: "reject/support what the real one does") - not just inside a
+   * history event, which is a separate, independently-failing call. */
+  error?: string;
+  cause?: string;
   events: GetExecutionHistoryResult['events'];
 }
 
@@ -234,6 +239,8 @@ class InMemoryStepFunctionsGateway implements StepFunctionsGateway {
       status: execution.status,
       startDate: execution.startDate,
       stopDate: execution.stopDate,
+      error: execution.error,
+      cause: execution.cause,
     };
   }
 
@@ -293,6 +300,8 @@ export class InMemoryAwsGateway implements AwsGateway {
     if (!execution) throw new Error(`No such fake execution: ${executionArn}`);
     execution.status = status;
     execution.stopDate = new Date();
+    execution.error = error;
+    execution.cause = cause;
     execution.events.push({ timestamp: execution.stopDate, type: `Execution${status[0]}${status.slice(1).toLowerCase()}`, error, cause });
   }
 }

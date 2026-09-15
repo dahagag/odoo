@@ -59,6 +59,16 @@ export interface OrgRecord {
    * state it caused - never reused across calls. */
   lastJobId?: string;
   lastJobAction?: OrgAction;
+  /** That job's own outcome (#281, ADR-0019: "`_apply_transition()` writes the new state
+   * together with `last_job_status: 'running'` in the same call that starts the job") - written
+   * `running` by `applyTransition` itself, then settled to `succeeded`/`failed` only once
+   * `Provisioner.checkStatus` observes a terminal Step Functions status. Blank under
+   * `StubProvisioner`, which starts nothing to poll. */
+  lastJobStatus?: 'running' | 'succeeded' | 'failed';
+  /** A clear, actionable reason for `lastJobStatus`'s most recent `failed` outcome
+   * (`checkStatus`, #281) - `''` whenever the last observed outcome wasn't a failure, mirroring
+   * `hosting.trial.org.last_job_error` (`False` there for the same "no error" case). */
+  lastJobError?: string;
   /** The Step Functions execution `AwsProvisioner` (#280) most recently started or reattached
    * to for this org - written by the provisioner itself, not by `applyTransition`, since it's
    * populated (or reconstructed, on an `ExecutionAlreadyExists` retry) only once the
@@ -282,7 +292,12 @@ export async function applyTransition(gateway: AwsGateway, provisioner: Provisio
     await gateway.dynamoDb.updateItem({
       table: ORGS_TABLE,
       key: { pk: orgPk(orgId) },
-      set: { state: to, lastJobId: jobId, lastJobAction: action },
+      // lastJobStatus/lastJobError are written here, in the same call as state/lastJobId/
+      // lastJobAction (ADR-0019) - not by the provisioner itself - so a same-action retry
+      // always fails source-state validation before it could ever reach a reuse check (ADR-0019:
+      // "by design there's no window where a second top-level call finds a prior job for the
+      // same action still outstanding").
+      set: { state: to, lastJobId: jobId, lastJobAction: action, lastJobStatus: 'running', lastJobError: '' },
       condition: { type: 'attribute_in', attribute: 'state', values: from },
     });
   } catch (error) {
@@ -290,5 +305,5 @@ export async function applyTransition(gateway: AwsGateway, provisioner: Provisio
     throw error;
   }
 
-  return { ...org, state: to, lastJobId: jobId, lastJobAction: action };
+  return { ...org, state: to, lastJobId: jobId, lastJobAction: action, lastJobStatus: 'running', lastJobError: '' };
 }

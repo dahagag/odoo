@@ -244,6 +244,23 @@ describe('InMemoryAwsGateway stepFunctions', () => {
     await expect(gateway.stepFunctions.getExecutionHistory(executionArn))
       .resolves.toMatchObject({ events: expect.arrayContaining([expect.objectContaining({ type: 'ExecutionSucceeded' })]) });
   });
+
+  it('surfaces completeExecution\'s error/cause through describeExecution too, not just the history event (#281)', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const { executionArn } = await gateway.stepFunctions.startExecution({
+      stateMachineArn: 'arn:aws:states:us-east-1:000000000000:stateMachine:fake',
+      executionName: 'trial-3-job-1',
+      input: {},
+    });
+
+    gateway.completeExecution(executionArn, 'FAILED', 'States.TaskFailed', 'tofu apply exited 1');
+
+    await expect(gateway.stepFunctions.describeExecution(executionArn)).resolves.toMatchObject({
+      status: 'FAILED',
+      error: 'States.TaskFailed',
+      cause: 'tofu apply exited 1',
+    });
+  });
 });
 
 describe('InMemoryAwsGateway ec2', () => {

@@ -1,10 +1,10 @@
-import { ExecutionAlreadyExistsError } from '@stack/aws-gateway';
-import type { AwsGateway } from '@stack/aws-gateway';
+import { ConditionalCheckFailedError, ExecutionAlreadyExistsError } from '@stack/aws-gateway';
+import type { AwsGateway, DescribeExecutionResult, ExecutionHistoryEvent } from '@stack/aws-gateway';
 import type { OrgAction } from '@stack/domain';
 import type { Env } from '../config/env';
 import { ORGS_TABLE, compact, orgPk } from './record';
 import type { OrgRecord } from './record';
-import type { Provisioner } from './provisioner';
+import type { AuditTrail, Provisioner } from './provisioner';
 import { StubProvisioner } from './provisioner';
 
 /** The snapshot retention window `destroy`'s execution input carries (docs/contexts/hosting/
@@ -119,6 +119,126 @@ export class AwsProvisioner implements Provisioner {
     });
   }
 
+  /**
+   * Poll `org`'s most recently started job to a terminal status, if it hasn't reached one
+   * already (#281, mirrors `AwsProvisioner.check_status`,
+   * `custom_addons/hosting_admin/models/provisioner.py`). A no-op unless the record actually has
+   * an unfinished job with a recorded execution ARN to check - covers both "no job was ever
+   * started" and "the last job already settled", so a caller can call this unconditionally for
+   * every org without pre-filtering.
+   */
+  async checkStatus(org: OrgRecord): Promise<void> {
+    if (org.lastJobStatus !== 'running' || !org.lastExecutionArn) return;
+
+    let execution: DescribeExecutionResult;
+    try {
+      execution = await this.gateway.stepFunctions.describeExecution(org.lastExecutionArn);
+    } catch (error) {
+      // Transient AWS/network trouble describing the execution isn't itself a lifecycle
+      // failure - lastJobStatus stays 'running' and the next poll tries again.
+      console.error(`Could not describe Step Functions execution ${org.lastExecutionArn} for org ${org.orgId}:`, error);
+      return;
+    }
+
+    if (execution.status === 'RUNNING') return;
+
+    if (execution.status === 'SUCCEEDED') {
+      // Promotes the pending Deployment Version (ADR-0024) staged by issue() onto the
+      // recorded/audit fields - a no-op re-copy for a suspend/wake/destroy success, since only
+      // issue() ever changes the pending fields. compact() drops either key entirely rather
+      // than clobbering an already-recorded version with `undefined` for an org that reached
+      // 'active' under StubProvisioner before this Provisioner ever ran.
+      await this.writeTerminalStatus(org, compact({
+        lastJobStatus: 'succeeded',
+        lastJobError: '',
+        amiId: org.pendingAmiId,
+        tofuModuleGitSha: org.pendingTofuModuleGitSha,
+      }));
+      return;
+    }
+
+    // FAILED, TIMED_OUT or ABORTED - including a failure Step Functions itself terminates the
+    // execution for (e.g. after exhausting a Task's Retry). Surfaced as a clear, readable error
+    // on the record rather than left for an admin to go dig up in the AWS console.
+    await this.writeTerminalStatus(org, { lastJobStatus: 'failed', lastJobError: describeFailure(execution) });
+  }
+
+  /** Writes `checkStatus`'s terminal outcome, conditioned on `org.lastExecutionArn` still being
+   * the record's current execution (CodeRabbit, PR #297): between this poll's `describeExecution`
+   * call and this write, a concurrent `applyTransition` can have started a fresh job and replaced
+   * `lastExecutionArn` with a new ARN. Without this condition, a stale poll's write would still
+   * land - mis-marking the *newer* job succeeded/failed, and on a stale success, promoting
+   * `amiId`/`tofuModuleGitSha` from the *old* job's pending fields. A `ConditionalCheckFailedError`
+   * here means exactly that race happened; the stale result is simply discarded. */
+  private async writeTerminalStatus(org: OrgRecord, set: Record<string, unknown>): Promise<void> {
+    try {
+      await this.gateway.dynamoDb.updateItem({
+        table: ORGS_TABLE,
+        key: { pk: orgPk(org.orgId) },
+        set,
+        condition: { type: 'attribute_equals', attribute: 'lastExecutionArn', value: org.lastExecutionArn! },
+      });
+    } catch (error) {
+      if (!(error instanceof ConditionalCheckFailedError)) throw error;
+    }
+  }
+
+  /**
+   * `org`'s lifecycle audit trail (#281, docs/adr/0022): `DescribeExecution` for the overall
+   * status/timing of its most recently started execution, plus `GetExecutionHistory` for
+   * step-by-step detail. Read fresh on every call; never cached or persisted (mirrors
+   * `AwsProvisioner.get_audit_trail`, `custom_addons/hosting_admin/models/provisioner.py`).
+   *
+   * Degrades to `{available: false}` rather than throwing when there's no recorded execution to
+   * ask about, or `DescribeExecution` itself fails (e.g. transient AWS/network trouble). A
+   * `GetExecutionHistory` failure alone instead keeps `available: true` with
+   * `stepsAvailable: false` - the overall status/timing is still real and worth showing even
+   * without the step detail.
+   */
+  async getAuditTrail(org: OrgRecord): Promise<AuditTrail> {
+    if (!org.lastExecutionArn) return { available: false };
+
+    let execution: DescribeExecutionResult;
+    try {
+      execution = await this.gateway.stepFunctions.describeExecution(org.lastExecutionArn);
+    } catch (error) {
+      console.error(`Could not describe Step Functions execution ${org.lastExecutionArn} for org ${org.orgId}'s audit trail:`, error);
+      return { available: false };
+    }
+
+    let stepsAvailable = true;
+    let stepsUnavailableReason: string | undefined;
+    const steps: ExecutionHistoryEvent[] = [];
+    try {
+      let nextToken: string | undefined;
+      do {
+        // GetExecutionHistory defaults to (and caps a single page at) 100 events; a retried Task
+        // (ADR-0019's Retry/BackoffRate) or a long execution can exceed that, so a single-page
+        // read can silently truncate the trail - keep following nextToken until AWS stops
+        // returning one.
+        const history = await this.gateway.stepFunctions.getExecutionHistory(org.lastExecutionArn, nextToken);
+        steps.push(...history.events);
+        nextToken = history.nextToken;
+      } while (nextToken);
+    } catch (error) {
+      stepsAvailable = false;
+      stepsUnavailableReason = describeHistoryFailure(error);
+      console.error(`Could not get Step Functions execution history for ${org.lastExecutionArn} for org ${org.orgId}'s audit trail:`, error);
+    }
+
+    return {
+      available: true,
+      action: org.lastJobAction,
+      jobId: org.lastJobId,
+      status: execution.status,
+      startDate: execution.startDate,
+      stopDate: execution.stopDate,
+      stepsAvailable,
+      stepsUnavailableReason,
+      steps,
+    };
+  }
+
   private async startExecution(
     org: OrgRecord,
     jobId: string,
@@ -175,6 +295,25 @@ export class AwsProvisioner implements Provisioner {
     }
     return org.instanceId;
   }
+}
+
+/** Mirrors `AwsProvisioner._describe_failure`
+ * (`custom_addons/hosting_admin/models/provisioner.py`): a clear, readable label for a
+ * terminal-but-not-`SUCCEEDED` execution, using whatever AWS itself reported rather than a
+ * generic "job failed". */
+function describeFailure(execution: DescribeExecutionResult): string {
+  const error = execution.error ?? execution.status;
+  return execution.cause ? `${error}: ${execution.cause}` : error;
+}
+
+/** Mirrors `AwsProvisioner._describe_history_failure`
+ * (`custom_addons/hosting_admin/models/provisioner.py`): a best-effort label for why
+ * `GetExecutionHistory` failed, read from the AWS SDK error's own name (e.g.
+ * `AccessDeniedException`, `ThrottlingException`) when it raised a real SDK error - never a
+ * guessed cause. Falls back to `String(error)` for anything that isn't an `Error` at all (e.g. a
+ * network-level failure that never reached AWS). */
+function describeHistoryFailure(error: unknown): string {
+  return error instanceof Error ? error.name : String(error);
 }
 
 /** Chooses the no-op or the real `Provisioner` from config, mirroring `buildAwsGateway`
