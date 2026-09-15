@@ -342,6 +342,93 @@ describe('POST /v1/admin/orgs/:orgId/check-status (#298: production entry point 
   });
 });
 
+describe('POST /v1/admin/sweeps/idle-suspend and /v1/admin/sweeps/auto-destroy (#282: production entry points for the sweeps)', () => {
+  async function createOrgViaApi(app: ReturnType<typeof buildTestServer>['app'], key: string, overrides: Record<string, unknown> = {}) {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/orgs',
+      headers: { ...ADMIN_HEADERS, 'idempotency-key': key },
+      payload: createPayload(overrides),
+    });
+    return response.json() as { orgId: string };
+  }
+
+  it('suspends an active org idle past the timeout', async () => {
+    const { app, awsGateway } = buildTestServer();
+    const org = await createOrgViaApi(app, 'create-idle-1', { dnsSubdomainLabel: 'acme-idle-1' });
+    await app.inject({ method: 'POST', url: `/v1/admin/orgs/${org.orgId}/issue`, headers: { ...ADMIN_HEADERS, 'idempotency-key': 'issue-idle-1' } });
+    await awsGateway.dynamoDb.updateItem({
+      table: 'orgs',
+      key: { pk: `org#${org.orgId}` },
+      set: { lastActivityAt: new Date(Date.now() - 45 * 60_000).toISOString() },
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/sweeps/idle-suspend',
+      headers: { ...ADMIN_HEADERS, 'idempotency-key': 'idle-sweep-1' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ action: 'suspend', orgIds: [org.orgId] });
+    const after = await app.inject({ method: 'GET', url: `/v1/admin/orgs/${org.orgId}`, headers: ADMIN_HEADERS });
+    expect(after.json()).toMatchObject({ state: 'suspended' });
+  });
+
+  it('destroys an active Trial Org past its expiry date, leaving a snapshot-retention marker', async () => {
+    const { app, awsGateway } = buildTestServer();
+    const org = await createOrgViaApi(app, 'create-expired-1', { dnsSubdomainLabel: 'acme-expired-1' });
+    await app.inject({ method: 'POST', url: `/v1/admin/orgs/${org.orgId}/issue`, headers: { ...ADMIN_HEADERS, 'idempotency-key': 'issue-expired-1' } });
+    const pastDate = new Date(Date.now() - 60_000).toISOString();
+    await awsGateway.dynamoDb.updateItem({
+      table: 'orgs',
+      key: { pk: `org#${org.orgId}` },
+      set: { expiryDate: pastDate, gsi2sk: pastDate },
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/sweeps/auto-destroy',
+      headers: { ...ADMIN_HEADERS, 'idempotency-key': 'destroy-sweep-1' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ action: 'destroy', orgIds: [org.orgId] });
+    const after = await awsGateway.dynamoDb.getItem({ table: 'orgs', key: { pk: `org#${org.orgId}` } });
+    expect(after).toMatchObject({ state: 'destroyed' });
+    expect((after as { snapshotRetentionUntil?: string } | undefined)?.snapshotRetentionUntil).toBeDefined();
+  });
+
+  it('the auto-destroy sweep never selects a Client Org', async () => {
+    const { app } = buildTestServer();
+    await createOrgViaApi(app, 'create-client-1', { type: 'client', dnsSubdomainLabel: 'acme-client-1' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/sweeps/auto-destroy',
+      headers: { ...ADMIN_HEADERS, 'idempotency-key': 'destroy-sweep-2' },
+    });
+
+    expect(response.json()).toEqual({ action: 'destroy', orgIds: [] });
+  });
+
+  it.each(['idle-suspend', 'auto-destroy'])('%s requires an admin principal', async (sweep) => {
+    const { app } = buildTestServer();
+
+    const response = await app.inject({ method: 'POST', url: `/v1/admin/sweeps/${sweep}`, headers: { 'idempotency-key': `${sweep}-noauth` } });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it.each(['idle-suspend', 'auto-destroy'])('%s requires an Idempotency-Key header', async (sweep) => {
+    const { app } = buildTestServer();
+
+    const response = await app.inject({ method: 'POST', url: `/v1/admin/sweeps/${sweep}`, headers: ADMIN_HEADERS });
+
+    expect(response.statusCode).toBe(400);
+  });
+});
+
 /** A `Provisioner` whose calls block until the test explicitly `open()`s the gate - lets a test
  * hold a lifecycle action's `compute()` in flight for as long as it needs to observe a
  * concurrent racer's behavior (#285's Testing Decisions: "a concurrent call within the bounded

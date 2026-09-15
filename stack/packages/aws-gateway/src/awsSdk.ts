@@ -216,6 +216,12 @@ class AwsSdkDynamoDbGateway implements DynamoDbGateway {
   }
 
   async query(input: QueryInput): Promise<QueryResult> {
+    // A real KeyConditionExpression has exactly one sort-key condition - passing both would
+    // silently let the second overwrite the first `#sk`/`:sk` alias below rather than failing
+    // loudly (#282 code review).
+    if (input.sortKeyPrefix && input.sortKeyAtMost) {
+      throw new Error('QueryInput: sortKeyPrefix and sortKeyAtMost are mutually exclusive');
+    }
     const { QueryCommand } = await import('@aws-sdk/client-dynamodb');
     const client = await this.getClient();
     let keyConditionExpression = '#pk = :pk';
@@ -225,6 +231,11 @@ class AwsSdkDynamoDbGateway implements DynamoDbGateway {
       keyConditionExpression += ' AND begins_with(#sk, :sk)';
       names['#sk'] = input.sortKeyPrefix.name;
       values[':sk'] = marshalValue(input.sortKeyPrefix.value);
+    }
+    if (input.sortKeyAtMost) {
+      keyConditionExpression += ' AND #sk <= :sk';
+      names['#sk'] = input.sortKeyAtMost.name;
+      values[':sk'] = marshalValue(input.sortKeyAtMost.value);
     }
     const response = await client.send(new QueryCommand({
       TableName: this.tableName(input.table),

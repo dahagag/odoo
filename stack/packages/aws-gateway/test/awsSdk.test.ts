@@ -107,6 +107,22 @@ describe('AwsSdkGateway dynamoDb', () => {
     expect(command.input.TableName).toBe('physical-orgs');
   });
 
+  it('rejects a query passing both sortKeyPrefix and sortKeyAtMost, never sending a malformed request (#282 code review)', async () => {
+    const send = vi.fn().mockResolvedValue({ Items: [] });
+    const gateway = new AwsSdkGateway(
+      { region: 'us-east-1', dynamoTableNames: { orgs: 'physical-orgs' } },
+      { dynamoDb: { send } as never },
+    );
+
+    await expect(gateway.dynamoDb.query({
+      table: 'orgs',
+      partitionKey: { name: 'pk', value: 'x' },
+      sortKeyPrefix: { name: 'sk', value: 'a' },
+      sortKeyAtMost: { name: 'sk', value: 'b' },
+    })).rejects.toThrow('mutually exclusive');
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('updateItem sends a SET expression scoped to the given attributes with an IN condition', async () => {
     const send = vi.fn().mockResolvedValue({});
     const gateway = new AwsSdkGateway(

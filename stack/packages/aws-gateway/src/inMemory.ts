@@ -27,6 +27,17 @@ function keyOf(key: Record<string, string | number>): string {
   return JSON.stringify(Object.keys(key).sort().map((k) => [k, key[k]]));
 }
 
+/** A real DynamoDB sort key compares numerically when its type is `N`, lexicographically when
+ * it's `S` - `String(a) <= String(b)` would silently diverge from that for a numeric bound
+ * (`'2' <= '10'` is false, even though `2 <= 10` is true), which is exactly the kind of
+ * fake/real gap `InMemoryDynamoDbGateway`'s own doc comment says it must not have (code review,
+ * #282). Missing values sort/compare as `''`, matching this file's existing prefix-filter
+ * convention. */
+function compareSortValues(a: unknown, b: unknown): number {
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a ?? '').localeCompare(String(b ?? ''));
+}
+
 function evaluateCondition(item: DynamoItem | undefined, condition: DynamoCondition | undefined): string | undefined {
   if (!condition) return undefined;
   switch (condition.type) {
@@ -100,6 +111,12 @@ class InMemoryDynamoDbGateway implements DynamoDbGateway {
   }
 
   async query(input: QueryInput): Promise<QueryResult> {
+    // A real KeyConditionExpression has exactly one sort-key condition - passing both would
+    // silently mean "whichever `compileCondition`/this fake happens to build last wins" instead
+    // of failing loudly (#282 code review).
+    if (input.sortKeyPrefix && input.sortKeyAtMost) {
+      throw new Error('QueryInput: sortKeyPrefix and sortKeyAtMost are mutually exclusive');
+    }
     const table = this.table(input.table);
     let items = [...table.values()].filter(
       (item) => item[input.partitionKey.name] === input.partitionKey.value,
@@ -108,10 +125,18 @@ class InMemoryDynamoDbGateway implements DynamoDbGateway {
       const { name, value } = input.sortKeyPrefix;
       items = items.filter((item) => String(item[name] ?? '').startsWith(String(value)));
     }
+    if (input.sortKeyAtMost) {
+      // Only an item that actually carries the sort-key attribute belongs in this query's
+      // result - mirrors a real sparse GSI, which never projects an item missing one of the
+      // index's own key attributes (this is what keeps a Client Org, which never gets
+      // `gsi2sk` written at all, out of the auto-destroy sweep's query - #282).
+      const { name, value } = input.sortKeyAtMost;
+      items = items.filter((item) => item[name] !== undefined && compareSortValues(item[name], value) <= 0);
+    }
     items.sort((a, b) => {
-      const sortAttr = input.sortKeyPrefix?.name;
+      const sortAttr = input.sortKeyPrefix?.name ?? input.sortKeyAtMost?.name;
       if (!sortAttr) return 0;
-      return String(a[sortAttr] ?? '').localeCompare(String(b[sortAttr] ?? ''));
+      return compareSortValues(a[sortAttr], b[sortAttr]);
     });
 
     const offset = input.cursor ? Number(Buffer.from(input.cursor, 'base64url').toString('utf8')) : 0;

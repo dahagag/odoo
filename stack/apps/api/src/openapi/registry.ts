@@ -135,6 +135,12 @@ export const OrgSchema = z
     lastJobError: z.string().optional().openapi({
       description: "A clear, actionable reason for lastJobStatus's most recent 'failed' outcome; blank whenever the last observed outcome wasn't a failure.",
     }),
+    lastActivityAt: z.string().datetime().optional().openapi({
+      description: 'Set to the moment the org reaches active (issue or wake) - what the idle-suspend sweep (#282) checks against the idle timeout.',
+    }),
+    snapshotRetentionUntil: z.string().datetime().optional().openapi({
+      description: 'Set on every destroy, whether triggered by the auto-destroy sweep (#282) or a manual destroy call.',
+    }),
   })
   .openapi('Org');
 
@@ -234,6 +240,54 @@ registry.registerPath({
     200: { description: 'OK', content: { 'application/json': { schema: OrgSchema } } },
     401: problemResponse('Missing admin principal'),
     404: problemResponse('No such org'),
+    409: stillProcessingResponse('An Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)'),
+  },
+});
+
+/** The idle-suspend and auto-destroy sweeps' own response shape (#282) - a summary of which orgs
+ * this run actually transitioned, not a full `OrgSchema` per org (a sweep can touch many orgs in
+ * one call, and a caller that needs a given org's full current record already has `GET
+ * /v1/admin/orgs/{orgId}`). */
+export const SweepResultSchema = z
+  .object({
+    action: z.enum(['suspend', 'destroy']),
+    orgIds: z.array(OrgIdSchema),
+  })
+  .openapi('SweepResult');
+
+registry.registerPath({
+  method: 'post',
+  path: `/${API_VERSION}/admin/sweeps/idle-suspend`,
+  summary: 'Suspend every active org idle past the timeout',
+  description:
+    'Production entry point for the idle-suspend sweep (#282): reachable by an external ' +
+    'scheduler on a recurring cadence, rather than checked inline on request. Never wakes a ' +
+    'suspended org - only the explicit `wake` action does.',
+  tags: ['admin'],
+  security: [{ sigv4: [] }],
+  request: { headers: idempotencyKeyHeaderSchema },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: SweepResultSchema } } },
+    401: problemResponse('Missing admin principal'),
+    409: stillProcessingResponse('An Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)'),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: `/${API_VERSION}/admin/sweeps/auto-destroy`,
+  summary: 'Auto-Destroy every active or suspended Trial Org past its expiry date',
+  description:
+    'Production entry point for the auto-destroy sweep (#282): reachable by an external ' +
+    'scheduler on a recurring cadence. A Client Org is never selected, regardless of any date ' +
+    'field it carries; an issued (never provisioned) Trial Org is ignored. Every destroy leaves ' +
+    'the org with a snapshot-retention marker set.',
+  tags: ['admin'],
+  security: [{ sigv4: [] }],
+  request: { headers: idempotencyKeyHeaderSchema },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: SweepResultSchema } } },
+    401: problemResponse('Missing admin principal'),
     409: stillProcessingResponse('An Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)'),
   },
 });

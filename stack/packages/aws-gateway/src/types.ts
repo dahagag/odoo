@@ -102,6 +102,11 @@ export interface QueryInput {
   indexName?: string;
   partitionKey: { name: string; value: string | number };
   sortKeyPrefix?: { name: string; value: string | number };
+  /** Sort-key range condition (`#sk <= :value`) - the auto-destroy sweep's "on or before now"
+   * query (#282: "querying by more than exact match ... a small, additive extension to the
+   * record store's query capability rather than a full-table scan"). Mutually exclusive with
+   * `sortKeyPrefix` - a query needs at most one sort-key condition. */
+  sortKeyAtMost?: { name: string; value: string | number };
   limit?: number;
   cursor?: string;
 }

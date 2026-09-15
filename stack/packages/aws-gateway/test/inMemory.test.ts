@@ -208,6 +208,53 @@ describe('InMemoryAwsGateway dynamoDb', () => {
     expect(page2.items).toHaveLength(1);
     expect(page2.nextCursor).toBeUndefined();
   });
+
+  it('queries by partition key and a sortKeyAtMost range, excluding items past the value and items missing the attribute (#282)', async () => {
+    const gateway = new InMemoryAwsGateway();
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'expiry-sweep', sk: 'org#1', gsi2sk: '2026-01-01T00:00:00.000Z' } });
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'expiry-sweep', sk: 'org#2', gsi2sk: '2026-06-01T00:00:00.000Z' } });
+    // A Client Org never carries a `gsi2sk` at all (#282's own "regardless of any date field it
+    // carries") - simulated here by an item sharing the partition but missing that attribute,
+    // which must never satisfy a `<=` comparison against it.
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'expiry-sweep', sk: 'org#3' } });
+
+    const result = await gateway.dynamoDb.query({
+      table: 'orgs',
+      partitionKey: { name: 'pk', value: 'expiry-sweep' },
+      sortKeyAtMost: { name: 'gsi2sk', value: '2026-03-01T00:00:00.000Z' },
+    });
+
+    expect(result.items.map((item) => item.sk)).toEqual(['org#1']);
+  });
+
+  it('compares a numeric sortKeyAtMost bound numerically, not lexicographically (CodeRabbit, PR #301)', async () => {
+    const gateway = new InMemoryAwsGateway();
+    // Lexicographic comparison would wrongly exclude 2 ('2' <= '10' is false) and order 10
+    // before 2 - both must be right for a numeric sort key, matching how DynamoDB itself
+    // compares a real `N`-typed attribute.
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'p', sk: 'a', gsi2sk: 2 } });
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'p', sk: 'b', gsi2sk: 9 } });
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'p', sk: 'c', gsi2sk: 10 } });
+
+    const result = await gateway.dynamoDb.query({
+      table: 'orgs',
+      partitionKey: { name: 'pk', value: 'p' },
+      sortKeyAtMost: { name: 'gsi2sk', value: 10 },
+    });
+
+    expect(result.items.map((item) => item.gsi2sk)).toEqual([2, 9, 10]);
+  });
+
+  it('rejects a query passing both sortKeyPrefix and sortKeyAtMost (#282 code review: no silent clobber)', async () => {
+    const gateway = new InMemoryAwsGateway();
+
+    await expect(gateway.dynamoDb.query({
+      table: 'orgs',
+      partitionKey: { name: 'pk', value: 'x' },
+      sortKeyPrefix: { name: 'sk', value: 'a' },
+      sortKeyAtMost: { name: 'sk', value: 'b' },
+    })).rejects.toThrow('mutually exclusive');
+  });
 });
 
 describe('InMemoryAwsGateway stepFunctions', () => {
