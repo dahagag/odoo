@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { AwsGateway } from '@stack/aws-gateway';
 import { ConditionalCheckFailedError, TransactionCanceledError } from '@stack/aws-gateway';
-import type { OrgAction, OrgState, OrgType } from '@stack/domain';
+import type { InviteType, OrgAction, OrgState, OrgType } from '@stack/domain';
 import {
   ConcurrentWriteError,
   DnsLabelImmutableError,
@@ -39,6 +39,11 @@ export interface OrgRecord {
   domain: string;
   seatsUsed: number;
   seatsTotal: number;
+  /** Which invitation path (ADR-0026) this org accepts: `targeted` (the default, matching
+   * `hosting.trial.org.invite_type`'s own default) or `open`. `org/seat.ts`'s `joinOpenInvite`
+   * rejects an org that isn't `open` (this ticket's Acceptance Criteria: "Joining via the
+   * open-invite path on an org configured for targeted invites only is rejected"). */
+  inviteType: InviteType;
   opportunityId?: string;
   /** Absent for a Client Org (this ticket's Acceptance Criteria: "no expiry date field
    * populated") - only a Trial Org ever carries one. */
@@ -92,6 +97,9 @@ export interface CreateOrgInput {
   domain: string;
   seatsTotal: number;
   dnsSubdomainLabel: string;
+  /** Defaults to `targeted` (`hosting.trial.org.invite_type`'s own default), matching how most
+   * Trial Orgs are issued for a specific known prospect rather than shared as an open link. */
+  inviteType?: InviteType;
   opportunityId?: string;
 }
 
@@ -125,6 +133,7 @@ export async function createOrg(gateway: AwsGateway, input: CreateOrgInput, conf
     domain: input.domain,
     seatsUsed: 0,
     seatsTotal: input.seatsTotal,
+    inviteType: input.inviteType ?? 'targeted',
     opportunityId: input.opportunityId,
     expiryDate,
   };

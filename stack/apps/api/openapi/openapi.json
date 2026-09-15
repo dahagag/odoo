@@ -122,6 +122,13 @@
         "maxLength": 63,
         "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
       },
+      "InviteType": {
+        "type": "string",
+        "enum": [
+          "targeted",
+          "open"
+        ]
+      },
       "OrgAction": {
         "type": "string",
         "enum": [
@@ -164,6 +171,9 @@
             "minimum": 0,
             "exclusiveMinimum": true
           },
+          "inviteType": {
+            "$ref": "#/components/schemas/InviteType"
+          },
           "opportunityId": {
             "type": "string"
           },
@@ -200,7 +210,8 @@
           "name",
           "domain",
           "seatsUsed",
-          "seatsTotal"
+          "seatsTotal",
+          "inviteType"
         ]
       },
       "CreateOrgRequest": {
@@ -224,6 +235,16 @@
           },
           "dnsSubdomainLabel": {
             "$ref": "#/components/schemas/DnsSubdomainLabel"
+          },
+          "inviteType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InviteType"
+              },
+              {
+                "description": "Defaults to 'targeted' when omitted."
+              }
+            ]
           },
           "opportunityId": {
             "type": "string"

@@ -48,6 +48,13 @@ export type OrgId = z.infer<typeof OrgIdSchema>;
 export const OrgActionSchema = z.enum(['issue', 'suspend', 'wake', 'destroy']).openapi('OrgAction');
 export type OrgAction = z.infer<typeof OrgActionSchema>;
 
+/** The two invitation paths (ADR-0026, `docs/contexts/hosting/CONTEXT.md`'s Seat/Open Invite
+ * Link entries): `targeted` for a specific known email, `open` for a shareable link guarded
+ * only by domain match. Matches `hosting.trial.org.invite_type`
+ * (custom_addons/hosting_admin/models/trial_org.py's `INVITE_TYPES`) one language over. */
+export const InviteTypeSchema = z.enum(['targeted', 'open']).openapi('InviteType');
+export type InviteType = z.infer<typeof InviteTypeSchema>;
+
 /** A DNS label: lowercase letters/digits/hyphens, 1-63 characters, neither starting nor ending
  * with a hyphen (RFC 1123) - this is prefixed onto the configured org root DNS zone
  * (`ORG_ROOT_DNS_ZONE`) to form the org's actual hostname. */

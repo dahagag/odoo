@@ -3,6 +3,7 @@ import {
   API_VERSION,
   DnsSubdomainLabelSchema,
   IDEMPOTENCY_KEY_HEADER,
+  InviteTypeSchema,
   OrgActionSchema,
   OrgIdSchema,
   OrgStateSchema,
@@ -117,6 +118,7 @@ export const OrgSchema = z
     domain: z.string(),
     seatsUsed: z.number().int().nonnegative(),
     seatsTotal: z.number().int().positive(),
+    inviteType: InviteTypeSchema,
     opportunityId: z.string().optional(),
     expiryDate: z.string().datetime().optional().openapi({
       description: 'Absent for a Client Org, which has no Auto-Destroy expiry.',
@@ -137,6 +139,9 @@ export const CreateOrgRequestSchema = z
     domain: z.string().min(1),
     seatsTotal: z.number().int().positive(),
     dnsSubdomainLabel: DnsSubdomainLabelSchema,
+    inviteType: InviteTypeSchema.optional().openapi({
+      description: "Defaults to 'targeted' when omitted.",
+    }),
     opportunityId: z.string().optional(),
   })
   .openapi('CreateOrgRequest');
