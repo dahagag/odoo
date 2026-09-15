@@ -119,10 +119,10 @@ run "verify_platform_ci_plan_trust_and_read_only_scoping" {
       for statement in jsondecode(data.aws_iam_policy_document.platform_ci_plan.json).Statement :
       alltrue([
         for action in flatten([statement.Action]) :
-        can(regex("^(iam|ecr|ec2|ecs|logs):(Get|List|Describe).*$", action))
+        can(regex("^(iam|ecr|ec2|ecs|logs|ssm):(Get|List|Describe).*$", action))
       ])
     ])
-    error_message = "platform-ci-plan's policy must grant only read-only (Get*/List*/Describe*) actions — no ecr:Create*/Put*/Delete*, no ec2:Create*/Delete*, no ecs:Create*/Delete*, no iam:Create*/Put*/Delete*, no logs:Create*/Put*/Delete*."
+    error_message = "platform-ci-plan's policy must grant only read-only (Get*/List*/Describe*) actions — no ecr:Create*/Put*/Delete*, no ec2:Create*/Delete*, no ecs:Create*/Delete*, no iam:Create*/Put*/Delete*, no logs:Create*/Put*/Delete*, no ssm:Put*/Delete*."
   }
 
   assert {
@@ -163,5 +163,29 @@ run "verify_platform_ci_plan_trust_and_read_only_scoping" {
       && flatten([statement.Resource]) == ["*"]
     ])
     error_message = "ReadAdministrationStackTaskDefinition must grant ecs:DescribeTaskDefinition and ecs:ListTagsForResource with resources = \"*\"."
+  }
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.platform_ci_plan.json).Statement :
+      statement.Sid == "ReadAdministrationStackDeployedCommitParameter"
+      && toset(flatten([statement.Action])) == toset(["ssm:GetParameter", "ssm:ListTagsForResource"])
+      && toset(flatten([statement.Resource])) == toset([
+        "arn:aws:ssm:us-east-1:333333333333:parameter/platform-administration-stack-api/deployed-commit",
+      ])
+    ])
+    error_message = "ReadAdministrationStackDeployedCommitParameter must be scoped to exactly the deployed-commit parameter ARN, not a bare \"*\" or the whole account's parameters."
+  }
+
+  # Same unscopable list action the deploy role carries — see that role's own
+  # DescribeAdministrationStackParameters assertion.
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.platform_ci_plan.json).Statement :
+      statement.Sid == "ReadAdministrationStackParameters"
+      && flatten([statement.Action]) == ["ssm:DescribeParameters"]
+      && flatten([statement.Resource]) == ["*"]
+    ])
+    error_message = "ReadAdministrationStackParameters must grant ssm:DescribeParameters and nothing else on \"*\" — no other SSM action may ride along on the unscopable statement."
   }
 }
