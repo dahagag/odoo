@@ -124,6 +124,18 @@ run "verify_platform_administration_stack_deploy_trust_and_permissions" {
     error_message = "ManageAdministrationStackDeployedCommitParameter (issue #218) must be scoped to exactly the deployed-commit parameter ARN, not a bare \"*\" or the whole account's parameters."
   }
 
+  # The one SSM action that cannot be ARN-scoped gets its own statement, so the "*" stays
+  # visibly confined to a single list call instead of widening the scoped statement above.
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.platform_administration_stack_deploy.json).Statement :
+      statement.Sid == "DescribeAdministrationStackParameters"
+      && flatten([statement.Action]) == ["ssm:DescribeParameters"]
+      && flatten([statement.Resource]) == ["*"]
+    ])
+    error_message = "DescribeAdministrationStackParameters must grant ssm:DescribeParameters and nothing else on \"*\" — no other SSM action may ride along on the unscopable statement."
+  }
+
   # --- this role carries none of staging_deploy's own Hosting-Account-side statements — the
   # --- S3 state-backend grant, the ECR retag grant, or an sts:AssumeRole back onto itself ---
 

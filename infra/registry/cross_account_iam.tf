@@ -364,6 +364,19 @@ data "aws_iam_policy_document" "platform_administration_stack_deploy" {
     ]
     resources = [local.administration_stack_deployed_commit_parameter_arn]
   }
+
+  # ssm:DescribeParameters has no resource-level permission support at all, same shape as
+  # logs:DescribeLogGroups above — AWS evaluates it against arn:aws:ssm:<region>:<account>:*
+  # no matter which parameter the caller is actually after (confirmed live: the AccessDenied
+  # this replaces named exactly that ARN, not the scoped parameter ARN the statement above
+  # grants). The AWS provider calls it on every refresh of an aws_ssm_parameter already in
+  # state, to read back the description/tier the scoped GetParameter grant can't supply.
+  statement {
+    sid       = "DescribeAdministrationStackParameters"
+    effect    = "Allow"
+    actions   = ["ssm:DescribeParameters"]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "platform_administration_stack_deploy" {
@@ -491,6 +504,29 @@ data "aws_iam_policy_document" "platform_ci_plan" {
       local.administration_stack_log_group_arn,
       "${local.administration_stack_log_group_arn}:*",
     ]
+  }
+
+  # The read-side mirror of platform_administration_stack_deploy's
+  # ManageAdministrationStackDeployedCommitParameter/DescribeAdministrationStackParameters pair
+  # above: once infra/platform's aws_ssm_parameter is in state, every `tofu plan` refreshes it
+  # too, so the plan role needs the same three read calls the deploy role's refresh makes.
+  statement {
+    sid    = "ReadAdministrationStackDeployedCommitParameter"
+    effect = "Allow"
+    actions = [
+      "ssm:GetParameter",
+      "ssm:ListTagsForResource",
+    ]
+    resources = [local.administration_stack_deployed_commit_parameter_arn]
+  }
+
+  # See DescribeAdministrationStackParameters's identical comment above — no resource-level
+  # permission support, so it can only be granted account-wide.
+  statement {
+    sid       = "ReadAdministrationStackParameters"
+    effect    = "Allow"
+    actions   = ["ssm:DescribeParameters"]
+    resources = ["*"]
   }
 
   # infra_plan also plans infra/registry itself (via this same role) — a `tofu plan` refreshes
