@@ -42,6 +42,10 @@ class SpyProvisioner implements Provisioner {
   suspend(org: { orgId: string }, jobId: string) { return this.record('suspend', org, jobId); }
   wake(org: { orgId: string }, jobId: string) { return this.record('wake', org, jobId); }
   destroy(org: { orgId: string }, jobId: string) { return this.record('destroy', org, jobId); }
+  async checkStatus(): Promise<void> {}
+  async getAuditTrail(): Promise<import('../src/org/provisioner').AuditTrail> {
+    return { available: false };
+  }
 }
 
 describe('createOrg (this ticket\'s Acceptance Criteria)', () => {
@@ -162,6 +166,22 @@ describe('applyTransition (this ticket\'s What to build/Acceptance Criteria)', (
     expect(result.state).toBe('active');
     expect(provisioner.calls).toEqual([{ action: 'issue', orgId: org.orgId, jobId: result.lastJobId }]);
     await expect(getOrgRecord(gateway, org.orgId)).resolves.toMatchObject({ state: 'active', lastJobId: result.lastJobId });
+  });
+
+  it('writes lastJobStatus: running (and clears lastJobError) in the same call as the new state (ADR-0019, #281)', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await issuedOrg(gateway);
+    await gateway.dynamoDb.updateItem({
+      table: ORGS_TABLE,
+      key: { pk: orgPk(org.orgId) },
+      set: { lastJobStatus: 'failed', lastJobError: 'stale failure from a previous job' },
+    });
+
+    const result = await applyTransition(gateway, new StubProvisioner(), org.orgId, 'issue');
+
+    expect(result.lastJobStatus).toBe('running');
+    expect(result.lastJobError).toBe('');
+    await expect(getOrgRecord(gateway, org.orgId)).resolves.toMatchObject({ lastJobStatus: 'running', lastJobError: '' });
   });
 
   it('runs the full lifecycle: issued -> active -> suspended -> active -> destroyed', async () => {
