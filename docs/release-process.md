@@ -7,8 +7,8 @@ each owned addon independently — see
 derivation of an addon's manifest version from that tag. This document covers the operational
 side #202/#216/#217 built on top of that: cutting a release, proving it in staging, promoting it
 to production, and rolling one back. It supersedes the old per-module/Render-watched description
-that used to live in [`docs/agents/sdlc.md`](agents/sdlc.md#deployment) (see that file's
-Deployment section for the current, short pointer back here).
+that used to live in [`docs/agents/sdlc.md`](agents/sdlc.md#continuous-integration) (see that
+file's Continuous integration section for the current, short pointer back here).
 
 ## What "staging" and "production" mean today
 
