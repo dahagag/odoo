@@ -3,7 +3,11 @@
 Deliverable of [#283](https://github.com/dahagag/odoo/issues/283), part of the
 [epic](https://github.com/dahagag/odoo/issues/196) that ported the Trial Org / Seat lifecycle
 from the Odoo addon `custom_addons/hosting_admin` (Postgres-backed) to the administration stack
-under `stack/` (DynamoDB-backed, [ADR-0034](../../adr/0034-administration-stack-owns-org-record-of-truth.md)).
+under `stack/` (DynamoDB-backed, [ADR-0034](../adr/0034-administration-stack-owns-org-record-of-truth.md)).
+Vocabulary follows [`docs/contexts/hosting/CONTEXT.md`](../contexts/hosting/CONTEXT.md); this note
+lives in `docs/research/` rather than alongside that glossary because it is implementation- and
+code-line-heavy (per `docs/agents/domain.md`'s "keep CONTEXT.md implementation-free" rule), not a
+business-meaning glossary entry.
 
 This is what [#197](https://github.com/dahagag/odoo/issues/197) (shrinking `hosting_admin`) is
 reviewed against. Every Odoo test below is mapped to a stack counterpart, or named as an explicit
@@ -54,7 +58,7 @@ cap concurrency), #280 (Step Functions provisioner), #281 (pending-job polling, 
 | `test_create_with_non_positive_seat_cap_is_rejected` | `seatsTotal` must be positive | Zod schema, exercised via `orgAdminApi.test.ts`: "rejects a malformed request body" |
 | `test_create_with_valid_domain_succeeds`, `test_create_with_domain_missing_a_dot_is_rejected`, `test_create_with_domain_containing_invalid_characters_is_rejected`, `test_create_with_domain_having_leading_hyphen_label_is_rejected`, `test_create_with_empty_domain_is_rejected` | Prospect domain shape validation | Zod schema on `domain`, exercised generically via `orgAdminApi.test.ts`: "rejects a malformed request body" |
 | `test_new_trial_org_starts_issued_with_blank_deployment_version` | Fresh org has no deployment version | `orgRecord.test.ts`: "creates a Trial Org in the issued state with a defaulted region, unique label, and blank deployment fields"; `awsProvisioner.test.ts`: "fails fast without calling AWS when no deployment version has ever been recorded" |
-| `test_dns_subdomain_label_defaults_to_a_slugified_name` | Auto-slug default from Org Name (`trial_org.py:285-297`) | **⚠ GAP, unverified as accepted.** `createOrg` requires a caller-supplied `dnsSubdomainLabel` (`record.ts:200`); no slugify-from-name fallback. Presumed to be Odoo's responsibility as the REST caller under [ADR-0036](../../adr/0036-odoo-to-stack-contract-is-rest-with-generated-openapi.md), but that ADR doesn't say so explicitly — see [Open questions](#open-questions-before-197). |
+| `test_dns_subdomain_label_defaults_to_a_slugified_name` | Auto-slug default from Org Name (`trial_org.py:285-297`) | **⚠ GAP, unverified as accepted.** `createOrg` requires a caller-supplied `dnsSubdomainLabel` (`record.ts:200`); no slugify-from-name fallback. Presumed to be Odoo's responsibility as the REST caller under [ADR-0036](../adr/0036-odoo-to-stack-contract-is-rest-with-generated-openapi.md), but that ADR doesn't say so explicitly — see [Open questions](#open-questions-before-197). |
 | `test_dns_subdomain_label_explicit_value_is_kept` | Explicit value respected | Implicit — `createOrg` always uses the caller's value |
 | `test_dns_subdomain_label_with_invalid_characters_is_rejected`, `test_dns_subdomain_label_with_leading_hyphen_is_rejected`, `test_dns_subdomain_label_too_long_is_rejected` | RFC1123 label rules, 63-char max | `DnsSubdomainLabelSchema` (`stack/packages/domain/src/index.ts:58-67`), exercised via `orgAdminApi.test.ts`: "rejects a malformed request body" |
 
@@ -162,7 +166,7 @@ host-based redirect, a wake-progress status endpoint) served to a browser hittin
 org's own hostname. This is client-facing presentation on top of the ported `wake` action and job
 status — not record-of-truth logic. The stack exposes `wake` (`applyTransition`) and job status
 (`checkStatus`) as API primitives; no stack code renders a page or does host-based routing (no
-`asleep` hit anywhere under `stack/`). [ADR-0030](../../adr/0030-asleep-page-served-via-route53-failover-to-platform.md)
+`asleep` hit anywhere under `stack/`). [ADR-0030](../adr/0030-asleep-page-served-via-route53-failover-to-platform.md)
 confirms the Asleep Page is served via Route53 failover to the platform account, i.e. it's
 expected to keep living outside the stack indefinitely — a permanent, accepted gap, not a
 temporary omission.
@@ -283,9 +287,9 @@ surface, not silent omissions.
 
 | Out-of-scope item | Status | Evidence |
 |---|---|---|
-| Promotion mechanics | Not touched | No hit for `promot` under `stack/apps` or `stack/packages` source; `record.ts` only shapes the record for a future promotion (`type` field, no immutability assumption) per the epic's own Implementation Decisions. Promotion's design is deferred to [ADR-0035](../../adr/0035-trial-and-client-orgs-one-provisioning-path-with-promotion.md) and the `/wayfinder` pass it references. |
+| Promotion mechanics | Not touched | `grep -ri promot` under `stack/` does hit a handful of lines, but every one is the unrelated sense "promote a pending deployment version to the audit fields on job success" (ADR-0024 — `awsProvisioner.ts:70,139,163`, `provisioner.ts:52`, `record.ts:308,315`). No org-type Promotion (Trial Org → Client Org) logic exists anywhere in `stack/`; `record.ts` only shapes the record for a future promotion (`type` field, no immutability assumption) per the epic's own Implementation Decisions. Promotion's design is deferred to [ADR-0035](../adr/0035-trial-and-client-orgs-one-provisioning-path-with-promotion.md) and the `/wayfinder` pass it references. |
 | Removing/shrinking `hosting_admin` | Not touched | `custom_addons/hosting_admin` is unchanged and still functional; explicitly gated on this checklist and on #197. |
-| Cost data | Not touched | No hit for `cost` under `stack/apps` or `stack/packages` source (cost-dashboard work is unrelated Odoo-side history, ADR-0030 "cost-dashboard-daily-snapshot"). |
+| Cost data | Not touched | `grep -i cost` under `stack/` does hit real content: `stack/packages/aws-gateway/src/{awsSdk,inMemory,types}.ts` carry a genuine `CostExplorerGateway`/`getCostAndUsage` implementation, and those three files *were* edited by this epic's own commits (they're shared AwsGateway infrastructure the lifecycle port also depends on) — but `git log <epic-commit-range> -p -- <those files> \| grep -i cost` shows zero of the epic's own diff hunks touch the Cost Explorer code; every epic edit to those files is to unrelated DynamoDB/Step Functions surface. The Cost Explorer implementation itself predates the epic and belongs to the separate cost-dashboard work (ADR-0030 "cost-dashboard-daily-snapshot"). The other "cost" hit, in `stack/apps/api/src/idempotency/store.ts`, is an unrelated sense too — a comment about a DynamoDB TTL as a "storage-cost backstop" for the idempotency-lock item, nothing to do with AWS Cost Data. |
 | Region selection | Not touched | `record.ts:197-199`: `region: config.defaultRegion` with a comment noting selection is deferred; every org gets the single configured default, no caller override exists. |
 | OpenTofu modules / Step Functions state machine | Not touched | `git log -- infra/foundation/state_machine.tf infra/modules/trial_org` shows no commit from this epic's chain (#278, #279, #280, #281, #282 and their PRs) touching either path; last change predates the epic. |
 
