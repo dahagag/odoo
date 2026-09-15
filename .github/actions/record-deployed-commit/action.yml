@@ -1,0 +1,48 @@
+name: Record the commit just deployed to the administration-stack API
+description: >-
+  Issue #218: overwrites the SSM parameter ./.github/actions/check-release-order reads (infra/
+  platform's aws_ssm_parameter.administration_stack_deployed_commit) with this run's commit, once
+  a deploy job's retag+apply has actually succeeded — so a still-in-flight job for an older commit
+  sees it and skips rather than overwriting a release tag this run just published. Same
+  assume-role chain as check-release-order (see that action's own description for why this
+  assumes platform_administration_stack_deploy_role_arn directly, and why the temporary
+  credentials stay local to this step's process env rather than GITHUB_ENV).
+inputs:
+  platform_administration_stack_deploy_role_arn:
+    description: infra/registry's platform_administration_stack_deploy_role_arn output.
+    required: true
+  aws_region:
+    description: infra/cicd's aws_region input.
+    required: true
+  ssm_parameter_name:
+    description: infra/platform's administration_stack_deployed_commit_parameter_name default.
+    required: false
+    default: "/platform-administration-stack-api/deployed-commit"
+  commit_sha:
+    description: This run's triggering commit — github.sha.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Record the deployed commit
+      shell: bash
+      env:
+        ROLE_ARN: ${{ inputs.platform_administration_stack_deploy_role_arn }}
+        AWS_REGION: ${{ inputs.aws_region }}
+        PARAM_NAME: ${{ inputs.ssm_parameter_name }}
+        COMMIT_SHA: ${{ inputs.commit_sha }}
+      run: |
+        set -euo pipefail
+
+        creds=$(aws sts assume-role \
+          --role-arn "$ROLE_ARN" \
+          --role-session-name "release-order-guard" \
+          --output json)
+        export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_DEFAULT_REGION
+        AWS_ACCESS_KEY_ID=$(jq -r '.Credentials.AccessKeyId' <<<"$creds")
+        AWS_SECRET_ACCESS_KEY=$(jq -r '.Credentials.SecretAccessKey' <<<"$creds")
+        AWS_SESSION_TOKEN=$(jq -r '.Credentials.SessionToken' <<<"$creds")
+        AWS_DEFAULT_REGION="$AWS_REGION"
+
+        aws ssm put-parameter --name "$PARAM_NAME" --type String --overwrite --value "$COMMIT_SHA"
+        echo "Recorded $COMMIT_SHA as the deployed commit for $PARAM_NAME."

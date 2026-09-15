@@ -118,3 +118,9 @@ variable "administration_stack_ecs_service_name" {
   description = "infra/platform's aws_ecs_service.administration_stack_api name default (same \"platform-administration-stack-api\" convention)."
   default     = "platform-administration-stack-api"
 }
+
+variable "administration_stack_deployed_commit_parameter_name" {
+  type        = string
+  description = "infra/platform's aws_ssm_parameter.administration_stack_deployed_commit name default — the SSM parameter ci.yml's release-order guard (issue #218) reads/writes to detect an out-of-order deploy."
+  default     = "/platform-administration-stack-api/deployed-commit"
+}

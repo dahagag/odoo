@@ -12,3 +12,8 @@ output "administration_stack_release_version" {
   value       = var.administration_stack_image_tag
   description = "The release version this apply deployed — also set as this service's and task definition's own `Release` tag, and as the running container's RELEASE_VERSION env var (surfaced on /healthz)."
 }
+
+output "administration_stack_deployed_commit_parameter_name" {
+  value       = aws_ssm_parameter.administration_stack_deployed_commit.name
+  description = "SSM parameter name ci.yml's release-order guard (issue #218) reads/writes."
+}

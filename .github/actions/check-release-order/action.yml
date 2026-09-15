@@ -1,0 +1,102 @@
+name: Check this deploy is not stale against the already-deployed commit
+description: >-
+  Issue #218: deploy-administration-stack-staging (dev/19.0) and deploy-administration-stack-
+  production (main/19.0) both retag+apply the *same* infra/platform ECS service, resolving
+  "whatever the latest v* tag currently is" independently of the triggering commit. A delayed run
+  for an older commit can reach its retag/apply step after a newer commit's run already deployed —
+  silently pointing the release tag back at older image bytes. This reads one SSM parameter
+  (infra/platform's aws_ssm_parameter.administration_stack_deployed_commit, in the Platform
+  Account, shared by both jobs since they deploy the same instance — see
+  infra/registry/cross_account_iam.tf's platform_administration_stack_deploy_trust comment) and
+  compares this run's commit against it by ancestry. Pair with ./.github/actions/
+  record-deployed-commit, called after a successful apply to update that parameter. Assumes
+  platform_administration_stack_deploy_role_arn itself (the same role infra-tofu's Terraform
+  provider chains into) rather than adding a new IAM entity, since the AWS credentials active in
+  the calling job are only the Hosting-Account staging_deploy/production_deploy role — this step's
+  own process env, not GITHUB_ENV, so it never leaks into later steps that expect those
+  Hosting-Account credentials (the retag action, aws-actions/configure-aws-credentials).
+inputs:
+  platform_administration_stack_deploy_role_arn:
+    description: infra/registry's platform_administration_stack_deploy_role_arn output.
+    required: true
+  aws_region:
+    description: infra/cicd's aws_region input.
+    required: true
+  ssm_parameter_name:
+    description: infra/platform's administration_stack_deployed_commit_parameter_name default.
+    required: false
+    default: "/platform-administration-stack-api/deployed-commit"
+  commit_sha:
+    description: This run's triggering commit — github.sha.
+    required: true
+outputs:
+  stale:
+    description: >-
+      "true" if this run's commit is not ahead of (or equal to) the already-recorded deployed
+      commit — the caller should skip retagging/applying rather than overwrite it.
+    value: ${{ steps.guard.outputs.stale }}
+runs:
+  using: composite
+  steps:
+    - name: Compare this run's commit against the recorded deployed commit
+      id: guard
+      shell: bash
+      env:
+        ROLE_ARN: ${{ inputs.platform_administration_stack_deploy_role_arn }}
+        AWS_REGION: ${{ inputs.aws_region }}
+        PARAM_NAME: ${{ inputs.ssm_parameter_name }}
+        COMMIT_SHA: ${{ inputs.commit_sha }}
+        GH_TOKEN: ${{ github.token }}
+        GH_REPOSITORY: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+
+        # Temporary Platform Account credentials, kept local to this step's own process
+        # environment (never GITHUB_ENV) — later steps in the calling job (the retag action,
+        # infra-tofu) must keep seeing the Hosting-Account staging_deploy/production_deploy
+        # credentials aws-actions/configure-aws-credentials already put in GITHUB_ENV.
+        creds=$(aws sts assume-role \
+          --role-arn "$ROLE_ARN" \
+          --role-session-name "release-order-guard" \
+          --output json)
+        export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_DEFAULT_REGION
+        AWS_ACCESS_KEY_ID=$(jq -r '.Credentials.AccessKeyId' <<<"$creds")
+        AWS_SECRET_ACCESS_KEY=$(jq -r '.Credentials.SecretAccessKey' <<<"$creds")
+        AWS_SESSION_TOKEN=$(jq -r '.Credentials.SessionToken' <<<"$creds")
+        AWS_DEFAULT_REGION="$AWS_REGION"
+
+        # A mismatch between this default and infra/platform's actual parameter name (both are
+        # duplicated literals, kept in sync by convention — see infra/registry/locals.tf's
+        # administration_stack_deployed_commit_parameter_arn comment) fails loud right here
+        # (ParameterNotFound from get-parameter, or an AccessDenied from a name outside the IAM
+        # grant's scoped ARN) rather than silently comparing against the wrong parameter.
+        recorded=$(aws ssm get-parameter --name "$PARAM_NAME" --query 'Parameter.Value' --output text)
+        if [[ -z "$recorded" || "$recorded" == "None" || "$recorded" == "unset" ]]; then
+          echo "No prior deployed commit recorded at $PARAM_NAME — nothing to compare against."
+          echo "stale=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        if [[ "$recorded" == "$COMMIT_SHA" ]]; then
+          echo "Recorded commit already matches this run's commit ($COMMIT_SHA) — idempotent re-run."
+          echo "stale=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Commit-ancestry comparison via the GitHub compare API, not a local `git merge-base`
+        # (which would need a full-history checkout just for this) — mirrors
+        # resolve-release-tag's own preference for the shallowest fetch that answers the question.
+        status=$(gh api "repos/${GH_REPOSITORY}/compare/${recorded}...${COMMIT_SHA}" --jq '.status')
+        case "$status" in
+          ahead)
+            echo "This run's commit ($COMMIT_SHA) is ahead of the recorded deployed commit ($recorded) — proceeding."
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+            ;;
+          behind|identical|diverged)
+            echo "This run's commit ($COMMIT_SHA) is '$status' relative to the already-deployed commit ($recorded) — a newer deploy already published this release tag. Skipping retag/apply rather than overwrite it with stale content." >&2
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            ;;
+          *)
+            echo "Unexpected compare status '$status' between $recorded and $COMMIT_SHA — treating conservatively as stale." >&2
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            ;;
+        esac

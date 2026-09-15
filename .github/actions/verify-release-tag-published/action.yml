@@ -1,0 +1,39 @@
+name: Verify a release tag already exists in the administration-stack-api ECR repository
+description: >-
+  Issue #218: a workflow_dispatch rollback supplies an explicit release_tag typed into the
+  dispatch form, with no build step behind it to guarantee it was ever actually published — unlike
+  the push path, where resolve-release-tag always resolves a tag build-stack-image just pushed
+  under. A typo, or a tag that was never retagged, would otherwise reach `tofu apply` unchecked,
+  update the ECS task definition to reference a nonexistent image, and only fail once ECS itself
+  tries (and fails) to pull it during rollout — later, and with a far less obvious error, than
+  catching it here. Uses the same authenticated `aws ecr batch-get-image` lookup
+  retag-administration-stack-image already performs, under the same staging_deploy/
+  production_deploy credentials (already configured by the time this runs) that role already
+  holds read access to this repository through (RetagAdministrationStackImage,
+  infra/cicd/oidc.tf) — no additional AWS credentials needed.
+inputs:
+  release_tag:
+    description: The release tag to verify, e.g. v1.2.0.
+    required: true
+  platform_account_id:
+    description: The Platform Account ID the administration-stack-api ECR repository lives in.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Confirm the release tag resolves to a published image
+      shell: bash
+      env:
+        RELEASE_TAG: ${{ inputs.release_tag }}
+        PLATFORM_ACCOUNT_ID: ${{ inputs.platform_account_id }}
+      run: |
+        set -euo pipefail
+        manifest=$(aws ecr batch-get-image \
+          --registry-id "$PLATFORM_ACCOUNT_ID" \
+          --repository-name agentic-erp/administration-stack-api \
+          --image-ids imageTag="$RELEASE_TAG" \
+          --query 'images[0].imageManifest' --output text)
+        if [[ -z "$manifest" || "$manifest" == "None" ]]; then
+          echo "No agentic-erp/administration-stack-api image found for release tag $RELEASE_TAG — nothing to roll back to. Check the tag with 'aws ecr describe-images --registry-id $PLATFORM_ACCOUNT_ID --repository-name agentic-erp/administration-stack-api --image-ids imageTag=$RELEASE_TAG' before retrying." >&2
+          exit 1
+        fi

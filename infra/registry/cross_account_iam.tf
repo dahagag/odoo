@@ -340,6 +340,23 @@ data "aws_iam_policy_document" "platform_administration_stack_deploy" {
     actions   = ["logs:DescribeLogGroups"]
     resources = ["*"]
   }
+
+  # Issue #218: the release-order guard (.github/actions/guard-release-order) reads/writes this
+  # one parameter — the commit SHA last confirmed deployed to the shared infra/platform ECS
+  # service — to detect a delayed, out-of-order deploy job before it retags or applies stale
+  # content over a newer release. staging_deploy and production_deploy both assume this same role
+  # for it (mirroring how both already assume it for the real ECS/EC2/IAM/Logs writes above),
+  # since staging and production deploy the same infra/platform instance (see this file's own
+  # platform_administration_stack_deploy_trust comment).
+  statement {
+    sid    = "ManageAdministrationStackDeployedCommitParameter"
+    effect = "Allow"
+    actions = [
+      "ssm:GetParameter",
+      "ssm:PutParameter",
+    ]
+    resources = [local.administration_stack_deployed_commit_parameter_arn]
+  }
 }
 
 resource "aws_iam_role_policy" "platform_administration_stack_deploy" {
