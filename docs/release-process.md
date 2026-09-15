@@ -197,9 +197,23 @@ after the fix retries automatically).
   `.github/actions/record-deployed-commit`'s `ssm_parameter_name` input — kept in sync by
   convention, the same pattern this repo already uses for the ECS cluster/task-family/service
   names (see `infra/registry/locals.tf`'s
-  `administration_stack_deployed_commit_parameter_arn` comment). A mismatch isn't silent: it fails
-  loud as `ParameterNotFound` (or an `AccessDenied` from a name outside the IAM grant's scoped
-  ARN) the moment `check-release-order` calls `aws ssm get-parameter`.
+  `administration_stack_deployed_commit_parameter_arn` comment). A drift between the duplicated
+  names that lands outside the IAM grant's exact scoped ARN fails loud as `AccessDenied` the
+  moment `check-release-order` calls `aws ssm get-parameter` — `ParameterNotFound` on the
+  *correct* name, by contrast, is treated as "no prior deploy" rather than an error, since
+  `infra/platform`'s own `tofu apply` (later in the same job) is what actually creates this
+  parameter, and on the very first deploy ever it legitimately doesn't exist yet. Discovered live
+  while exercising this ticket's own rollback: a blanket fail-closed on every SSM error (the fix
+  for a separate CodeRabbit finding on #306) would otherwise deadlock the guard's own bootstrap —
+  it could never succeed a first time, since the thing that proves "no prior deploy" is exactly
+  the thing that doesn't exist yet. This does leave one more edge case with the same shape: `aws
+  ssm get-parameter` returns the identical `ParameterNotFoundException` whether the parameter
+  never existed or was manually deleted after a real prior deploy — the guard can't tell those
+  apart, so a manual deletion is also treated as "no prior deploy" rather than an error. Accepted
+  deliberately, matching the same "self-recovering, narrow window" reasoning as the residual gap
+  above: the value is CI-managed, not Terraform-managed, so nothing else recreates it, but the
+  very next real deploy simply writes it again — there's no path by which a missing parameter
+  causes lasting harm, only a temporarily reopened race window until that next push.
 - **What counts as stale**: commit ancestry, not image digest. The guard compares this run's
   commit against the recorded one via the GitHub compare API (`.../compare/<recorded>...<this>`).
   `ahead` proceeds; `behind`, `identical` (already handled as a fast-path no-op before the API
