@@ -10,7 +10,7 @@ import {
 } from '../src/org/errors';
 import type { Provisioner } from '../src/org/provisioner';
 import { StubProvisioner } from '../src/org/provisioner';
-import { applyTransition, createOrg, getOrgRecord, updateDnsSubdomainLabel } from '../src/org/record';
+import { applyTransition, createOrg, getOrgRecord, orgPk, ORGS_TABLE, updateDnsSubdomainLabel } from '../src/org/record';
 
 const CONFIG = { defaultRegion: 'us-east-1', trialDurationDays: 14 };
 
@@ -62,6 +62,18 @@ describe('createOrg (this ticket\'s Acceptance Criteria)', () => {
     expect(org.expiryDate).toBeDefined();
 
     await expect(getOrgRecord(gateway, org.orgId)).resolves.toEqual(org);
+  });
+
+  it('defaults a stored record with no inviteType attribute to targeted, for an org created before that field existed (CodeRabbit, PR #296)', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+    // Simulates an org record written by an earlier `createOrg` that never wrote `inviteType` at
+    // all - not something `createOrg` itself can produce today, so it's written directly.
+    const stored = (await gateway.dynamoDb.getItem({ table: ORGS_TABLE, key: { pk: orgPk(org.orgId) } }))!;
+    const { inviteType: _inviteType, ...withoutInviteType } = stored;
+    await gateway.dynamoDb.putItem({ table: ORGS_TABLE, item: withoutInviteType });
+
+    await expect(getOrgRecord(gateway, org.orgId)).resolves.toMatchObject({ inviteType: 'targeted' });
   });
 
   it('a Client Org has no expiry date populated', async () => {

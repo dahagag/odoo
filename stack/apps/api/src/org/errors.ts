@@ -45,6 +45,69 @@ export class ConcurrentWriteError extends Error {
   }
 }
 
+/** Raised by `org/seat.ts` when an invite/join email fails the same pragmatic shape check
+ * `hosting.trial.org.seat._EMAIL_RE` uses - checked before any seat is created (this ticket's
+ * Acceptance Criteria: "a malformed email is rejected before any seat is created"). */
+export class MalformedEmailError extends Error {
+  constructor(readonly email: string) {
+    super(`Not a valid email address: ${email}`);
+    this.name = 'MalformedEmailError';
+  }
+}
+
+/** An invite/join email's domain doesn't match the org's own prospect domain (`OrgRecord.domain`)
+ * - this ticket's Acceptance Criteria: "a cross-domain invite is rejected and creates no seat",
+ * checked identically for both a Targeted Invite and an Open Invite Link join
+ * (ADR-0026: "the same safety property"). */
+export class CrossDomainInviteError extends Error {
+  constructor(readonly orgId: string, readonly email: string) {
+    super(`${email} does not match org ${orgId}'s prospect domain`);
+    this.name = 'CrossDomainInviteError';
+  }
+}
+
+/** Raised by `org/seat.ts` when the seat named as inviter doesn't exist. Distinct from
+ * `SeatNotAcceptedError` so a route layer can tell "no such seat" (404-shaped) apart from
+ * "that seat exists but isn't allowed to invite yet" (409-shaped). */
+export class SeatNotFoundError extends Error {
+  constructor(readonly orgId: string, readonly seatId: string) {
+    super(`No such seat ${seatId} on org ${orgId}`);
+    this.name = 'SeatNotFoundError';
+  }
+}
+
+/** Only an `accepted` seat may invite a teammate (this ticket's Acceptance Criteria: "an
+ * invited-but-not-yet-accepted seat cannot invite") - mirrors
+ * `hosting.trial.org.seat.action_invite`'s own `AccessError` guard. */
+export class SeatNotAcceptedError extends Error {
+  constructor(readonly orgId: string, readonly seatId: string) {
+    super(`Seat ${seatId} on org ${orgId} has not accepted and cannot invite`);
+    this.name = 'SeatNotAcceptedError';
+  }
+}
+
+/** `joinOpenInvite` was called against an org whose `inviteType` is `targeted` (this ticket's
+ * Acceptance Criteria: "joining via the open-invite path on an org configured for targeted
+ * invites only is rejected") - mirrors `action_join_open_invite`'s own `UserError` guard. */
+export class OpenInviteNotEnabledError extends Error {
+  constructor(readonly orgId: string) {
+    super(`Org ${orgId} does not accept open-invite joins (inviteType is 'targeted')`);
+    this.name = 'OpenInviteNotEnabledError';
+  }
+}
+
+/** The transactional seat-counter increment (`docs/dynamodb-access-patterns.md`) rejected a new
+ * seat because it would push `seatsUsed` past `seatsTotal` - this ticket's Acceptance Criteria:
+ * "an invite that would exceed the org's seat cap is rejected". Raised whether the seat came
+ * from a Targeted Invite or an Open Invite Link join; the cap is enforced identically either
+ * way. */
+export class SeatCapExceededError extends Error {
+  constructor(readonly orgId: string) {
+    super(`Org ${orgId} has no remaining seats`);
+    this.name = 'SeatCapExceededError';
+  }
+}
+
 /** Wraps whatever the injected `Provisioner` itself threw (`applyTransition`, `record.ts`), so
  * `server.ts` can map *specifically* a provisioner failure to 502 - and nothing else. Without
  * this wrapper, a later failure in the same call (e.g. the conditional `updateItem` after the
