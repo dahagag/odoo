@@ -35,4 +35,12 @@ locals {
   # PutRolePolicy/PassRole grant (via platform_administration_stack_deploy) is scoped to this
   # naming pattern, not a bare "*" or the whole account.
   administration_stack_task_role_arn_pattern = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.administration_stack_ecs_cluster_name}-administration-stack-api-*"
+
+  # Issue #218: infra/platform's aws_ssm_parameter.administration_stack_deployed_commit ARN, built
+  # from the same "duplicated literal default, kept in sync by convention" naming this module
+  # already uses for the ECS cluster/task-family/service names above — infra/platform is never
+  # applied by a human directly (see infra-tofu's platform_assume_role_arn comment), so this
+  # module's IAM grant has to know the parameter's name ahead of infra/platform actually creating
+  # it, not read it back via remote state.
+  administration_stack_deployed_commit_parameter_arn = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${var.administration_stack_deployed_commit_parameter_name}"
 }

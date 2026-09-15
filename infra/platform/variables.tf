@@ -10,6 +10,20 @@ variable "environment" {
   default     = "platform"
 }
 
+variable "administration_stack_deployed_commit_parameter_name" {
+  type        = string
+  description = <<-EOT
+    Name of the SSM parameter tracking the commit SHA last confirmed deployed to this ECS service
+    — read/written by ci.yml's release-order guard (issue #218) to detect a delayed, out-of-order
+    deploy job before it retags or applies stale content over a newer release. Same literal
+    default as infra/registry's identically-named variable, which builds this parameter's ARN for
+    platform_administration_stack_deploy's IAM grant ahead of this module creating it — kept in
+    sync by convention, the same pattern this module's ECS cluster/task-family/service names
+    already use across the two modules.
+  EOT
+  default     = "/platform-administration-stack-api/deployed-commit"
+}
+
 variable "platform_assume_role_arn" {
   type        = string
   description = <<-EOT

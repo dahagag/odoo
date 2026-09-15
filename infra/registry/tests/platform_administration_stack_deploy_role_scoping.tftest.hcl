@@ -109,6 +109,18 @@ run "verify_platform_administration_stack_deploy_trust_and_permissions" {
     error_message = "ManageAdministrationStackNetworkingScoped must stay conditioned on ec2:ResourceTag/TofuModule=platform, exactly as infra/cicd's original statement was."
   }
 
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.platform_administration_stack_deploy.json).Statement :
+      statement.Sid == "ManageAdministrationStackDeployedCommitParameter"
+      && toset(flatten([statement.Action])) == toset(["ssm:GetParameter", "ssm:PutParameter"])
+      && toset(flatten([statement.Resource])) == toset([
+        "arn:aws:ssm:us-east-1:333333333333:parameter/platform-administration-stack-api/deployed-commit",
+      ])
+    ])
+    error_message = "ManageAdministrationStackDeployedCommitParameter (issue #218) must be scoped to exactly the deployed-commit parameter ARN, not a bare \"*\" or the whole account's parameters."
+  }
+
   # --- this role carries none of staging_deploy's own Hosting-Account-side statements — the
   # --- S3 state-backend grant, the ECR retag grant, or an sts:AssumeRole back onto itself ---
 

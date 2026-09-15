@@ -16,18 +16,20 @@ for the one decision here recorded as an ADR.
 first, same as before. There is no separate `master`/stable split for
 parallel Odoo versions — that's not what `main/19.0` is for.
 
-`main/19.0` is the protected deploy branch Render watches for auto-deploy of
-the client-demo instance (see
-[ADR 0006](../adr/0006-render-hobby-cd-deployment.md)). It only moves via a
+`main/19.0` is the protected production deploy branch. It only moves via a
 release PR from `dev/19.0` with passing CI; no direct pushes. This repo has
 no external contributors (see the top of this doc), so there's no separate
 reviewer to require — the protection matches `dev/19.0`'s own (required
 `CI required checks (required)` check, no reviewer count,
 `enforce_admins: false` so the solo maintainer can merge once CI passes).
-Promoting a change to the demo
-instance means opening and merging a `dev/19.0` → `main/19.0` PR — that
-merge *is* the deploy gate, since Render's own git integration handles the
-rest with no separate approval step.
+Promoting a release means opening and merging a `dev/19.0` → `main/19.0`
+PR — that merge *is* the deploy gate: `ci.yml`'s
+`deploy-administration-stack-production` job (see
+[`docs/release-process.md`](../release-process.md)) runs automatically on
+the resulting push, no separate approval step. This replaced Render's
+git-integration auto-deploy (former [ADR 0006](../adr/0006-render-hobby-cd-deployment.md),
+now superseded by [ADR 0015](../adr/0015-production-migrates-to-aws-platform-account.md))
+once production moved onto the AWS Platform Account.
 
 ## Branch naming
 
@@ -101,13 +103,19 @@ on a push) for `custom_addons/**`, `docker/**`, `scripts/dev.sh`,
 `addons/**`, or the workflow file itself, and the other jobs read its
 `image_relevant`, `prod_image_relevant`, `docs_build`, `infra_relevant`,
 and `lint_relevant` outputs to decide whether to actually do anything.
-There is no separate deploy workflow for the Odoo application — Render's
-native branch auto-deploy handles promotion once a release PR merges.
-`infra/cicd` and `infra/registry` are the one exception (issue #215): CI
-plans them on PR and applies them on merge — see `infra/README.md`'s
-"`tofu apply` is a deliberate human/ops action" section and
+`infra/cicd` and `infra/registry` are planned on PR and applied on merge
+(issue #215) — see `infra/README.md`'s "`tofu apply` is a deliberate
+human/ops action" section and
 [ADR-0039](../adr/0039-infra-plan-on-pr-apply-on-merge.md) for what that
-does and does not cover.
+does and does not cover. The administration-stack API (issue #216/#217)
+follows the same plan-on-PR/apply-on-merge shape one level further: a merge
+to `dev/19.0` deploys it to staging, a merge to `main/19.0` deploys the
+same instance to production, both gated by a release-order guard (issue
+#218) that skips a delayed, out-of-order run rather than let it overwrite a
+release tag a faster run already published. See
+[`docs/release-process.md`](../release-process.md) for cutting a release,
+staging proof, production promotion, rollback, and that guard's full
+mechanics — this doc only tracks which CI jobs exist and what gates them.
 
 This replaced an earlier design where the whole workflow was gated by a
 `paths:` filter on the trigger itself: docs-only PRs (regular feature PRs
@@ -126,9 +134,14 @@ check instead of no check at all.
 | `lint` | every PR; steps run only when `lint_relevant` (`custom_addons/**`, `ruff.toml`, `scripts/dev.sh`/`dev.ps1`, or the workflow file) | Feeds `ci-required`; not itself required by branch protection — `ruff` against `custom_addons/**`, Docker-free (`actions/setup-python`, no Odoo dev image; see [ADR 0028](../adr/0028-lint-job-decouples-from-odoo-dev-image.md)) |
 | `build-prod-image` | every PR; whole job skipped when not `prod_image_relevant` (`.env.example`, `odoo-bin`, `odoo/**`, `addons/**`, `custom_addons/**`, `docker/odoo-prod.Dockerfile`, `docker/odoo-prod.conf`, `docker/pip-install-requirements.sh`, `requirements.txt`, the workflow file, or `.github/actions/**`) | Not itself required by branch protection — builds `docker/odoo-prod.Dockerfile` (separate from the dev and retired Render Dockerfiles per [ADR 0003](../adr/0003-standardize-local-development-on-containers.md)) and publishes it to GHCR tagged by a hash of its content inputs, skipping the push if that tag is already published (mirrors `build-image`'s own dedup); one of two jobs here holding `packages: write` (alongside `build-image`), and it holds nothing else beyond `contents: read` |
 | `docs-build-tests` | every PR; steps run only when `docs_build` | Feeds `ci-required`; not itself required by branch protection |
-| `infra-checks` | every PR; steps run only when `infra_relevant` (`infra/**` or the workflow file) | Feeds `ci-required`; not itself required by branch protection — `tofu fmt`/`tofu validate` on every OpenTofu root/reusable module, `ruff`, and `interrogate` docstring coverage, all Docker-free (`actions/setup-python`, no Odoo dev image) |
-| `ci-required` | every PR; `if: always()` | **Required** status check — fails unless `lint`, `docs-build-tests`, and `infra-checks` all succeeded, even if one was `skipped` (e.g. because the upstream `changes` job errored) |
+| `infra-checks` | every PR; steps run only when `infra_relevant` (`infra/**` or the workflow file) | Feeds `ci-required`; not itself required by branch protection — `tofu fmt`/`tofu validate`/`tofu test` on every OpenTofu root/reusable module, `ruff`, and `interrogate` docstring coverage, all Docker-free (`actions/setup-python`, no Odoo dev image) |
+| `stack-checks` | every PR; steps run only when `stack_relevant` (`stack/**` or the workflow file) | Feeds `ci-required`; not itself required by branch protection — typecheck/test/OpenAPI-drift/OpenAPI-breaking-change for the administration-stack API |
+| `release-version-tests`, `manifest-version-check` | every PR; steps run only when their own `*_relevant` filter | Feed `ci-required`; not themselves required by branch protection — the release-tag derivation's own unit tests, and that every owned addon's manifest version agrees with the current release tag (issue #214, see [`docs/release-process.md`](../release-process.md)) |
+| `ci-required` | every PR; `if: always()` | **Required** status check — fails unless `lint`, `docs-build-tests`, `infra-checks`, `stack-checks`, `release-version-tests`, and `manifest-version-check` all succeeded, even if one was `skipped` (e.g. because the upstream `changes` job errored) |
 | `test` | every PR; whole job skipped when not `image_relevant` | Visible, **non-blocking** for now — the full `custom_addons/` suite via the `compose.yaml` stack; revisit once the suite has proven itself over time |
+| `infra-plan-platform` | every PR; whole job skipped when not `infra_platform_relevant` (`infra/platform/**` or the workflow file) | Not itself required — previews the `tofu plan` a merge would apply to the shared administration-stack instance |
+| `deploy-administration-stack-staging` | push to `dev/19.0` only, gated on `infra-checks` succeeding | Resolves the current release tag, retags the PR-built image with it, applies `infra/platform`, records the deployed commit — skipped (not failed) if the release-order guard (issue #218) finds this run stale. See [`docs/release-process.md`](../release-process.md) |
+| `deploy-administration-stack-production` | push to `main/19.0` only, gated on `infra-checks` succeeding | Same shape as staging above, against the same `infra/platform` instance, using the `production_deploy` OIDC role |
 
 `lint` and `infra-checks` each gate on their own dedicated `*_relevant` filter rather than
 `image_relevant`: neither `ruff` nor `tofu`/`interrogate` needs the Odoo dev image or a running

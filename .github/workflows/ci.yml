@@ -723,20 +723,32 @@ jobs:
         with:
           role-to-assume: ${{ vars.STAGING_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+      - uses: ./.github/actions/check-release-order
+        # Issue #218: dev/19.0 and main/19.0 both retag+apply the same infra/platform instance —
+        # a delayed staging run for an older commit must not overwrite a release tag a faster
+        # production run for a newer commit already published. See the action's own description.
+        id: guard
+        with:
+          platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
+          aws_region: ${{ vars.AWS_REGION }}
+          commit_sha: ${{ github.sha }}
       - uses: ./.github/actions/retag-administration-stack-image
         # No rebuild: the bytes this deploys are exactly what build-stack-image (PR-time,
         # ecr_push role) already pushed under its content-hash tag — this only adds a second tag
         # to the same image manifest (staging_deploy's own narrow RetagAdministrationStackImage
         # grant, infra/cicd/oidc.tf), so the image a staging deploy ships is always something a PR
         # already tested.
+        if: steps.guard.outputs.stale != 'true'
         with:
           content_hash_tag: ${{ steps.content_tag.outputs.tag }}
           release_tag: ${{ steps.tag.outputs.tag }}
           platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
       - uses: opentofu/setup-opentofu@v1
+        if: steps.guard.outputs.stale != 'true'
         with:
           tofu_version: 1.8.5
       - uses: ./.github/actions/infra-tofu
+        if: steps.guard.outputs.stale != 'true'
         with:
           dir: infra/platform
           command: apply
@@ -753,13 +765,29 @@ jobs:
           # platform-administration-stack-deploy to actually manage infra/platform's Platform
           # Account resources.
           platform_assume_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
+      - uses: ./.github/actions/record-deployed-commit
+        # Only after a successful apply — records this run's commit as "currently deployed" so a
+        # later, still-in-flight job for an older commit sees it and skips (issue #218).
+        if: steps.guard.outputs.stale != 'true'
+        with:
+          platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
+          aws_region: ${{ vars.AWS_REGION }}
+          commit_sha: ${{ github.sha }}
       - name: Record which release is now running in staging
+        if: steps.guard.outputs.stale != 'true'
         env:
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
           {
             echo "## Deployed to staging"
             echo "Release \`$RELEASE_TAG\` is now running in the administration-stack API's ECS service (\`aws ecs describe-services --cluster platform --services platform-administration-stack-api --include TAGS\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Record that this run was skipped as stale
+        if: steps.guard.outputs.stale == 'true'
+        run: |
+          {
+            echo "## Staging deploy skipped (issue #218 release-order guard)"
+            echo "This run's commit (\`$GITHUB_SHA\`) is not ahead of the commit a newer deploy already published — skipped retag/apply rather than overwrite it with stale content."
           } >> "$GITHUB_STEP_SUMMARY"
 
   deploy-administration-stack-production:
@@ -801,6 +829,15 @@ jobs:
         with:
           role-to-assume: ${{ vars.PRODUCTION_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+      - uses: ./.github/actions/check-release-order
+        # Issue #218: dev/19.0 and main/19.0 both retag+apply the same infra/platform instance —
+        # a delayed production run for an older commit must not overwrite a release tag a faster
+        # staging run for a newer commit already published (same shared guard staging uses above).
+        id: guard
+        with:
+          platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
+          aws_region: ${{ vars.AWS_REGION }}
+          commit_sha: ${{ github.sha }}
       - uses: ./.github/actions/retag-administration-stack-image
         # No rebuild: the bytes this deploys are exactly what build-stack-image (PR-time,
         # ecr_push role) already pushed under its content-hash tag — this only adds a second tag
@@ -808,14 +845,17 @@ jobs:
         # grant, infra/cicd/oidc.tf), so the image a production deploy ships is always something a
         # PR already tested, and staging already deployed at least once (it merges to dev/19.0
         # first).
+        if: steps.guard.outputs.stale != 'true'
         with:
           content_hash_tag: ${{ steps.content_tag.outputs.tag }}
           release_tag: ${{ steps.tag.outputs.tag }}
           platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
       - uses: opentofu/setup-opentofu@v1
+        if: steps.guard.outputs.stale != 'true'
         with:
           tofu_version: 1.8.5
       - uses: ./.github/actions/infra-tofu
+        if: steps.guard.outputs.stale != 'true'
         with:
           dir: infra/platform
           command: apply
@@ -834,13 +874,29 @@ jobs:
           # (infra/registry/cross_account_iam.tf's platform_administration_stack_deploy_trust now
           # trusts both).
           platform_assume_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
+      - uses: ./.github/actions/record-deployed-commit
+        # Only after a successful apply — records this run's commit as "currently deployed" so a
+        # later, still-in-flight job for an older commit sees it and skips (issue #218).
+        if: steps.guard.outputs.stale != 'true'
+        with:
+          platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN }}
+          aws_region: ${{ vars.AWS_REGION }}
+          commit_sha: ${{ github.sha }}
       - name: Record which release is now running in production
+        if: steps.guard.outputs.stale != 'true'
         env:
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
           {
             echo "## Deployed to production"
             echo "Release \`$RELEASE_TAG\` is now running in the administration-stack API's ECS service (\`aws ecs describe-services --cluster platform --services platform-administration-stack-api --include TAGS\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Record that this run was skipped as stale
+        if: steps.guard.outputs.stale == 'true'
+        run: |
+          {
+            echo "## Production deploy skipped (issue #218 release-order guard)"
+            echo "This run's commit (\`$GITHUB_SHA\`) is not ahead of the commit a newer deploy already published — skipped retag/apply rather than overwrite it with stale content."
           } >> "$GITHUB_STEP_SUMMARY"
 
   stack-checks:
