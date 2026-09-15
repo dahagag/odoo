@@ -87,6 +87,28 @@ multi-source transition and a same-item field it must change without touching ot
   condition is the only thing that can reject it - it can never discard a concurrent, unrelated
   field change it never read.
 
+## Seam additions the sweeps (#282) needed
+
+`AwsGateway.dynamoDb.query` (`stack/packages/aws-gateway`) gained one thing this ticket's own
+Implementation Decisions didn't anticipate, needed once the auto-destroy sweep actually had to
+query "on or before now" rather than an exact match or a prefix:
+
+- **`sortKeyAtMost` query condition.** `sortKeyPrefix`'s `begins_with` can't express a `<=` range
+  over an ISO date string; `sortKeyAtMost` is the narrowest addition that can (`#sk <= :value`),
+  mirroring how `attribute_in` was added earlier for `destroy`'s multi-source condition. The fake
+  (`InMemoryDynamoDbGateway`) also treats a missing sort-key attribute as never satisfying this
+  condition, matching a real sparse GSI: an item that was never written a `gsi2sk` at all (a
+  Client Org, per pattern 3 above) can never be returned by this query, not merely filtered out
+  afterward.
+
+Both sweeps (`stack/apps/api/src/org/sweeps.ts`) query their own GSI for candidate org ids only -
+`queryOrgIds` (`stack/apps/api/src/org/record.ts`) reads nothing off a query result but the base
+table's own `pk` (always projected into any GSI, whatever its declared projection type), then
+re-reads each org's full record with a plain `getItem` before deciding whether to act on it. This
+is what lets the idle-suspend sweep's `lastActivityAt` filter and the auto-destroy sweep's
+"ignore an issued org" filter both work correctly regardless of how wide a real GSI's projection
+ends up being - a decision pattern 2's own entry above left open ("this ticket does not decide").
+
 ## What this ticket does not decide
 
 Whether patterns 2-4 above use three separate GSIs or fewer, wide-projection GSIs (DynamoDB

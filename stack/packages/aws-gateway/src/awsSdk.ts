@@ -226,6 +226,11 @@ class AwsSdkDynamoDbGateway implements DynamoDbGateway {
       names['#sk'] = input.sortKeyPrefix.name;
       values[':sk'] = marshalValue(input.sortKeyPrefix.value);
     }
+    if (input.sortKeyAtMost) {
+      keyConditionExpression += ' AND #sk <= :sk';
+      names['#sk'] = input.sortKeyAtMost.name;
+      values[':sk'] = marshalValue(input.sortKeyAtMost.value);
+    }
     const response = await client.send(new QueryCommand({
       TableName: this.tableName(input.table),
       IndexName: input.indexName,

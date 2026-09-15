@@ -108,8 +108,16 @@ class InMemoryDynamoDbGateway implements DynamoDbGateway {
       const { name, value } = input.sortKeyPrefix;
       items = items.filter((item) => String(item[name] ?? '').startsWith(String(value)));
     }
+    if (input.sortKeyAtMost) {
+      // Only an item that actually carries the sort-key attribute belongs in this query's
+      // result - mirrors a real sparse GSI, which never projects an item missing one of the
+      // index's own key attributes (this is what keeps a Client Org, which never gets
+      // `gsi2sk` written at all, out of the auto-destroy sweep's query - #282).
+      const { name, value } = input.sortKeyAtMost;
+      items = items.filter((item) => item[name] !== undefined && String(item[name]) <= String(value));
+    }
     items.sort((a, b) => {
-      const sortAttr = input.sortKeyPrefix?.name;
+      const sortAttr = input.sortKeyPrefix?.name ?? input.sortKeyAtMost?.name;
       if (!sortAttr) return 0;
       return String(a[sortAttr] ?? '').localeCompare(String(b[sortAttr] ?? ''));
     });

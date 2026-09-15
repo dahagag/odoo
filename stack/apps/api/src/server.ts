@@ -7,7 +7,7 @@ import type { Env } from './config/env';
 import { IdempotencyKeyReusedError, IdempotencyStillProcessingError } from './idempotency/errors';
 import { idempotencyContext, requireIdempotencyKey, withIdempotency } from './idempotency/middleware';
 import type { IdempotencyStore } from './idempotency/store';
-import { CreateOrgRequestSchema, OrgSchema, OrgRegistrationSchema, UpdateOrgRequestSchema } from './openapi/registry';
+import { CreateOrgRequestSchema, OrgSchema, OrgRegistrationSchema, SweepResultSchema, UpdateOrgRequestSchema } from './openapi/registry';
 import {
   ConcurrentWriteError,
   DnsLabelImmutableError,
@@ -19,6 +19,7 @@ import {
 import type { Provisioner } from './org/provisioner';
 import { applyTransition, checkOrgStatus, createOrg, updateDnsSubdomainLabel } from './org/record';
 import type { OrgRecord } from './org/record';
+import { sweepAutoDestroy, sweepIdleSuspend } from './org/sweeps';
 import { readOrgRegistration } from './orgRegistration';
 import { problem } from './problem';
 
@@ -80,23 +81,23 @@ function knownOrgErrorResponse(error: unknown, reply: FastifyReply): ReturnType<
   return undefined;
 }
 
-/** Every idempotent admin write that resolves to a single `OrgRecord` (create, relabel, a
- * lifecycle action, check-status) shares this shape: run `op` under `withIdempotency`, serialize
- * its result through `OrgSchema`, and map a thrown `org/errors.ts` error to its Problem Details
+/** Every idempotent admin write shares this shape: run `op` under `withIdempotency`, serialize
+ * its result through `schema`, and map a thrown `org/errors.ts` error to its Problem Details
  * response - anything else rethrows for Fastify's default 500. One definition instead of each
  * route re-deriving it, so a future change to that shape (e.g. the error mapping) can't drift
  * between routes. */
-async function respondWithOrg(
+async function respondWithIdempotentResult<T>(
   deps: ServerDeps,
   request: FastifyRequest,
   reply: FastifyReply,
   status: number,
-  op: () => Promise<OrgRecord>,
+  schema: { parse: (value: unknown) => T },
+  op: () => Promise<T>,
 ): Promise<unknown> {
   try {
     const record = await withIdempotency(deps.idempotencyStore, idempotencyContext(request), async () => {
-      const org = await op();
-      return { status, body: OrgSchema.parse(org) };
+      const result = await op();
+      return { status, body: schema.parse(result) };
     });
     reply.code(record.status);
     return record.body;
@@ -105,6 +106,18 @@ async function respondWithOrg(
     if (known) return known;
     throw error;
   }
+}
+
+/** Every idempotent admin write that resolves to a single `OrgRecord` (create, relabel, a
+ * lifecycle action, check-status). */
+function respondWithOrg(
+  deps: ServerDeps,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  status: number,
+  op: () => Promise<OrgRecord>,
+): Promise<unknown> {
+  return respondWithIdempotentResult(deps, request, reply, status, OrgSchema, op);
 }
 
 /** Every path takes `orgId` through this, rather than trusting the raw path segment, so a
@@ -242,6 +255,17 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       return respondWithOrg(deps, request, reply, 200, () => checkOrgStatus(deps.awsGateway, deps.provisioner, orgId));
     },
   );
+
+  // Production entry points for the idle-suspend and auto-destroy sweeps (#282): reachable by an
+  // external scheduler on a recurring cadence, mirroring check-status's own "production entry
+  // point" role above but batch-scoped rather than per-org, so neither route takes an `orgId`.
+  app.post('/v1/admin/sweeps/idle-suspend', { preHandler: requireAdminPrincipal }, async (request, reply) => respondWithIdempotentResult(
+    deps, request, reply, 200, SweepResultSchema, () => sweepIdleSuspend(deps.awsGateway, deps.provisioner),
+  ));
+
+  app.post('/v1/admin/sweeps/auto-destroy', { preHandler: requireAdminPrincipal }, async (request, reply) => respondWithIdempotentResult(
+    deps, request, reply, 200, SweepResultSchema, () => sweepAutoDestroy(deps.awsGateway, deps.provisioner),
+  ));
 
   return app;
 }

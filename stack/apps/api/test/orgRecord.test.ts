@@ -10,7 +10,20 @@ import {
 } from '../src/org/errors';
 import type { Provisioner } from '../src/org/provisioner';
 import { StubProvisioner } from '../src/org/provisioner';
-import { applyTransition, checkOrgStatus, createOrg, getOrgRecord, orgPk, ORGS_TABLE, updateDnsSubdomainLabel } from '../src/org/record';
+import {
+  applyTransition,
+  checkOrgStatus,
+  createOrg,
+  EXPIRY_SWEEP_INDEX,
+  EXPIRY_SWEEP_PARTITION,
+  getOrgRecord,
+  orgPk,
+  ORGS_TABLE,
+  queryOrgIds,
+  STATE_INDEX,
+  statePartition,
+  updateDnsSubdomainLabel,
+} from '../src/org/record';
 
 const CONFIG = { defaultRegion: 'us-east-1', trialDurationDays: 14 };
 
@@ -310,6 +323,31 @@ describe('applyTransition (this ticket\'s What to build/Acceptance Criteria)', (
     expect((await getOrgRecord(gateway, org.orgId))?.state).toBe('suspended');
   });
 
+  it('issue and wake both (re)start the idle-timeout clock by setting lastActivityAt (#282)', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await issuedOrg(gateway);
+    const provisioner = new StubProvisioner();
+
+    const afterIssue = await applyTransition(gateway, provisioner, org.orgId, 'issue');
+    expect(afterIssue.lastActivityAt).toBeDefined();
+
+    await applyTransition(gateway, provisioner, org.orgId, 'suspend');
+    const afterWake = await applyTransition(gateway, provisioner, org.orgId, 'wake');
+    expect(afterWake.lastActivityAt).toBeDefined();
+  });
+
+  it('destroy always sets a snapshot-retention marker, whatever triggered it (#282: "every destroy ... leaves the org with a snapshot-retention marker set")', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await issuedOrg(gateway);
+    const provisioner = new StubProvisioner();
+    await applyTransition(gateway, provisioner, org.orgId, 'issue');
+
+    const result = await applyTransition(gateway, provisioner, org.orgId, 'destroy');
+
+    expect(result.snapshotRetentionUntil).toBeDefined();
+    await expect(getOrgRecord(gateway, org.orgId)).resolves.toMatchObject({ snapshotRetentionUntil: result.snapshotRetentionUntil });
+  });
+
   it('two different concurrent transitions fired from active (suspend and destroy) never corrupt the record - the persisted state always ends up destroyed', async () => {
     const gateway = new InMemoryAwsGateway();
     const org = await issuedOrg(gateway);
@@ -415,5 +453,51 @@ describe('checkOrgStatus (#298: production entry point for Provisioner.checkStat
     // The first read (before checkStatus runs) needs no such guarantee - only the re-read after
     // the provisioner's own write does.
     expect(calls).toEqual([undefined, true]);
+  });
+});
+
+describe('GSI attributes queryOrgIds relies on (#282: "a small, additive extension to the record store\'s query capability")', () => {
+  it('createOrg indexes a Trial Org under both STATE_INDEX and EXPIRY_SWEEP_INDEX', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+
+    await expect(queryOrgIds(gateway, { indexName: STATE_INDEX, partitionKey: { name: 'gsi1pk', value: statePartition('issued') } }))
+      .resolves.toEqual([org.orgId]);
+    await expect(queryOrgIds(gateway, {
+      indexName: EXPIRY_SWEEP_INDEX,
+      partitionKey: { name: 'gsi2pk', value: EXPIRY_SWEEP_PARTITION },
+      sortKeyAtMost: { name: 'gsi2sk', value: org.expiryDate },
+    })).resolves.toEqual([org.orgId]);
+  });
+
+  it('createOrg never indexes a Client Org under EXPIRY_SWEEP_INDEX, even for a query far enough in the future to catch anything', async () => {
+    const gateway = new InMemoryAwsGateway();
+    await createOrg(gateway, trialInput({ type: 'client', dnsSubdomainLabel: 'acme-client' }), CONFIG);
+
+    await expect(queryOrgIds(gateway, {
+      indexName: EXPIRY_SWEEP_INDEX,
+      partitionKey: { name: 'gsi2pk', value: EXPIRY_SWEEP_PARTITION },
+      sortKeyAtMost: { name: 'gsi2sk', value: '9999-01-01T00:00:00.000Z' },
+    })).resolves.toEqual([]);
+  });
+
+  it('applyTransition moves the org between STATE_INDEX partitions as its state changes', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+    await applyTransition(gateway, new StubProvisioner(), org.orgId, 'issue');
+
+    await expect(queryOrgIds(gateway, { indexName: STATE_INDEX, partitionKey: { name: 'gsi1pk', value: statePartition('issued') } }))
+      .resolves.toEqual([]);
+    await expect(queryOrgIds(gateway, { indexName: STATE_INDEX, partitionKey: { name: 'gsi1pk', value: statePartition('active') } }))
+      .resolves.toEqual([org.orgId]);
+  });
+
+  it('getOrgRecord never leaks a gsi* attribute into the returned OrgRecord', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+
+    const stored = await getOrgRecord(gateway, org.orgId);
+
+    expect(Object.keys(stored ?? {}).some((key) => key.startsWith('gsi'))).toBe(false);
   });
 });

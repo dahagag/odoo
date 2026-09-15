@@ -208,6 +208,24 @@ describe('InMemoryAwsGateway dynamoDb', () => {
     expect(page2.items).toHaveLength(1);
     expect(page2.nextCursor).toBeUndefined();
   });
+
+  it('queries by partition key and a sortKeyAtMost range, excluding items past the value and items missing the attribute (#282)', async () => {
+    const gateway = new InMemoryAwsGateway();
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'expiry-sweep', sk: 'org#1', gsi2sk: '2026-01-01T00:00:00.000Z' } });
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'expiry-sweep', sk: 'org#2', gsi2sk: '2026-06-01T00:00:00.000Z' } });
+    // A Client Org never carries a `gsi2sk` at all (#282's own "regardless of any date field it
+    // carries") - simulated here by an item sharing the partition but missing that attribute,
+    // which must never satisfy a `<=` comparison against it.
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'expiry-sweep', sk: 'org#3' } });
+
+    const result = await gateway.dynamoDb.query({
+      table: 'orgs',
+      partitionKey: { name: 'pk', value: 'expiry-sweep' },
+      sortKeyAtMost: { name: 'gsi2sk', value: '2026-03-01T00:00:00.000Z' },
+    });
+
+    expect(result.items.map((item) => item.sk)).toEqual(['org#1']);
+  });
 });
 
 describe('InMemoryAwsGateway stepFunctions', () => {

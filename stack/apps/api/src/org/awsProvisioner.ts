@@ -2,17 +2,10 @@ import { ConditionalCheckFailedError, ExecutionAlreadyExistsError } from '@stack
 import type { AwsGateway, DescribeExecutionResult, ExecutionHistoryEvent } from '@stack/aws-gateway';
 import type { OrgAction } from '@stack/domain';
 import type { Env } from '../config/env';
-import { ORGS_TABLE, compact, orgPk } from './record';
+import { ORGS_TABLE, SNAPSHOT_RETENTION_DAYS, compact, orgPk } from './record';
 import type { OrgRecord } from './record';
 import type { AuditTrail, Provisioner } from './provisioner';
 import { StubProvisioner } from './provisioner';
-
-/** The snapshot retention window `destroy`'s execution input carries (docs/contexts/hosting/
- * CONTEXT.md's Auto-Destroy entry: "A short-lived (7-day) database snapshot is retained
- * afterward in case of revival") - mirrors `SNAPSHOT_RETENTION_DAYS`
- * (`custom_addons/hosting_admin/models/provisioner.py`) one language over, so both ports agree
- * on the figure rather than drifting apart. */
-export const SNAPSHOT_RETENTION_DAYS = 7;
 
 export interface AwsProvisionerConfig {
   stateMachineArn: string;
