@@ -102,8 +102,12 @@ resource "aws_iam_role_policy" "platform_registry_deploy" {
 }
 
 # ---------------------------------------------------------------------------
-# platform-administration-stack-deploy: staging_deploy only — production_deploy gets none of
-# this yet (#217 defines what a production deploy of the administration stack touches).
+# platform-administration-stack-deploy: staging_deploy AND production_deploy (issue #217) —
+# mirroring platform_registry_deploy_trust above, both Hosting Account deploy roles reach the
+# same Platform Account role. #217 wires production_deploy onto the identical infra/platform
+# instance staging_deploy already deploys (see infra/cicd/oidc.tf's administration_stack_deploy
+# comment) rather than standing up a second one — the workflow's branch-scoped role assumption is
+# what #217 exists to prove, not a separate environment.
 # ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "platform_administration_stack_deploy_trust" {
@@ -113,7 +117,7 @@ data "aws_iam_policy_document" "platform_administration_stack_deploy_trust" {
 
     principals {
       type        = "AWS"
-      identifiers = [var.staging_deploy_role_arn]
+      identifiers = [var.staging_deploy_role_arn, var.production_deploy_role_arn]
     }
   }
 }

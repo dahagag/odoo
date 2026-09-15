@@ -1,9 +1,9 @@
-# Issue #271/#272: platform_administration_stack_deploy is a Platform Account role that
-# staging_deploy alone (not production_deploy — that stays #217's job) assumes via sts:AssumeRole
-# to deploy infra/platform's VPC/ECS/IAM/Logs resources — replacing infra/cicd's old, broken
-# direct EC2/ECS/IAM/Logs grants, none of which could ever have worked cross-account (those four
+# Issue #271/#272/#217: platform_administration_stack_deploy is a Platform Account role that
+# staging_deploy AND production_deploy (issue #217) assume via sts:AssumeRole to deploy
+# infra/platform's VPC/ECS/IAM/Logs resources — replacing infra/cicd's old, broken direct
+# EC2/ECS/IAM/Logs grants, none of which could ever have worked cross-account (those four
 # services have no cross-account resource-based policy mechanism at all). Proves: (1) its trust
-# policy allows exactly staging_deploy, not production_deploy or infra_plan; (2) its permissions
+# policy allows exactly staging_deploy and production_deploy, not infra_plan; (2) its permissions
 # document carries the same nine statements infra/cicd's administration_stack_deploy document
 # used to, scoped to the same resource shapes, moved verbatim.
 #
@@ -61,9 +61,12 @@ run "verify_platform_administration_stack_deploy_trust_and_permissions" {
     condition = alltrue([
       for statement in jsondecode(data.aws_iam_policy_document.platform_administration_stack_deploy_trust.json).Statement :
       statement.Action == "sts:AssumeRole"
-      && toset(flatten([statement.Principal.AWS])) == toset(["arn:aws:iam::222222222222:role/github-actions-staging-deploy"])
+      && toset(flatten([statement.Principal.AWS])) == toset([
+        "arn:aws:iam::222222222222:role/github-actions-staging-deploy",
+        "arn:aws:iam::222222222222:role/github-actions-production-deploy",
+      ])
     ])
-    error_message = "platform-administration-stack-deploy's trust policy must allow sts:AssumeRole from exactly staging_deploy — not production_deploy (that stays #217's job), not infra_plan, no OIDC principal."
+    error_message = "platform-administration-stack-deploy's trust policy must allow sts:AssumeRole from exactly staging_deploy and production_deploy (issue #217) — not infra_plan, no OIDC principal."
   }
 
   assert {

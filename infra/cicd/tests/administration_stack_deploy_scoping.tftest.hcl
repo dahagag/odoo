@@ -1,6 +1,8 @@
-# Issue #216: staging_deploy's administration-stack deploy permissions must stay scoped to
-# exactly infra/platform's resource shapes and the one ECR repository it retags — not a broader
-# grant, and never granted to production_deploy (that stays #217's job).
+# Issue #216/#217: staging_deploy's and production_deploy's administration-stack deploy
+# permissions must stay scoped to exactly infra/platform's resource shapes and the one ECR
+# repository it retags — not a broader grant. #217 grants production_deploy the exact same
+# document as staging_deploy (the workflow's branch-scoped role assumption is what #217 wires,
+# not a separate permission shape).
 #
 # Issue #271/#272: the EC2/ECS/IAM/Logs statements this test used to assert directly (the actual
 # scoping now lives in infra/registry/cross_account_iam.tf's platform_administration_stack_deploy
@@ -146,16 +148,51 @@ run "verify_administration_stack_deploy_scoping" {
     error_message = "staging_deploy must not grant any EC2/ECS action directly, under any statement Sid — this is a belt-and-suspenders check on top of the Sid-based one above."
   }
 
-  # --- production_deploy gets none of this — that's #217's own ticket to define ---
+  # --- issue #217: production_deploy carries the exact same administration-stack deploy
+  # --- statements as staging_deploy above ---
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.production_deploy.json).Statement :
+      statement.Sid == "TofuStateBackendPlatform"
+      && toset(flatten([statement.Resource])) == toset(["arn:aws:s3:::hosting-tofu-state/platform/terraform.tfstate"])
+    ])
+    error_message = "production_deploy's TofuStateBackendPlatform statement must be scoped to exactly infra/platform's own state object."
+  }
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.production_deploy.json).Statement :
+      statement.Sid == "AssumePlatformAdministrationStackDeployRole"
+      && flatten([statement.Action]) == ["sts:AssumeRole"]
+      && toset(flatten([statement.Resource])) == toset(["arn:aws:iam::333333333333:role/platform-administration-stack-deploy"])
+    ])
+    error_message = "production_deploy must carry exactly one sts:AssumeRole statement scoped to platform-administration-stack-deploy's own ARN."
+  }
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.production_deploy.json).Statement :
+      statement.Sid == "RetagAdministrationStackImage"
+      && toset(flatten([statement.Action])) == toset(["ecr:BatchGetImage", "ecr:PutImage"])
+      && toset(flatten([statement.Resource])) == toset([
+        "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/administration-stack-api",
+      ])
+    ])
+    error_message = "production_deploy's RetagAdministrationStackImage statement must grant exactly BatchGetImage/PutImage on exactly the administration-stack-api repository — not push actions, and not the other three ECR repositories."
+  }
 
   assert {
     condition = !anytrue([
       for statement in jsondecode(data.aws_iam_policy_document.production_deploy.json).Statement :
       contains([
-        "TofuStateBackendPlatform", "AssumePlatformAdministrationStackDeployRole",
-        "RetagAdministrationStackImage", "EcrAuthForRetag",
+        "ManageAdministrationStackNetworking", "TagAdministrationStackNetworkingOnCreate",
+        "ManageAdministrationStackNetworkingScoped", "ManageAdministrationStackEcs",
+        "RegisterAdministrationStackTaskDefinition", "ReadAdministrationStackTaskDefinition",
+        "DeployAdministrationStackService", "ManageAdministrationStackTaskRoles",
+        "PassAdministrationStackTaskRoles", "ManageAdministrationStackLogGroup",
       ], statement.Sid)
     ])
-    error_message = "production_deploy must not carry any of staging_deploy's administration-stack deploy statements (issue #216 is staging-only; #217 defines production's own)."
+    error_message = "production_deploy must not carry any direct EC2/ECS/IAM/Logs statement — those services have no cross-account resource-based policy mechanism, so any such grant here could never work against real AWS; the fix is the AssumePlatformAdministrationStackDeployRole statement instead."
   }
 }

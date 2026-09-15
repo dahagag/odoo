@@ -183,11 +183,13 @@ resource "aws_ecr_repository_policy" "odoo_prod_push" {
   policy     = data.aws_iam_policy_document.odoo_prod_push.json
 }
 
-# administration_stack_api carries two distinct grants, to two distinct Hosting Account
-# principals: ecr_push's PR-time push (same shape as odoo_dev/odoo_prod above) and
-# staging_deploy's own, separate, narrower retag-only access (BatchGetImage + PutImage only —
-# staging_deploy never uploads new layers, it only adds a second tag to a manifest ecr_push
-# already pushed; see infra/cicd/oidc.tf's RetagAdministrationStackImage comment).
+# administration_stack_api carries three distinct grants, to three distinct Hosting Account
+# principals: ecr_push's PR-time push (same shape as odoo_dev/odoo_prod above), staging_deploy's
+# own, separate, narrower retag-only access (BatchGetImage + PutImage only — staging_deploy never
+# uploads new layers, it only adds a second tag to a manifest ecr_push already pushed; see
+# infra/cicd/oidc.tf's RetagAdministrationStackImage comment), and production_deploy's identical
+# retag-only access (issue #217 — same shape as staging_deploy's, kept a separate statement/
+# principal rather than merged into one so each role's grant stays independently revocable).
 data "aws_iam_policy_document" "administration_stack_api_push" {
   statement {
     sid    = "AllowEcrPushRolePush"
@@ -215,6 +217,21 @@ data "aws_iam_policy_document" "administration_stack_api_push" {
     principals {
       type        = "AWS"
       identifiers = [var.staging_deploy_role_arn]
+    }
+
+    actions = [
+      "ecr:BatchGetImage",
+      "ecr:PutImage",
+    ]
+  }
+
+  statement {
+    sid    = "AllowProductionDeployRetag"
+    effect = "Allow"
+
+    principals {
+      type        = "AWS"
+      identifiers = [var.production_deploy_role_arn]
     }
 
     actions = [
