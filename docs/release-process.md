@@ -183,7 +183,15 @@ after the fix retries automatically).
   last deployed by any means" — `record-deployed-commit` only ever runs on the push path (never on
   a `workflow_dispatch` rollback; see below), so it can only ever advance, never move backward.
   One parameter, not one per branch/environment, because staging and production deploy the same
-  instance today (see above). Considered and rejected: an **ECS
+  instance today (see above). **Terraform owns the parameter's existence, CI owns only its
+  value** — `record-deployed-commit` skips its write outright when the parameter is absent rather
+  than letting `put-parameter --overwrite` create one. It has to: it runs before `tofu apply`, so
+  if it ever created the parameter, Terraform's own create would always lose the race and fail
+  with `ParameterAlreadyExists` — which is how #218's first bootstrap deadlocked, and how any
+  later rebuild of `infra/platform`'s state would deadlock again. The cost is that on a virgin
+  account the watermark reads `unset` for exactly one run, until the next push records onto the
+  now-existing parameter; `check-release-order` already treats that as "first-ever deploy,
+  nothing to compare against". Considered and rejected: an **ECS
   service tag** (this pipeline already tags the service/task definition with the release
   version, but not the commit — reusing that mechanism would conflate "which release" with "which
   commit", two different questions this guard needs answered separately) and a **DynamoDB item**

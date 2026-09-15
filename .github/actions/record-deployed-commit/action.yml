@@ -1,12 +1,16 @@
 name: Record the commit just deployed to the administration-stack API
 description: >-
   Issue #218: overwrites the SSM parameter ./.github/actions/check-release-order reads (infra/
-  platform's aws_ssm_parameter.administration_stack_deployed_commit) with this run's commit, once
-  a deploy job's retag+apply has actually succeeded — so a still-in-flight job for an older commit
-  sees it and skips rather than overwriting a release tag this run just published. Same
-  assume-role chain as check-release-order (see that action's own description for why this
+  platform's aws_ssm_parameter.administration_stack_deployed_commit) with this run's commit,
+  claiming the deploy before the calling job's retag+apply — so a still-in-flight job for an older
+  commit sees it and skips rather than overwriting a release tag this run is about to publish.
+  See ci.yml's own call site for why the claim is recorded before the apply rather than after.
+  Same assume-role chain as check-release-order (see that action's own description for why this
   assumes platform_administration_stack_deploy_role_arn directly, and why the temporary
   credentials stay local to this step's process env rather than GITHUB_ENV).
+
+  Updates the parameter, never creates it: infra/platform's `tofu apply` owns its existence (and
+  its tags and description), this action owns only its value. See the create-skip comment below.
 inputs:
   platform_administration_stack_deploy_role_arn:
     description: infra/registry's platform_administration_stack_deploy_role_arn output.
@@ -43,6 +47,35 @@ runs:
         AWS_SECRET_ACCESS_KEY=$(jq -r '.Credentials.SecretAccessKey' <<<"$creds")
         AWS_SESSION_TOKEN=$(jq -r '.Credentials.SessionToken' <<<"$creds")
         AWS_DEFAULT_REGION="$AWS_REGION"
+
+        # `put-parameter --overwrite` creates the parameter when it's absent, which would take
+        # ownership of its existence away from infra/platform's aws_ssm_parameter — and since this
+        # step deliberately runs *before* that apply, Terraform would then always lose the race and
+        # fail its own create with ParameterAlreadyExists. That deadlocked #218's first bootstrap
+        # and any later rebuild of infra/platform's state. Adopting the pre-made parameter from the
+        # Terraform side isn't the fix either: `overwrite = true` on aws_ssm_parameter is
+        # deprecated (AWS provider v5 upgrade guide says to import instead, and that creating an
+        # existing parameter will fail outright in a future version), and on create it would write
+        # the resource's own value = "unset" straight over the commit this step just recorded.
+        #
+        # So skip the write when the parameter doesn't exist yet and let the apply later in this
+        # same job create it. The watermark then stays "unset" until the next push records onto
+        # the now-existing parameter — exactly the one-run window check-release-order already
+        # treats as "first-ever deploy, nothing to compare against".
+        #
+        # Only ParameterNotFound is tolerated here. Any other failure (AccessDenied from a name
+        # outside the IAM grant's scoped ARN, throttling, a service error) still fails loud rather
+        # than silently skipping the claim and letting a stale job win the race — the same
+        # distinction check-release-order draws on its own read.
+        if ! aws ssm get-parameter --name "$PARAM_NAME" --query 'Parameter.Value' --output text > /dev/null 2> get-parameter.err; then
+          if grep -q ParameterNotFound get-parameter.err; then
+            cat get-parameter.err
+            echo "$PARAM_NAME does not exist yet (first-ever deploy) — leaving its creation to infra/platform's apply later in this job rather than creating it here."
+            exit 0
+          fi
+          cat get-parameter.err >&2
+          exit 1
+        fi
 
         aws ssm put-parameter --name "$PARAM_NAME" --type String --overwrite --value "$COMMIT_SHA"
         echo "Recorded $COMMIT_SHA as the deployed commit for $PARAM_NAME."
