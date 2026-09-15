@@ -227,6 +227,24 @@ describe('InMemoryAwsGateway dynamoDb', () => {
     expect(result.items.map((item) => item.sk)).toEqual(['org#1']);
   });
 
+  it('compares a numeric sortKeyAtMost bound numerically, not lexicographically (CodeRabbit, PR #301)', async () => {
+    const gateway = new InMemoryAwsGateway();
+    // Lexicographic comparison would wrongly exclude 2 ('2' <= '10' is false) and order 10
+    // before 2 - both must be right for a numeric sort key, matching how DynamoDB itself
+    // compares a real `N`-typed attribute.
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'p', sk: 'a', gsi2sk: 2 } });
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'p', sk: 'b', gsi2sk: 9 } });
+    await gateway.dynamoDb.putItem({ table: 'orgs', item: { pk: 'p', sk: 'c', gsi2sk: 10 } });
+
+    const result = await gateway.dynamoDb.query({
+      table: 'orgs',
+      partitionKey: { name: 'pk', value: 'p' },
+      sortKeyAtMost: { name: 'gsi2sk', value: 10 },
+    });
+
+    expect(result.items.map((item) => item.gsi2sk)).toEqual([2, 9, 10]);
+  });
+
   it('rejects a query passing both sortKeyPrefix and sortKeyAtMost (#282 code review: no silent clobber)', async () => {
     const gateway = new InMemoryAwsGateway();
 

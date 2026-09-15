@@ -27,6 +27,17 @@ function keyOf(key: Record<string, string | number>): string {
   return JSON.stringify(Object.keys(key).sort().map((k) => [k, key[k]]));
 }
 
+/** A real DynamoDB sort key compares numerically when its type is `N`, lexicographically when
+ * it's `S` - `String(a) <= String(b)` would silently diverge from that for a numeric bound
+ * (`'2' <= '10'` is false, even though `2 <= 10` is true), which is exactly the kind of
+ * fake/real gap `InMemoryDynamoDbGateway`'s own doc comment says it must not have (code review,
+ * #282). Missing values sort/compare as `''`, matching this file's existing prefix-filter
+ * convention. */
+function compareSortValues(a: unknown, b: unknown): number {
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a ?? '').localeCompare(String(b ?? ''));
+}
+
 function evaluateCondition(item: DynamoItem | undefined, condition: DynamoCondition | undefined): string | undefined {
   if (!condition) return undefined;
   switch (condition.type) {
@@ -120,12 +131,12 @@ class InMemoryDynamoDbGateway implements DynamoDbGateway {
       // index's own key attributes (this is what keeps a Client Org, which never gets
       // `gsi2sk` written at all, out of the auto-destroy sweep's query - #282).
       const { name, value } = input.sortKeyAtMost;
-      items = items.filter((item) => item[name] !== undefined && String(item[name]) <= String(value));
+      items = items.filter((item) => item[name] !== undefined && compareSortValues(item[name], value) <= 0);
     }
     items.sort((a, b) => {
       const sortAttr = input.sortKeyPrefix?.name ?? input.sortKeyAtMost?.name;
       if (!sortAttr) return 0;
-      return String(a[sortAttr] ?? '').localeCompare(String(b[sortAttr] ?? ''));
+      return compareSortValues(a[sortAttr], b[sortAttr]);
     });
 
     const offset = input.cursor ? Number(Buffer.from(input.cursor, 'base64url').toString('utf8')) : 0;
