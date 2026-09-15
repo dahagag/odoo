@@ -183,8 +183,8 @@ export async function createOrg(gateway: AwsGateway, input: CreateOrgInput, conf
   return org;
 }
 
-export async function getOrgRecord(gateway: AwsGateway, orgId: string): Promise<OrgRecord | undefined> {
-  const item = await gateway.dynamoDb.getItem({ table: ORGS_TABLE, key: { pk: orgPk(orgId) } });
+export async function getOrgRecord(gateway: AwsGateway, orgId: string, options: { consistentRead?: boolean } = {}): Promise<OrgRecord | undefined> {
+  const item = await gateway.dynamoDb.getItem({ table: ORGS_TABLE, key: { pk: orgPk(orgId) }, consistentRead: options.consistentRead });
   return item ? fromItem(item) : undefined;
 }
 
@@ -255,6 +255,12 @@ const TRANSITIONS: Record<OrgAction, { from: OrgState[]; to: OrgState }> = {
  * caller observes whatever `checkStatus` actually wrote (status promotion on success, failure
  * reason on failure) rather than the pre-poll snapshot - `checkStatus` itself is a safe no-op
  * when there's nothing running to check (#281), so this needs no pre-filtering either.
+ *
+ * That re-read asks for a strongly consistent read (CodeRabbit, PR #299): it lands immediately
+ * after `checkStatus`'s own conditional write, and an eventually-consistent read here could still
+ * observe the pre-write `running` status - which `respondWithOrg` would then store as this
+ * request's idempotency result and keep replaying, permanently masking the promotion this
+ * endpoint exists to surface.
  */
 export async function checkOrgStatus(gateway: AwsGateway, provisioner: Provisioner, orgId: string): Promise<OrgRecord> {
   const org = await getOrgRecord(gateway, orgId);
@@ -262,7 +268,7 @@ export async function checkOrgStatus(gateway: AwsGateway, provisioner: Provision
 
   await provisioner.checkStatus(org);
 
-  return (await getOrgRecord(gateway, orgId)) ?? org;
+  return (await getOrgRecord(gateway, orgId, { consistentRead: true })) ?? org;
 }
 
 /**

@@ -38,6 +38,19 @@ describe('AwsSdkGateway dynamoDb', () => {
     expect(command.input).toEqual({ TableName: 'physical-orgs', Key: { pk: { S: 'org#1' } } });
   });
 
+  it('passes consistentRead through as ConsistentRead (#298: a strongly consistent post-poll re-read)', async () => {
+    const send = vi.fn().mockResolvedValue({ Item: { pk: { S: 'org#1' } } });
+    const gateway = new AwsSdkGateway(
+      { region: 'us-east-1', dynamoTableNames: { orgs: 'physical-orgs' } },
+      { dynamoDb: { send } as never },
+    );
+
+    await gateway.dynamoDb.getItem({ table: 'orgs', key: { pk: 'org#1' }, consistentRead: true });
+
+    const [command] = send.mock.calls[0];
+    expect(command.input.ConsistentRead).toBe(true);
+  });
+
   it('rejects marshaling an unsupported attribute value instead of coercing it', async () => {
     const send = vi.fn();
     const gateway = new AwsSdkGateway(

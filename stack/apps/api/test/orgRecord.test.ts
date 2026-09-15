@@ -395,4 +395,25 @@ describe('checkOrgStatus (#298: production entry point for Provisioner.checkStat
     await expect(checkOrgStatus(gateway, new StubProvisioner(), '11111111-1111-4111-8111-111111111111'))
       .rejects.toBeInstanceOf(OrgNotFoundError);
   });
+
+  it('re-reads with a strongly consistent read, so a stale eventually-consistent read can never mask the promotion (CodeRabbit, PR #299)', async () => {
+    const gateway = new InMemoryAwsGateway();
+    gatewayRef = gateway;
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+    await applyTransition(gateway, new StubProvisioner(), org.orgId, 'issue');
+    const provisioner = new FakeCheckStatusProvisioner();
+    provisioner.outcome = { lastJobStatus: 'succeeded', lastJobError: '' };
+    const calls: (boolean | undefined)[] = [];
+    const originalGetItem = gateway.dynamoDb.getItem.bind(gateway.dynamoDb);
+    gateway.dynamoDb.getItem = async (input) => {
+      calls.push(input.consistentRead);
+      return originalGetItem(input);
+    };
+
+    await checkOrgStatus(gateway, provisioner, org.orgId);
+
+    // The first read (before checkStatus runs) needs no such guarantee - only the re-read after
+    // the provisioner's own write does.
+    expect(calls).toEqual([undefined, true]);
+  });
 });
