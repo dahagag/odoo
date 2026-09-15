@@ -685,6 +685,19 @@ jobs:
 
   deploy-administration-stack-staging:
     name: Deploy administration-stack API (staging)
+    # Issue #217 (CodeRabbit review): the workflow-level concurrency group above
+    # (ci-${{ github.ref }}) only serializes runs sharing the same ref, but this job and
+    # deploy-administration-stack-production apply the *same* infra/platform state from two
+    # different refs (dev/19.0 and main/19.0). Terraform's own state locking would serialize the
+    # two `tofu apply` calls, but not their order — a slower staging run resolving an older
+    # release tag could apply after a faster production run and silently revert the shared ECS
+    # service. This job-level group (identical string on both jobs, deliberately not
+    # ${{ github.ref }}-scoped) queues the two branches' deploys against each other instead.
+    # cancel-in-progress: false — an in-flight `tofu apply` must run to completion, never be
+    # cancelled mid-apply.
+    concurrency:
+      group: deploy-administration-stack-platform
+      cancel-in-progress: false
     # Same infra-checks gate as infra-apply above — a merge whose own infra-checks failed must
     # never reach a real ECR retag or `tofu apply` (issue #216's acceptance criteria: "a failed
     # step stops the workflow rather than leaving a partial deploy").
@@ -757,6 +770,14 @@ jobs:
     # running release). This deploys the same infra/platform instance staging does (see
     # infra/cicd/oidc.tf's administration_stack_deploy comment) — #217 wires the branch-scoped
     # production_deploy role assumption, not a second environment.
+    #
+    # Same concurrency group as deploy-administration-stack-staging above — see that job's
+    # comment; the group must be the identical literal string on both jobs so a dev/19.0 and a
+    # main/19.0 push queue against each other rather than racing to apply the same infra/platform
+    # state out of order.
+    concurrency:
+      group: deploy-administration-stack-platform
+      cancel-in-progress: false
     needs: [changes, infra-checks]
     # main/19.0 hardcoded, matching infra-apply's own branch case statement above — this repo's
     # branch names are literal strings in ci.yml throughout (on.push.branches, infra-apply's role
