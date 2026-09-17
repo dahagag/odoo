@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { publicApi } from './lib/apiClient';
-import { loadSession } from './lib/session';
+import type { Session } from './lib/session';
 import { AsleepPage } from './pages/AsleepPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { SignInPage } from './pages/SignInPage';
@@ -66,18 +66,35 @@ export function App() {
   return <NormalApp />;
 }
 
+/**
+ * Owns the signed-in prospect's session (#323): held only as this component's own React state,
+ * never persisted, so it lives for as long as this tab does and no longer - closing the tab,
+ * reloading, or opening a new one all mean signing in again via a fresh magic link.
+ */
 function NormalApp() {
+  const [session, setSession] = useState<Session | undefined>(undefined);
   const path = window.location.pathname;
   const signInMatch = path.match(/^\/org\/([^/]+)\/sign-in\/?$/);
   if (signInMatch?.[1]) return <SignInPage orgId={signInMatch[1]} />;
 
   if (path === '/sign-in/verify') {
     const token = new URLSearchParams(window.location.search).get('token') ?? undefined;
-    return <VerifyPage token={token} />;
+    return (
+      <VerifyPage
+        token={token}
+        onSignedIn={(verified) => {
+          // Swaps the URL for /dashboard without a page load - the sign-in hand-off is a state
+          // transition, not a navigation (#323) - so a later reload of this tab lands back on
+          // the same "no session" branch below rather than re-submitting an already-consumed
+          // magic-link token.
+          window.history.replaceState(null, '', '/dashboard');
+          setSession(verified);
+        }}
+      />
+    );
   }
 
   if (path === '/dashboard') {
-    const session = loadSession();
     if (!session) {
       return (
         <main className="o_page">
@@ -86,7 +103,7 @@ function NormalApp() {
         </main>
       );
     }
-    return <DashboardPage session={session} />;
+    return <DashboardPage session={session} setSession={setSession} />;
   }
 
   return (
