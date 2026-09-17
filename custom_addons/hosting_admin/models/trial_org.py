@@ -132,8 +132,19 @@ class HostingTrialOrg(models.Model):
         base_url = ICP.get_param(CONFIG_PARAM_STACK_BASE_URL)
         if not base_url:
             return StubHostingStackClient()
-        return RealHostingStackClient(
-            base_url=base_url, region_name=ICP.get_param(CONFIG_PARAM_STACK_AWS_REGION))
+        region = ICP.get_param(CONFIG_PARAM_STACK_AWS_REGION)
+        if not region:
+            # Fail clearly here, at configuration time - SigV4Auth (models/hosting_stack_client.py)
+            # would otherwise be constructed with a blank region and either mis-sign every request
+            # or fail deep inside botocore with a message that names neither this addon nor its
+            # actual cause (this ticket's User Stories: "a clear message when the stack is
+            # unreachable", not a confusing one).
+            raise UserError(_(
+                "%(param)s is configured but %(region_param)s is not - both are required to "
+                "reach the administration stack.",
+                param=CONFIG_PARAM_STACK_BASE_URL, region_param=CONFIG_PARAM_STACK_AWS_REGION,
+            ))
+        return RealHostingStackClient(base_url=base_url, region_name=region)
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -227,7 +238,13 @@ class HostingTrialOrg(models.Model):
         Extension's own authorisation - the sales-methodology qualification gate - is entirely
         `crm_lead.action_extend_trial`'s concern (docs/adr/0034: "the stack exposes the
         extension write; Odoo is the only actor permitted to invoke it"); this method performs
-        the write once that caller has already decided to allow it."""
+        the write once that caller has already decided to allow it.
+
+        Unlike the pre-#197 model, this takes no local row lock before writing: two concurrent
+        extensions racing here are the stack's own concern now, proven by its own optimistic-
+        concurrency test (`extendOrgExpiry`, stack/apps/api/test/orgRecord.test.ts, #312) rather
+        than re-tested from the Odoo side (this ticket's Testing Decisions: "never re-test
+        lifecycle rules, which now belong to the stack")."""
         self.ensure_one()
         if not isinstance(additional_days, int) or additional_days <= 0:
             raise UserError(_("Additional days must be a positive whole number."))

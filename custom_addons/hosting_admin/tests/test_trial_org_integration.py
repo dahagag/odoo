@@ -7,7 +7,10 @@ from odoo.addons.hosting_admin.models.hosting_stack_client import (
     RealHostingStackClient,
     StubHostingStackClient,
 )
-from odoo.addons.hosting_admin.models.trial_org import CONFIG_PARAM_STACK_BASE_URL
+from odoo.addons.hosting_admin.models.trial_org import (
+    CONFIG_PARAM_STACK_AWS_REGION,
+    CONFIG_PARAM_STACK_BASE_URL,
+)
 
 
 class RecordingStackClient(StubHostingStackClient):
@@ -78,9 +81,18 @@ class TestTrialOrgIntegration(TransactionCase):
         self.assertIsInstance(client, StubHostingStackClient)
 
     def test_real_client_is_selected_once_a_stack_base_url_is_configured(self):
-        self.env['ir.config_parameter'].sudo().set_param(CONFIG_PARAM_STACK_BASE_URL, "https://stack.example")
+        ICP = self.env['ir.config_parameter'].sudo()
+        ICP.set_param(CONFIG_PARAM_STACK_BASE_URL, "https://stack.example")
+        ICP.set_param(CONFIG_PARAM_STACK_AWS_REGION, "us-east-1")
         client = self.env['hosting.trial.org']._get_stack_client()
         self.assertIsInstance(client, RealHostingStackClient)
+
+    def test_configuring_a_base_url_without_a_region_raises_a_clear_user_error(self):
+        ICP = self.env['ir.config_parameter'].sudo()
+        ICP.set_param(CONFIG_PARAM_STACK_BASE_URL, "https://stack.example")
+        ICP.set_param(CONFIG_PARAM_STACK_AWS_REGION, False)
+        with self.assertRaises(UserError):
+            self.env['hosting.trial.org']._get_stack_client()
 
     def test_create_calls_the_stack_client_and_mirrors_its_response(self):
         client = RecordingStackClient()
@@ -164,6 +176,24 @@ class TestTrialOrgIntegration(TransactionCase):
     def test_ordinary_user_has_no_access_to_trial_org(self):
         with self.assertRaises(AccessError):
             self.env['hosting.trial.org'].with_user(self.ordinary_user).search([])
+
+    def test_ordinary_user_cannot_issue(self):
+        client = RecordingStackClient()
+        self._inject_stack_client(client)
+        trial_org = self.env['hosting.trial.org'].sudo().create(
+            {'name': "Acme", 'prospect_domain': "acme.example", 'seat_cap': 5})
+
+        with self.assertRaises(AccessError):
+            trial_org.with_user(self.ordinary_user).action_issue()
+
+    def test_ordinary_user_cannot_extend(self):
+        client = RecordingStackClient()
+        self._inject_stack_client(client)
+        trial_org = self.env['hosting.trial.org'].sudo().create(
+            {'name': "Acme", 'prospect_domain': "acme.example", 'seat_cap': 5})
+
+        with self.assertRaises(AccessError):
+            trial_org.with_user(self.ordinary_user).action_extend(10)
 
     def test_cron_sync_settles_mirrored_state_from_the_stack(self):
         client = RecordingStackClient()

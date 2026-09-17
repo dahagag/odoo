@@ -24,18 +24,16 @@
         <field name="arch" type="xml">
             <form string="Trial Org">
                 <header>
-                    <!-- Extension itself is issued from the Opportunity (crm_methodology's own
-                         wizard), never from here - ADR-0034's authorisation gate (sales-
-                         methodology qualification) lives entirely on that side. This form only
-                         exposes the operational admin actions a Platform operator needs. -->
+                    <!-- This addon keeps only mirrored read-only state and the Issue/Extension
+                         actions (this ticket's Implementation Decisions) - Extension itself is
+                         issued from the Opportunity (crm_methodology's own wizard), never from
+                         here, since ADR-0034's authorisation gate (sales-methodology
+                         qualification) lives entirely on that side. Suspend/Wake/Destroy remain
+                         callable methods (action_wake() is what controllers/asleep.py's own Wake
+                         Up button drives), but deliberately have no button here - a staff
+                         operator's actual admin surface is the stack's own future staff app
+                         (#199), not this addon. -->
                     <button name="action_sync_from_stack" type="object" string="Refresh from Stack"/>
-                    <button name="action_suspend" type="object" string="Suspend"
-                            invisible="state != 'active'"/>
-                    <button name="action_wake" type="object" string="Wake"
-                            invisible="state != 'suspended'"/>
-                    <button name="action_destroy" type="object" string="Destroy"
-                            invisible="state in ('destroyed', 'issued')"
-                            confirm="Destroy this Trial Org? This cannot be undone."/>
                 </header>
                 <sheet>
                     <widget name="web_ribbon" title="Destroyed" bg_color="text-bg-danger" invisible="state != 'destroyed'"/>

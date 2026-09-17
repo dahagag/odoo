@@ -38,6 +38,11 @@ def _org_from_json(payload):
     expiry_date = _parse_stack_datetime(payload.get('expiryDate'))
     last_activity_at = _parse_stack_datetime(payload.get('lastActivityAt'))
     snapshot_retention_until = _parse_stack_datetime(payload.get('snapshotRetentionUntil'))
+    # Odoo's Datetime field stores naive UTC (mirrors the pre-#197 AwsProvisioner._audit_trail_
+    # datetime convention, models/provisioner.py, now removed) - the stack's own timestamps are
+    # timezone-aware, so this converts before stripping tzinfo rather than assuming they're UTC.
+    last_activity_at_naive_utc = (
+        last_activity_at.astimezone(timezone.utc).replace(tzinfo=None) if last_activity_at else False)
     return {
         'stack_org_id': payload['orgId'],
         'state': payload['state'],
@@ -52,7 +57,7 @@ def _org_from_json(payload):
         'last_job_action': payload.get('lastJobAction') or False,
         'last_job_status': payload.get('lastJobStatus') or False,
         'last_job_error': payload.get('lastJobError') or False,
-        'last_activity_at': last_activity_at.astimezone(timezone.utc).replace(tzinfo=None) if last_activity_at else False,
+        'last_activity_at': last_activity_at_naive_utc,
         'snapshot_retention_until': snapshot_retention_until.date() if snapshot_retention_until else False,
     }
 
