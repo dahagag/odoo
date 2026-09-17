@@ -4,8 +4,10 @@ import {
   ConcurrentWriteError,
   DnsLabelImmutableError,
   DnsLabelInUseError,
+  ExpiryNotSupportedError,
   IllegalTransitionError,
   InvalidDnsLabelError,
+  InvalidExpiryDateError,
   OrgNotFoundError,
   ProvisionerFailedError,
 } from '../src/org/errors';
@@ -17,6 +19,7 @@ import {
   createOrg,
   EXPIRY_SWEEP_INDEX,
   EXPIRY_SWEEP_PARTITION,
+  extendOrgExpiry,
   getOrgRecord,
   orgPk,
   ORGS_TABLE,
@@ -195,6 +198,86 @@ describe('updateDnsSubdomainLabel (this ticket\'s Acceptance Criteria)', () => {
     const gateway = new InMemoryAwsGateway();
     await expect(updateDnsSubdomainLabel(gateway, '11111111-1111-4111-8111-111111111111', 'x'))
       .rejects.toBeInstanceOf(OrgNotFoundError);
+  });
+});
+
+describe('extendOrgExpiry (#312)', () => {
+  it('pushes expiryDate out by additionalDays from its current value', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+
+    const extended = await extendOrgExpiry(gateway, org.orgId, 5);
+
+    const expected = new Date(new Date(org.expiryDate!).getTime() + 5 * 24 * 60 * 60 * 1000).toISOString();
+    expect(extended.expiryDate).toBe(expected);
+    await expect(getOrgRecord(gateway, org.orgId)).resolves.toMatchObject({ expiryDate: expected });
+  });
+
+  it('rejects a Client Org, which has no expiryDate to extend', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await createOrg(gateway, { type: 'client', name: 'Acme Client', domain: 'acme.example', seatsTotal: 25 }, CONFIG);
+
+    await expect(extendOrgExpiry(gateway, org.orgId, 5)).rejects.toBeInstanceOf(ExpiryNotSupportedError);
+  });
+
+  it('falls back to now for a Trial Org whose expiryDate is somehow blank', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+    // Simulate a pre-existing record from before expiryDate always got set (fromItem's own
+    // inviteType-defaulting precedent) rather than one createOrg could ever produce today -
+    // putItem a full replacement item with no expiryDate/gsi2sk attribute at all.
+    const { expiryDate: _drop, ...withoutExpiry } = org;
+    await gateway.dynamoDb.putItem({
+      table: ORGS_TABLE,
+      item: { pk: orgPk(org.orgId), ...withoutExpiry, gsi1pk: statePartition(org.state), gsi1sk: orgPk(org.orgId) },
+    });
+
+    const before = Date.now();
+    const extended = await extendOrgExpiry(gateway, org.orgId, 5);
+    const expiry = new Date(extended.expiryDate!).getTime();
+
+    expect(expiry).toBeGreaterThan(before + 4 * 24 * 60 * 60 * 1000);
+    expect(expiry).toBeLessThan(before + 6 * 24 * 60 * 60 * 1000);
+
+    // CodeRabbit, PR #313: establishing an expiryDate for the first time through this path must
+    // also (re)write gsi2pk, or the org would silently never appear in the auto-destroy sweep's
+    // own EXPIRY_SWEEP_INDEX query - not just gsi2sk, which alone isn't enough to be found by it.
+    const sweepableIds = await queryOrgIds(gateway, {
+      indexName: EXPIRY_SWEEP_INDEX,
+      partitionKey: { name: 'gsi2pk', value: EXPIRY_SWEEP_PARTITION },
+    });
+    expect(sweepableIds).toContain(org.orgId);
+  });
+
+  it('rejects an additionalDays large enough to overflow the Date range, rather than throwing a raw RangeError', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+
+    // Bypasses ExtendOrgRequestSchema's own upper bound (enforced at the HTTP boundary,
+    // orgAdminApi.test.ts) - this proves extendOrgExpiry's own defense-in-depth guard for any
+    // caller that isn't going through that schema.
+    await expect(extendOrgExpiry(gateway, org.orgId, 100_000_001))
+      .rejects.toBeInstanceOf(InvalidExpiryDateError);
+  });
+
+  it('404s for an org that does not exist', async () => {
+    const gateway = new InMemoryAwsGateway();
+    await expect(extendOrgExpiry(gateway, '11111111-1111-4111-8111-111111111111', 5))
+      .rejects.toBeInstanceOf(OrgNotFoundError);
+  });
+
+  it('two genuinely concurrent extends on the same org both land - no lost update', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+
+    const results = await Promise.allSettled([
+      extendOrgExpiry(gateway, org.orgId, 3),
+      extendOrgExpiry(gateway, org.orgId, 7),
+    ]);
+
+    expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
+    const expected = new Date(new Date(org.expiryDate!).getTime() + 10 * 24 * 60 * 60 * 1000).toISOString();
+    await expect(getOrgRecord(gateway, org.orgId)).resolves.toMatchObject({ expiryDate: expected });
   });
 });
 

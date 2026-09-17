@@ -203,6 +203,43 @@ registry.registerPath({
   },
 });
 
+export const ExtendOrgRequestSchema = z
+  .object({
+    // Upper-bounded (CodeRabbit, PR #313) so the computed expiry timestamp can never exceed
+    // JavaScript's own Date range: `extendOrgExpiry` (record.ts) adds this many days, in
+    // milliseconds, to the org's current expiryDate before calling toISOString() - an
+    // unbounded value could overflow that range and throw a RangeError, surfacing as an
+    // unhandled 500 instead of a clean 400. 36500 (100 years) is nowhere near a real Extension
+    // request but leaves an enormous safety margin under the actual overflow point (~100
+    // million days).
+    additionalDays: z.number().int().positive().max(36500),
+  })
+  .openapi('ExtendOrgRequest');
+
+registry.registerPath({
+  method: 'post',
+  path: `/${API_VERSION}/admin/orgs/{orgId}/extend`,
+  summary: "Push a Trial Org's expiryDate out by additionalDays",
+  description:
+    'Rejected for a Client Org, which has no expiryDate (docs/adr/0034). Extension\'s own ' +
+    'authorisation (the sales-methodology qualification gate) is enforced by the caller (Odoo), ' +
+    'not here - this endpoint only performs the write once Odoo has decided to allow it.',
+  tags: ['admin'],
+  security: [{ sigv4: [] }],
+  request: {
+    params: z.object({ orgId: OrgIdSchema }),
+    headers: idempotencyKeyHeaderSchema,
+    body: { required: true, content: { 'application/json': { schema: ExtendOrgRequestSchema } } },
+  },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: OrgSchema } } },
+    400: problemResponse('Malformed request body'),
+    401: problemResponse('Missing admin principal'),
+    404: problemResponse('No such org'),
+    409: stillProcessingResponse('Not a Trial Org (no expiryDate to extend), a concurrent extend exhausted retries, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)'),
+  },
+});
+
 for (const action of ['issue', 'suspend', 'wake', 'destroy'] as const) {
   registry.registerPath({
     method: 'post',

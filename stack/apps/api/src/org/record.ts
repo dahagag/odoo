@@ -7,8 +7,10 @@ import {
   ConcurrentWriteError,
   DnsLabelImmutableError,
   DnsLabelInUseError,
+  ExpiryNotSupportedError,
   IllegalTransitionError,
   InvalidDnsLabelError,
+  InvalidExpiryDateError,
   OrgNotFoundError,
   ProvisionerFailedError,
 } from './errors';
@@ -307,6 +309,68 @@ export async function updateDnsSubdomainLabel(gateway: AwsGateway, orgId: string
   }
 
   return { ...org, dnsSubdomainLabel };
+}
+
+/** Bounds the optimistic-retry loop below - a real collision needs at most one retry (the loser
+ * re-reads the winner's freshly-written `expiryDate` and its own second attempt then wins
+ * against that), so this only guards against pathological repeated contention rather than being
+ * expected to run out under normal traffic. */
+const EXTEND_MAX_ATTEMPTS = 5;
+
+/**
+ * Pushes `expiryDate` out by `additionalDays`, from whatever the org's current `expiryDate` is
+ * (this ticket's #312 Acceptance Criteria) - mirrors `crm_lead.action_extend_trial`'s own
+ * `base_date = trial_org.expiry_date or today` (`custom_addons/crm_methodology/models/
+ * crm_lead.py`), except a Client Org - which never carries an `expiryDate` at all
+ * (docs/adr/0034) - is rejected outright rather than silently gaining one.
+ *
+ * No row lock exists here (there is no row to lock, same as every other write in this module) -
+ * instead an optimistic `attribute_equals` write, conditioned on the exact `expiryDate` this call
+ * observed, so a concurrent extend landing first is detected rather than silently overwritten
+ * (the read-then-write race `action_extend_trial`'s own `FOR UPDATE` lock closes in Odoo). A
+ * losing attempt retries against the winner's freshly-written value instead of surfacing the
+ * race to the caller, since (unlike a lifecycle transition) two concurrent extends are not in
+ * conflict with each other - both should be applied, one after the other.
+ */
+export async function extendOrgExpiry(gateway: AwsGateway, orgId: string, additionalDays: number): Promise<OrgRecord> {
+  for (let attempt = 0; attempt < EXTEND_MAX_ATTEMPTS; attempt++) {
+    const org = await getOrgRecord(gateway, orgId, { consistentRead: true });
+    if (!org) throw new OrgNotFoundError(orgId);
+    if (org.type !== 'trial') throw new ExpiryNotSupportedError(orgId);
+
+    // A Trial Org always gets an expiryDate at createOrg, but falls back to `now` rather than
+    // rejecting outright if one is somehow blank (a pre-existing record from before this field
+    // existed, matching `fromItem`'s own defaulting precedent for `inviteType`) - mirrors
+    // `action_extend_trial`'s own `base_date = trial_org.expiry_date or today`.
+    const base = org.expiryDate ? new Date(org.expiryDate) : new Date();
+    const computed = new Date(base.getTime() + additionalDays * 24 * 60 * 60 * 1000);
+    // Defense in depth (CodeRabbit, PR #313) alongside ExtendOrgRequestSchema's own upper bound
+    // on additionalDays: an out-of-range Date's own getTime() is NaN, and toISOString() would
+    // throw a RangeError on it - checked here, before that call, for any caller of this function
+    // that bypasses the HTTP schema validation.
+    if (Number.isNaN(computed.getTime())) throw new InvalidExpiryDateError(orgId, additionalDays);
+    const expiryDate = computed.toISOString();
+
+    try {
+      await gateway.dynamoDb.updateItem({
+        table: ORGS_TABLE,
+        key: { pk: orgPk(orgId) },
+        // gsi2pk must be (re)written alongside gsi2sk whenever expiryDate is (re)established -
+        // toItem()'s own convention for the same GSI - or an org taking the "no prior
+        // expiryDate" branch below would silently never appear in the auto-destroy sweep's
+        // EXPIRY_SWEEP_INDEX query, which reads gsi2pk (CodeRabbit, PR #313).
+        set: { expiryDate, gsi2pk: EXPIRY_SWEEP_PARTITION, gsi2sk: expiryDate },
+        condition: org.expiryDate
+          ? { type: 'attribute_equals', attribute: 'expiryDate', value: org.expiryDate }
+          : { type: 'attribute_not_exists', attribute: 'expiryDate' },
+      });
+      return { ...org, expiryDate };
+    } catch (error) {
+      if (error instanceof ConditionalCheckFailedError) continue;
+      throw error;
+    }
+  }
+  throw new ConcurrentWriteError(orgId, 'extend');
 }
 
 /** The legal transition graph (this ticket's What to build): `issue: issued->active`,

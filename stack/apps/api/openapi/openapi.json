@@ -299,6 +299,20 @@
           "dnsSubdomainLabel"
         ]
       },
+      "ExtendOrgRequest": {
+        "type": "object",
+        "properties": {
+          "additionalDays": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 36500
+          }
+        },
+        "required": [
+          "additionalDays"
+        ]
+      },
       "SweepResult": {
         "type": "object",
         "properties": {
@@ -665,6 +679,111 @@
           },
           "409": {
             "description": "dnsSubdomainLabel already in use, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string",
+                  "description": "Seconds to wait before retrying - only set when the 409 is an Idempotency-Key still-processing conflict.",
+                  "example": "3"
+                },
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/orgs/{orgId}/extend": {
+      "post": {
+        "summary": "Push a Trial Org's expiryDate out by additionalDays",
+        "description": "Rejected for a Client Org, which has no expiryDate (docs/adr/0034). Extension's own authorisation (the sales-methodology qualification gate) is enforced by the caller (Odoo), not here - this endpoint only performs the write once Odoo has decided to allow it.",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "sigv4": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "$ref": "#/components/schemas/OrgId"
+            },
+            "required": true,
+            "name": "orgId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtendOrgRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Org"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing admin principal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not a Trial Org (no expiryDate to extend), a concurrent extend exhausted retries, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
             "headers": {
               "Retry-After": {
                 "schema": {
