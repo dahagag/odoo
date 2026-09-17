@@ -7,6 +7,7 @@ import {
   OrgActionSchema,
   OrgIdSchema,
   OrgStateSchema,
+  OrgTokenSchema,
   OrgTypeSchema,
   ProblemDetailsSchema,
   SeatsTotalSchema,
@@ -329,6 +330,170 @@ registry.registerPath({
     200: { description: 'OK', content: { 'application/json': { schema: SweepResultSchema } } },
     401: problemResponse('Missing admin principal'),
     409: stillProcessingResponse('An Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)'),
+  },
+});
+
+// ---- Seats and invitations (#200) --------------------------------------------------------------
+
+export const SeatSchema = z
+  .object({
+    seatId: z.string(),
+    orgId: OrgIdSchema,
+    email: z.string(),
+    state: z.enum(['invited', 'accepted']),
+    invitedBySeatId: z.string().optional().openapi({
+      description: 'Absent for a Seat created via an Open Invite Link join, which is confirmed by domain match rather than vouched for by an existing member.',
+    }),
+  })
+  .openapi('Seat');
+
+registry.registerPath({
+  method: 'get',
+  path: `/${API_VERSION}/org/{orgId}/seats`,
+  summary: "List an org's own Seats",
+  description: "#200's User Story 3: \"I want to see who has a seat on my org.\" The org token must scope to {orgId} itself.",
+  tags: ['org'],
+  security: [{ orgToken: [] }],
+  request: { params: z.object({ orgId: OrgIdSchema }) },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: z.array(SeatSchema) } } },
+    401: problemResponse('Missing or invalid org token'),
+    403: problemResponse('Org token does not scope to this org'),
+  },
+});
+
+export const InviteSeatRequestSchema = z.object({ email: z.string().min(1) }).openapi('InviteSeatRequest');
+
+registry.registerPath({
+  method: 'post',
+  path: `/${API_VERSION}/org/{orgId}/seats/invite`,
+  summary: 'Targeted Invite: an accepted Seat invites a same-domain teammate (ADR-0026)',
+  tags: ['org'],
+  security: [{ orgToken: [] }],
+  request: {
+    params: z.object({ orgId: OrgIdSchema }),
+    headers: idempotencyKeyHeaderSchema,
+    body: { required: true, content: { 'application/json': { schema: InviteSeatRequestSchema } } },
+  },
+  responses: {
+    201: { description: 'Created', content: { 'application/json': { schema: SeatSchema } } },
+    400: problemResponse('Malformed request body, or a malformed invite email'),
+    401: problemResponse('Missing or invalid org token'),
+    403: problemResponse('Org token does not scope to this org, is not Seat-scoped, the inviting Seat has not accepted yet, or the invite email is cross-domain'),
+    404: problemResponse('No such org'),
+    409: stillProcessingResponse('The org has no remaining seats, or an Idempotency-Key conflict'),
+  },
+});
+
+// ---- Magic-link sign-in (#200) ------------------------------------------------------------------
+
+export const RequestMagicLinkSchema = z.object({ email: z.string().min(1) }).openapi('RequestMagicLinkRequest');
+
+registry.registerPath({
+  method: 'post',
+  path: `/${API_VERSION}/org/{orgId}/auth/magic-links`,
+  summary: 'Request a passwordless sign-in link for an org (#200 User Stories 4, 6, 12)',
+  description:
+    'Qualifies identically to the invitation paths it fronts (ADR-0026): an email with an ' +
+    "existing Seat always qualifies; an email with none only qualifies on an org that accepts " +
+    'Open Invite joins - either way the email must match the org\'s prospect domain. Always ' +
+    '202 with no body: this never reveals whether a given email actually has a Seat.',
+  tags: ['auth'],
+  request: {
+    params: z.object({ orgId: OrgIdSchema }),
+    headers: idempotencyKeyHeaderSchema,
+    body: { required: true, content: { 'application/json': { schema: RequestMagicLinkSchema } } },
+  },
+  responses: {
+    202: { description: 'Accepted - a magic link was sent if the email qualifies' },
+    400: problemResponse('Malformed request body, or a malformed email'),
+    403: problemResponse('The email does not match this org\'s prospect domain'),
+    404: problemResponse("No such org, or the email has no invitation on it"),
+  },
+});
+
+export const VerifyMagicLinkRequestSchema = z.object({ token: z.string().min(1) }).openapi('VerifyMagicLinkRequest');
+export const VerifyMagicLinkResponseSchema = z
+  .object({ orgId: OrgIdSchema, orgToken: OrgTokenSchema, seat: SeatSchema })
+  .openapi('VerifyMagicLinkResponse');
+
+registry.registerPath({
+  method: 'post',
+  path: `/${API_VERSION}/auth/magic-links/verify`,
+  summary: 'Exchange a magic-link token for an org token (#200 User Stories 12, 13)',
+  description: 'Single-use and time-boxed (docs/adr, this ticket): an expired, already-used, or unknown token is 404, never revealing which.',
+  tags: ['auth'],
+  request: {
+    headers: idempotencyKeyHeaderSchema,
+    body: { required: true, content: { 'application/json': { schema: VerifyMagicLinkRequestSchema } } },
+  },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: VerifyMagicLinkResponseSchema } } },
+    400: problemResponse('Malformed request body'),
+    404: problemResponse('The token is unknown, already used, or expired'),
+    409: stillProcessingResponse('The org has no remaining seats (an Open Invite Link filled up between request and verify), or an Idempotency-Key conflict'),
+  },
+});
+
+// ---- The public surface: asleep/Wake-Up (#200) --------------------------------------------------
+
+export const PublicOrgSchema = z.object({ orgId: OrgIdSchema, name: z.string() }).openapi('PublicOrg');
+
+registry.registerPath({
+  method: 'get',
+  path: `/${API_VERSION}/public/orgs/by-dns-label/{dnsSubdomainLabel}`,
+  summary: "Resolve a Host's dnsSubdomainLabel to the org it belongs to (no auth - the asleep page's own entry point)",
+  description:
+    'Reachable by any visitor: this is the only lookup a suspended org\'s own Route53 failover ' +
+    '(ADR-0030) can make, since the visitor carries no org id or token at all. Exposes nothing ' +
+    'beyond orgId/name - never seats, domain, or state.',
+  tags: ['public'],
+  request: { params: z.object({ dnsSubdomainLabel: DnsSubdomainLabelSchema }) },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: PublicOrgSchema } } },
+    404: problemResponse('No org reserves this label'),
+  },
+});
+
+export const AsleepStatusSchema = z
+  .object({
+    phase: z.enum(['idle', 'waking', 'awake']),
+    elapsedSeconds: z.number().nonnegative(),
+    expectedSeconds: z.number().positive(),
+  })
+  .openapi('AsleepStatus');
+
+registry.registerPath({
+  method: 'get',
+  path: `/${API_VERSION}/public/orgs/{orgId}/asleep-status`,
+  summary: 'Poll the asleep/Wake-Up page\'s own phase (no auth)',
+  description: 'Visiting this never itself wakes the org (#200: "Wake stays explicit") - it only reports the current phase.',
+  tags: ['public'],
+  request: { params: z.object({ orgId: OrgIdSchema }) },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: AsleepStatusSchema } } },
+    404: problemResponse('No such org'),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: `/${API_VERSION}/public/orgs/{orgId}/wake`,
+  summary: 'Wake a suspended org (no auth - the asleep page\'s own Wake Up button)',
+  description:
+    'A no-op (not an error) if the org is not currently suspended - a slow double-click or a ' +
+    'second open tab racing this one is ordinary. Rate limited per org, not per IP (#200\'s ' +
+    'Further Notes: "a link shared in a group chat has many IPs"), since this is the one public ' +
+    'action that starts real compute.',
+  tags: ['public'],
+  request: {
+    params: z.object({ orgId: OrgIdSchema }),
+    headers: idempotencyKeyHeaderSchema,
+  },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: AsleepStatusSchema } } },
+    404: problemResponse('No such org'),
+    429: { ...problemResponse('Rate limited - too many wake attempts for this org'), headers: retryAfterHeaderSchema },
   },
 });
 

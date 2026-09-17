@@ -21,12 +21,22 @@ describe('loadEnv - production configuration guard', () => {
     } as NodeJS.ProcessEnv)).toThrow(/STEP_FUNCTIONS_STATE_MACHINE_ARN/);
   });
 
+  it('rejects NODE_ENV=production with the placeholder CLIENT_APP_BASE_URL (#200)', () => {
+    expect(() => loadEnv({
+      NODE_ENV: 'production',
+      STACK_AWS_MODE: 'real',
+      ORG_ROOT_DNS_ZONE: 'orgs.example.com',
+      STEP_FUNCTIONS_STATE_MACHINE_ARN: 'arn:aws:states:us-east-1:123456789012:stateMachine:org-lifecycle',
+    } as NodeJS.ProcessEnv)).toThrow(/CLIENT_APP_BASE_URL/);
+  });
+
   it('accepts NODE_ENV=production once every production-safe value is set', () => {
     expect(() => loadEnv({
       NODE_ENV: 'production',
       STACK_AWS_MODE: 'real',
       ORG_ROOT_DNS_ZONE: 'orgs.example.com',
       STEP_FUNCTIONS_STATE_MACHINE_ARN: 'arn:aws:states:us-east-1:123456789012:stateMachine:org-lifecycle',
+      CLIENT_APP_BASE_URL: 'https://app.example.com',
     } as NodeJS.ProcessEnv)).not.toThrow();
   });
 

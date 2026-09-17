@@ -46,4 +46,31 @@ describe('StackApiClient.request - defensive response parsing', () => {
     });
     await expect(client.request('GET', '/v1/x')).rejects.toThrow();
   });
+
+  it('omits Content-Type on a body-less request (#200: a POST with no body must not declare application/json)', async () => {
+    let capturedInit: RequestInit | undefined;
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      capturedInit = init;
+      return new Response(undefined, { status: 200 });
+    }) as typeof fetch;
+    const client = new StackApiClient({ baseUrl: 'https://stack.example', fetchImpl });
+
+    await client.request('POST', '/v1/x', { idempotencyKey: 'k-1' });
+
+    expect((capturedInit?.headers as Record<string, string>)['content-type']).toBeUndefined();
+    expect(capturedInit?.body).toBeUndefined();
+  });
+
+  it('sets Content-Type when a body is present', async () => {
+    let capturedInit: RequestInit | undefined;
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      capturedInit = init;
+      return new Response(undefined, { status: 200 });
+    }) as typeof fetch;
+    const client = new StackApiClient({ baseUrl: 'https://stack.example', fetchImpl });
+
+    await client.request('POST', '/v1/x', { body: { a: 1 }, idempotencyKey: 'k-2' });
+
+    expect((capturedInit?.headers as Record<string, string>)['content-type']).toBe('application/json');
+  });
 });

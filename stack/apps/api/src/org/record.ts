@@ -260,6 +260,16 @@ export async function getOrgRecord(gateway: AwsGateway, orgId: string, options: 
   return item ? fromItem(item) : undefined;
 }
 
+/** Resolves a `dnsSubdomainLabel` back to the org it's reserved for, via the same `dnslabel#`
+ * reservation item `createOrg`/`updateDnsSubdomainLabel` maintain. This is the public client
+ * app's own entry point (#200): a visitor arrives by `Host` header alone (Route53 failover,
+ * ADR-0030's amendment), with no org id or token yet, and the asleep/wake page's first job is
+ * turning that Host's label into an orgId. */
+export async function getOrgIdByDnsSubdomainLabel(gateway: AwsGateway, dnsSubdomainLabel: string): Promise<string | undefined> {
+  const item = await gateway.dynamoDb.getItem({ table: ORGS_TABLE, key: { pk: dnsLabelPk(dnsSubdomainLabel) } });
+  return item?.orgId as string | undefined;
+}
+
 /** Changes `dnsSubdomainLabel` while `issued`, rejected once state has left `issued` (this
  * ticket's Acceptance Criteria). Re-checks `state === 'issued'` as part of the same
  * `transactWrite` that moves the label reservation - not just against the value this call

@@ -33,7 +33,11 @@ export class StackApiClient {
   constructor(options: StackApiClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, '');
     this.authorize = options.authorize ?? ((init) => init);
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    // A bare `fetch` reference loses its required `this` binding to `window`/`globalThis` - a
+    // browser's native fetch throws "Illegal invocation" when called as an unbound function
+    // value (unlike Node's, which is why this only surfaces once a real browser consumer -
+    // apps/client, #200 - calls this without its own `fetchImpl` override).
+    this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
 
   /** Every mutating call goes through here so an `Idempotency-Key` is never forgotten (this
@@ -44,7 +48,11 @@ export class StackApiClient {
     path: string,
     options: { body?: unknown; idempotencyKey?: string } = {},
   ): Promise<T> {
-    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    // Only set when there's actually a body: fastify's own JSON body parser rejects a request
+    // that declares `content-type: application/json` but sends no body at all
+    // (FST_ERR_CTP_EMPTY_JSON_BODY) - exactly what a body-less mutating call like the public
+    // Wake endpoint (#200) is.
+    const headers: Record<string, string> = options.body !== undefined ? { 'content-type': 'application/json' } : {};
     if (options.idempotencyKey) headers[IDEMPOTENCY_KEY_HEADER] = options.idempotencyKey;
 
     const init = await this.authorize({
@@ -77,4 +85,83 @@ export class StackApiClient {
     }
     return payload as T;
   }
+
+  // ---- Org-facing surface (#200): requires `authorize` to attach a Bearer org token --------------
+
+  orgRegistration(orgId: string): Promise<OrgRegistration> {
+    return this.request('GET', `/org/${orgId}/registration`);
+  }
+
+  listSeats(orgId: string): Promise<Seat[]> {
+    return this.request('GET', `/org/${orgId}/seats`);
+  }
+
+  inviteSeat(orgId: string, email: string, idempotencyKey: string): Promise<Seat> {
+    return this.request('POST', `/org/${orgId}/seats/invite`, { body: { email }, idempotencyKey });
+  }
+
+  // ---- Magic-link sign-in (#200): no auth required ------------------------------------------------
+
+  requestMagicLink(orgId: string, email: string, idempotencyKey: string): Promise<void> {
+    return this.request('POST', `/org/${orgId}/auth/magic-links`, { body: { email }, idempotencyKey });
+  }
+
+  verifyMagicLink(token: string, idempotencyKey: string): Promise<VerifiedMagicLink> {
+    return this.request('POST', '/auth/magic-links/verify', { body: { token }, idempotencyKey });
+  }
+
+  // ---- The public surface: asleep/Wake-Up (#200): no auth required --------------------------------
+
+  publicOrgByDnsLabel(dnsSubdomainLabel: string): Promise<PublicOrg> {
+    return this.request('GET', `/public/orgs/by-dns-label/${dnsSubdomainLabel}`);
+  }
+
+  publicAsleepStatus(orgId: string): Promise<AsleepStatus> {
+    return this.request('GET', `/public/orgs/${orgId}/asleep-status`);
+  }
+
+  publicWake(orgId: string, idempotencyKey: string): Promise<AsleepStatus> {
+    return this.request('POST', `/public/orgs/${orgId}/wake`, { idempotencyKey });
+  }
+}
+
+// ---- Response shapes this client's own methods above return -------------------------------------
+// Deliberately hand-written here rather than imported from `apps/api`'s own OpenAPI registry
+// (this package must not depend on `apps/api`, docs/adr/0036's own layering) - narrow, read-only
+// mirrors of the shapes the committed `openapi.json` documents for these routes.
+
+export interface OrgRegistration {
+  orgId: string;
+  type: 'trial' | 'client';
+  state: 'issued' | 'active' | 'suspended' | 'destroyed';
+  name: string;
+  domain: string;
+  seatsUsed: number;
+  seatsTotal: number;
+  expiryDate?: string;
+}
+
+export interface Seat {
+  seatId: string;
+  orgId: string;
+  email: string;
+  state: 'invited' | 'accepted';
+  invitedBySeatId?: string;
+}
+
+export interface VerifiedMagicLink {
+  orgId: string;
+  orgToken: string;
+  seat: Seat;
+}
+
+export interface PublicOrg {
+  orgId: string;
+  name: string;
+}
+
+export interface AsleepStatus {
+  phase: 'idle' | 'waking' | 'awake';
+  elapsedSeconds: number;
+  expectedSeconds: number;
 }

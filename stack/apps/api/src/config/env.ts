@@ -43,6 +43,9 @@ const BaseEnvSchema = z.object({
    * unset (this ticket's Acceptance Criteria). */
   BASE_AMI_ID: z.string().optional(),
   TOFU_MODULE_GIT_SHA: z.string().optional(),
+  /** The public client app's own origin (#200) - magic-link emails point here, at
+   * `/sign-in/verify?token=...`, never back at this API directly. */
+  CLIENT_APP_BASE_URL: z.string().default('https://example.invalid'),
 });
 
 /** A production process must not be able to start "successfully" against dev/test defaults -
@@ -65,6 +68,13 @@ const EnvSchema = BaseEnvSchema.superRefine((env, ctx) => {
       code: z.ZodIssueCode.custom,
       path: ['ORG_ROOT_DNS_ZONE'],
       message: 'ORG_ROOT_DNS_ZONE must be set explicitly when NODE_ENV=production',
+    });
+  }
+  if (env.CLIENT_APP_BASE_URL === 'https://example.invalid') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['CLIENT_APP_BASE_URL'],
+      message: 'CLIENT_APP_BASE_URL must be set explicitly when NODE_ENV=production',
     });
   }
   // Mirrors the STACK_AWS_MODE guard above: an unset STEP_FUNCTIONS_STATE_MACHINE_ARN silently

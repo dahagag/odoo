@@ -1,27 +1,52 @@
 import type { AwsGateway } from '@stack/aws-gateway';
-import { OrgActionSchema, OrgIdSchema } from '@stack/domain';
+import { OrgActionSchema, OrgIdSchema, DnsSubdomainLabelSchema } from '@stack/domain';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { requireAdminPrincipal } from './auth/admin';
-import { forbidCrossOrgAccess, requireOrgToken, type OrgTokenStore } from './auth/orgToken';
+import type { EmailSender, MagicLinkStore } from './auth/magicLink';
+import { requestMagicLink, verifyMagicLink } from './auth/magicLink';
+import { forbidCrossOrgAccess, requireOrgToken, requireSeatPrincipal, type OrgTokenStore } from './auth/orgToken';
+import type { WakeRateLimiter } from './auth/wakeRateLimit';
 import type { Env } from './config/env';
 import { IdempotencyKeyReusedError, IdempotencyStillProcessingError } from './idempotency/errors';
 import { idempotencyContext, requireIdempotencyKey, withIdempotency } from './idempotency/middleware';
 import type { IdempotencyStore } from './idempotency/store';
-import { CreateOrgRequestSchema, ExtendOrgRequestSchema, OrgSchema, OrgRegistrationSchema, SweepResultSchema, UpdateOrgRequestSchema } from './openapi/registry';
+import {
+  AsleepStatusSchema,
+  CreateOrgRequestSchema,
+  ExtendOrgRequestSchema,
+  InviteSeatRequestSchema,
+  OrgSchema,
+  OrgRegistrationSchema,
+  PublicOrgSchema,
+  RequestMagicLinkSchema,
+  SeatSchema,
+  SweepResultSchema,
+  UpdateOrgRequestSchema,
+  VerifyMagicLinkRequestSchema,
+} from './openapi/registry';
+import { asleepStatus } from './org/asleep';
 import {
   ConcurrentWriteError,
+  CrossDomainInviteError,
   DnsLabelImmutableError,
   DnsLabelInUseError,
   ExpiryNotSupportedError,
   IllegalTransitionError,
   InvalidDnsLabelError,
   InvalidExpiryDateError,
+  MalformedEmailError,
+  NoSuchInvitationError,
+  OpenInviteNotEnabledError,
   OrgNotFoundError,
   ProvisionerFailedError,
+  SeatCapExceededError,
+  SeatNotAcceptedError,
+  SeatNotFoundError,
 } from './org/errors';
 import type { Provisioner } from './org/provisioner';
-import { applyTransition, checkOrgStatus, createOrg, extendOrgExpiry, updateDnsSubdomainLabel } from './org/record';
+import { applyTransition, checkOrgStatus, createOrg, extendOrgExpiry, getOrgIdByDnsSubdomainLabel, getOrgRecord, updateDnsSubdomainLabel } from './org/record';
 import type { OrgRecord } from './org/record';
+import { inviteTargeted, listSeats } from './org/seat';
 import { sweepAutoDestroy, sweepIdleSuspend } from './org/sweeps';
 import { readOrgRegistration } from './orgRegistration';
 import { problem } from './problem';
@@ -34,6 +59,11 @@ export interface ServerDeps {
   /** Injected provisioner seam (this ticket, #278): a no-op `StubProvisioner` by default, so
    * this ticket needs no real AWS. */
   provisioner: Provisioner;
+  /** #200's magic-link sign-in seam - `InMemoryMagicLinkStore` by default. */
+  magicLinkStore: MagicLinkStore;
+  emailSender: EmailSender;
+  /** #200's per-org Wake rate limiter - `InMemoryWakeRateLimiter` by default. */
+  wakeRateLimiter: WakeRateLimiter;
 }
 
 /** Maps the errors `org/errors.ts` defines (raised by `org/record.ts`) to their Problem Details
@@ -81,6 +111,34 @@ function knownOrgErrorResponse(error: unknown, reply: FastifyReply): ReturnType<
   if (error instanceof InvalidExpiryDateError) {
     reply.code(400);
     return problem(400, 'additionalDays would produce an out-of-range date', error.message);
+  }
+  if (error instanceof MalformedEmailError) {
+    reply.code(400);
+    return problem(400, 'Malformed email', error.message);
+  }
+  if (error instanceof CrossDomainInviteError) {
+    reply.code(403);
+    return problem(403, 'Email does not match this org\'s prospect domain', error.message);
+  }
+  if (error instanceof OpenInviteNotEnabledError) {
+    reply.code(409);
+    return problem(409, 'This org does not accept Open Invite Link joins', error.message);
+  }
+  if (error instanceof SeatCapExceededError) {
+    reply.code(409);
+    return problem(409, 'Org has no remaining seats', error.message);
+  }
+  if (error instanceof SeatNotFoundError) {
+    reply.code(404);
+    return problem(404, 'No such seat', error.message);
+  }
+  if (error instanceof SeatNotAcceptedError) {
+    reply.code(403);
+    return problem(403, 'Inviting seat has not accepted yet', error.message);
+  }
+  if (error instanceof NoSuchInvitationError) {
+    reply.code(404);
+    return problem(404, 'No invitation for this email', error.message);
   }
   if (error instanceof ProvisionerFailedError) {
     // A provisioner failure is an upstream dependency failing, not this service's own fault,
@@ -302,6 +360,167 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   app.post('/v1/admin/sweeps/auto-destroy', { preHandler: requireAdminPrincipal }, async (request, reply) => respondWithIdempotentResult(
     deps, request, reply, 200, SweepResultSchema, () => sweepAutoDestroy(deps.awsGateway, deps.provisioner),
   ));
+
+  // ---- The org-facing surface: seats and invitations (#200) ------------------------------------
+
+  app.get<{ Params: { orgId: string } }>(
+    '/v1/org/:orgId/seats',
+    { preHandler: requireOrgToken(deps.orgTokenStore) },
+    async (request, reply) => {
+      const orgId = parseOrgIdParam(request.params.orgId, reply);
+      if (!orgId) return undefined;
+      const forbidden = forbidCrossOrgAccess(request, orgId);
+      if (forbidden) {
+        reply.code(403);
+        return forbidden;
+      }
+      const seats = await listSeats(deps.awsGateway, orgId);
+      return seats.map((seat) => SeatSchema.parse(seat));
+    },
+  );
+
+  app.post<{ Params: { orgId: string } }>(
+    '/v1/org/:orgId/seats/invite',
+    { preHandler: requireOrgToken(deps.orgTokenStore) },
+    async (request, reply) => {
+      const orgId = parseOrgIdParam(request.params.orgId, reply);
+      if (!orgId) return undefined;
+      const forbidden = forbidCrossOrgAccess(request, orgId);
+      if (forbidden) {
+        reply.code(403);
+        return forbidden;
+      }
+      const seatPrincipal = requireSeatPrincipal(request);
+      if ('problem' in seatPrincipal) {
+        reply.code(403);
+        return seatPrincipal.problem;
+      }
+      const parsed = InviteSeatRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        reply.code(400);
+        return problem(400, 'Malformed request body', parsed.error.message);
+      }
+      try {
+        const seat = await inviteTargeted(deps.awsGateway, orgId, seatPrincipal.seatId, parsed.data.email);
+        reply.code(201);
+        return SeatSchema.parse(seat);
+      } catch (error) {
+        const known = knownOrgErrorResponse(error, reply);
+        if (known) return known;
+        throw error;
+      }
+    },
+  );
+
+  // ---- Magic-link sign-in (#200) ----------------------------------------------------------------
+
+  app.post<{ Params: { orgId: string } }>('/v1/org/:orgId/auth/magic-links', async (request, reply) => {
+    const orgId = parseOrgIdParam(request.params.orgId, reply);
+    if (!orgId) return undefined;
+    const parsed = RequestMagicLinkSchema.safeParse(request.body);
+    if (!parsed.success) {
+      reply.code(400);
+      return problem(400, 'Malformed request body', parsed.error.message);
+    }
+    try {
+      await requestMagicLink(
+        deps.awsGateway,
+        deps.magicLinkStore,
+        deps.emailSender,
+        (token) => `${deps.env.CLIENT_APP_BASE_URL}/sign-in/verify?token=${encodeURIComponent(token)}`,
+        orgId,
+        parsed.data.email,
+      );
+      reply.code(202);
+      return undefined;
+    } catch (error) {
+      const known = knownOrgErrorResponse(error, reply);
+      if (known) return known;
+      throw error;
+    }
+  });
+
+  app.post('/v1/auth/magic-links/verify', async (request, reply) => {
+    const parsed = VerifyMagicLinkRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      reply.code(400);
+      return problem(400, 'Malformed request body', parsed.error.message);
+    }
+    try {
+      const verified = await verifyMagicLink(deps.awsGateway, deps.magicLinkStore, deps.orgTokenStore, parsed.data.token);
+      if (!verified) {
+        reply.code(404);
+        return problem(404, 'This link no longer works', 'It is unknown, already used, or expired.');
+      }
+      return { orgId: verified.orgId, orgToken: verified.orgToken, seat: SeatSchema.parse(verified.seat) };
+    } catch (error) {
+      const known = knownOrgErrorResponse(error, reply);
+      if (known) return known;
+      throw error;
+    }
+  });
+
+  // ---- The public surface: asleep/Wake-Up (#200) -------------------------------------------------
+
+  app.get<{ Params: { dnsSubdomainLabel: string } }>('/v1/public/orgs/by-dns-label/:dnsSubdomainLabel', async (request, reply) => {
+    const labelResult = DnsSubdomainLabelSchema.safeParse(request.params.dnsSubdomainLabel);
+    if (!labelResult.success) {
+      reply.code(404);
+      return problem(404, 'No org reserves this label');
+    }
+    const orgId = await getOrgIdByDnsSubdomainLabel(deps.awsGateway, labelResult.data);
+    if (!orgId) {
+      reply.code(404);
+      return problem(404, 'No org reserves this label');
+    }
+    const org = await getOrgRecord(deps.awsGateway, orgId);
+    if (!org) {
+      reply.code(404);
+      return problem(404, 'No such org');
+    }
+    return PublicOrgSchema.parse({ orgId: org.orgId, name: org.name });
+  });
+
+  app.get<{ Params: { orgId: string } }>('/v1/public/orgs/:orgId/asleep-status', async (request, reply) => {
+    const orgId = parseOrgIdParam(request.params.orgId, reply);
+    if (!orgId) return undefined;
+    const org = await getOrgRecord(deps.awsGateway, orgId);
+    if (!org) {
+      reply.code(404);
+      return problem(404, 'No such org');
+    }
+    return AsleepStatusSchema.parse(asleepStatus(org));
+  });
+
+  app.post<{ Params: { orgId: string } }>('/v1/public/orgs/:orgId/wake', async (request, reply) => {
+    const orgId = parseOrgIdParam(request.params.orgId, reply);
+    if (!orgId) return undefined;
+
+    const attempt = deps.wakeRateLimiter.attempt(orgId);
+    if (!attempt.allowed) {
+      reply.code(429).header('Retry-After', String(attempt.retryAfterSeconds));
+      return problem(429, 'Too many wake attempts for this org', 'Try again shortly.');
+    }
+
+    let org = await getOrgRecord(deps.awsGateway, orgId);
+    if (!org) {
+      reply.code(404);
+      return problem(404, 'No such org');
+    }
+    // A no-op, not an error, once the org is no longer suspended - a slow double-click or a
+    // second open tab racing this one is completely ordinary (mirrors `controllers/asleep.py`'s
+    // own `if trial_org.state == 'suspended':` guard).
+    if (org.state === 'suspended') {
+      try {
+        org = await applyTransition(deps.awsGateway, deps.provisioner, orgId, 'wake');
+      } catch (error) {
+        const known = knownOrgErrorResponse(error, reply);
+        if (known) return known;
+        throw error;
+      }
+    }
+    return AsleepStatusSchema.parse(asleepStatus(org));
+  });
 
   return app;
 }
