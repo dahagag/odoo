@@ -36,6 +36,7 @@ const POLL_INTERVAL_MS = 4000;
 export function AsleepPage({ org }: { org: PublicOrg }) {
   const [status, setStatus] = useState<AsleepStatus | undefined>(undefined);
   const [waking, setWaking] = useState(false);
+  const [wakeError, setWakeError] = useState<string | undefined>(undefined);
   const pollTimer = useRef<ReturnType<typeof setTimeout>>();
 
   const poll = useCallback(async () => {
@@ -59,11 +60,16 @@ export function AsleepPage({ org }: { org: PublicOrg }) {
 
   const onWake = useCallback(async () => {
     setWaking(true);
+    setWakeError(undefined);
     try {
       await publicApi.publicWake(org.orgId, newIdempotencyKey());
     } catch {
-      // Swallowed deliberately: poll() (always called next) reads the server's real state
-      // either way, exactly like the button's onclick handler this ports from.
+      // A failed call (a 429 from the rate limiter, a 502 provisioner failure, a network blip)
+      // never actually started waking, so `poll()` below will keep reporting 'idle' - `waking`
+      // must come back down or the button stays disabled with no way to retry (CodeRabbit, PR
+      // #318).
+      setWaking(false);
+      setWakeError('Could not start your instance. Try again.');
     }
     void poll();
   }, [org.orgId, poll]);
@@ -82,9 +88,12 @@ export function AsleepPage({ org }: { org: PublicOrg }) {
         <p className="o_asleep_copy">{copy}</p>
 
         {phase === 'idle' && (
-          <button type="button" className="o_asleep_btn" onClick={onWake} disabled={waking}>
-            Wake Up
-          </button>
+          <>
+            <button type="button" className="o_asleep_btn" onClick={onWake} disabled={waking}>
+              Wake Up
+            </button>
+            {wakeError && <p role="alert" className="o_asleep_step_note">{wakeError}</p>}
+          </>
         )}
 
         {phase === 'waking' && status && <WakingProgress status={status} />}

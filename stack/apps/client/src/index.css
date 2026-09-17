@@ -2,6 +2,7 @@
   --o-brand: #71639e;
   --o-gray-600: #6c757d;
   --o-gray-900: #212529;
+  --o-alert: #b02a37;
   --o-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Ubuntu, "Noto Sans", Arial, sans-serif;
 }
 
@@ -16,6 +17,9 @@ body {
   :root {
     --o-gray-600: #a8a8b3;
     --o-gray-900: #f1f1f4;
+    /* #b02a37 is ~2.3:1 against the dark card surface below - well under WCAG AA's 4.5:1 for
+     * body text (CodeRabbit, PR #318). This lighter red clears it while staying clearly "error". */
+    --o-alert: #ff6b6b;
   }
   body { background: #1b1b1f; }
   .o_page input[type='email'] {
@@ -66,5 +70,5 @@ body {
 }
 
 .o_page [role='alert'] {
-  color: #b02a37;
+  color: var(--o-alert);
 }

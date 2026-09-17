@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { CrossDomainInviteError, NoSuchInvitationError } from '../src/org/errors';
 import { createOrg, getOrgRecord } from '../src/org/record';
 import { joinOpenInvite } from '../src/org/seat';
 import { CapturingEmailSender, buildTestServer } from './testServer';
@@ -108,8 +107,12 @@ describe('requestMagicLink/verifyMagicLink (#200 User Stories 4, 6, 12, 13)', ()
     expect((emailSender as CapturingEmailSender).sent).toHaveLength(0);
   });
 
-  it('rejects an email with no invitation on a targeted-only org', async () => {
-    const { app, awsGateway } = buildTestServer();
+  it('stays silent (202, no email sent) for a right-domain email with no invitation on a targeted-only org', async () => {
+    // CodeRabbit, PR #318: a 404 here would let an external caller enumerate which right-domain
+    // addresses have a Seat - the route's own doc comment already promises "always 202, never
+    // reveals whether a given email has a Seat", so this proves the code actually keeps that
+    // promise for the one case that used to break it.
+    const { app, awsGateway, emailSender } = buildTestServer();
     const org = await createOrg(awsGateway, orgInput({ inviteType: 'targeted' }), CONFIG);
 
     const response = await app.inject({
@@ -119,7 +122,26 @@ describe('requestMagicLink/verifyMagicLink (#200 User Stories 4, 6, 12, 13)', ()
       payload: { email: 'nobody@acme.example.com' },
     });
 
-    expect(response.statusCode).toBe(404);
+    expect(response.statusCode).toBe(202);
+    expect((emailSender as CapturingEmailSender).sent).toHaveLength(0);
+  });
+
+  it('still rejects a cross-domain email with a clear 403 on a targeted-only org, even with no seat at all (#200 User Stories 5, 7)', async () => {
+    // The domain guard must run before the no-invitation check, not after it - otherwise this
+    // exact case (wrong domain, no seat, targeted org) would fall into the silent-202 case above
+    // instead of the clear rejection these User Stories ask for.
+    const { app, awsGateway, emailSender } = buildTestServer();
+    const org = await createOrg(awsGateway, orgInput({ inviteType: 'targeted' }), CONFIG);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/org/${org.orgId}/auth/magic-links`,
+      headers: { 'idempotency-key': 'req-4b' },
+      payload: { email: 'stranger@other.example.com' },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect((emailSender as CapturingEmailSender).sent).toHaveLength(0);
   });
 
   it('rejects an unknown, expired, or already-used token without revealing which (#200 User Story 13)', async () => {
@@ -168,12 +190,5 @@ describe('requestMagicLink/verifyMagicLink (#200 User Stories 4, 6, 12, 13)', ()
     const token = await magicLinkStore.issue({ orgId: 'org-1', email: 'e@x.com', expiresAt: Date.now() - 1 });
 
     await expect(magicLinkStore.consume(token)).resolves.toBeUndefined();
-  });
-});
-
-describe('requestMagicLink/verifyMagicLink error types (domain-level)', () => {
-  it('CrossDomainInviteError and NoSuchInvitationError are distinct error types', () => {
-    expect(new CrossDomainInviteError('org-1', 'a@b.com')).toBeInstanceOf(Error);
-    expect(new NoSuchInvitationError('org-1', 'a@b.com')).toBeInstanceOf(Error);
   });
 });

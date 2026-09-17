@@ -30,6 +30,29 @@ describe('loadEnv - production configuration guard', () => {
     } as NodeJS.ProcessEnv)).toThrow(/CLIENT_APP_BASE_URL/);
   });
 
+  it('rejects a production CLIENT_APP_BASE_URL that is plain http (#318: the magic-link token travels in its query string)', () => {
+    expect(() => loadEnv({
+      NODE_ENV: 'production',
+      STACK_AWS_MODE: 'real',
+      ORG_ROOT_DNS_ZONE: 'orgs.example.com',
+      STEP_FUNCTIONS_STATE_MACHINE_ARN: 'arn:aws:states:us-east-1:123456789012:stateMachine:org-lifecycle',
+      CLIENT_APP_BASE_URL: 'http://app.example.com',
+    } as NodeJS.ProcessEnv)).toThrow(/https/);
+  });
+
+  it('rejects a production CLIENT_APP_BASE_URL carrying a path, query, or credentials', () => {
+    const base = {
+      NODE_ENV: 'production',
+      STACK_AWS_MODE: 'real',
+      ORG_ROOT_DNS_ZONE: 'orgs.example.com',
+      STEP_FUNCTIONS_STATE_MACHINE_ARN: 'arn:aws:states:us-east-1:123456789012:stateMachine:org-lifecycle',
+    };
+    expect(() => loadEnv({ ...base, CLIENT_APP_BASE_URL: 'https://app.example.com/some-path' } as NodeJS.ProcessEnv)).toThrow(/CLIENT_APP_BASE_URL/);
+    expect(() => loadEnv({ ...base, CLIENT_APP_BASE_URL: 'https://app.example.com?x=1' } as NodeJS.ProcessEnv)).toThrow(/CLIENT_APP_BASE_URL/);
+    expect(() => loadEnv({ ...base, CLIENT_APP_BASE_URL: 'https://user:pass@app.example.com' } as NodeJS.ProcessEnv)).toThrow(/CLIENT_APP_BASE_URL/);
+    expect(() => loadEnv({ ...base, CLIENT_APP_BASE_URL: 'not a url' } as NodeJS.ProcessEnv)).toThrow(/CLIENT_APP_BASE_URL/);
+  });
+
   it('accepts NODE_ENV=production once every production-safe value is set', () => {
     expect(() => loadEnv({
       NODE_ENV: 'production',

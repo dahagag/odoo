@@ -8,7 +8,7 @@ import { saveSession } from '../lib/session';
  * distinguishing "expired" from "already used" from "never existed" (the API itself doesn't).
  */
 export function VerifyPage({ token }: { token: string | undefined }) {
-  const [state, setState] = useState<'verifying' | 'failed'>('verifying');
+  const [state, setState] = useState<'verifying' | 'failed' | 'save-failed'>('verifying');
 
   useEffect(() => {
     if (!token) {
@@ -20,7 +20,14 @@ export function VerifyPage({ token }: { token: string | undefined }) {
       try {
         const verified = await publicApi.verifyMagicLink(token, newIdempotencyKey());
         if (cancelled) return;
-        saveSession({ orgId: verified.orgId, orgToken: verified.orgToken });
+        // The link is already single-use and just got consumed server-side, regardless of what
+        // happens next - so a storage failure here (private browsing, a full quota) must not
+        // still redirect to a dashboard that only reads from localStorage and would just show
+        // "sign in required" with no session and no link left to retry (CodeRabbit, PR #318).
+        if (!saveSession({ orgId: verified.orgId, orgToken: verified.orgToken })) {
+          setState('save-failed');
+          return;
+        }
         window.location.replace('/dashboard');
       } catch {
         // Surfaced generically (#200's own "clear rejection" is about domain mismatch at
@@ -38,6 +45,19 @@ export function VerifyPage({ token }: { token: string | undefined }) {
     return (
       <main className="o_page">
         <h1>Signing you in…</h1>
+      </main>
+    );
+  }
+
+  if (state === 'save-failed') {
+    return (
+      <main className="o_page">
+        <h1>Signed in, but couldn't stay signed in</h1>
+        <p role="alert">
+          Your link worked, but this browser wouldn't let us save your session - private
+          browsing or blocked storage can cause this. Allow storage for this site, then ask for
+          a new link from your invitation.
+        </p>
       </main>
     );
   }

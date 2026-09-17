@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { AwsGateway } from '@stack/aws-gateway';
-import { NoSuchInvitationError, OrgNotFoundError } from '../org/errors';
+import { OrgNotFoundError } from '../org/errors';
 import { getOrgRecord } from '../org/record';
 import { acceptSeat, assertDomainMatches, assertWellFormedEmail, findSeatByEmail, joinOpenInvite, type SeatRecord } from '../org/seat';
 import type { OrgTokenStore } from './orgToken';
@@ -38,6 +38,13 @@ export class InMemoryMagicLinkStore implements MagicLinkStore {
   private readonly claimsByToken = new Map<string, MagicLinkClaim>();
 
   async issue(claim: MagicLinkClaim): Promise<string> {
+    // Only `consume` deletes an entry - a requested-but-never-opened link would otherwise
+    // accumulate for the process's entire life, on a route any visitor can call repeatedly
+    // (CodeRabbit, PR #318).
+    const now = Date.now();
+    for (const [existingToken, existingClaim] of this.claimsByToken) {
+      if (existingClaim.expiresAt < now) this.claimsByToken.delete(existingToken);
+    }
     const token = randomUUID();
     this.claimsByToken.set(token, claim);
     return token;
@@ -66,9 +73,12 @@ export interface EmailSender {
 }
 
 export class ConsoleEmailSender implements EmailSender {
-  async sendMagicLink({ to, url }: MagicLinkEmail): Promise<void> {
+  async sendMagicLink({ to }: MagicLinkEmail): Promise<void> {
+    // Never logs `url` - it carries the live, single-use token (CWE-532, CodeRabbit PR #318):
+    // anything with read access to this process's logs could sign in as that Seat for the
+    // token's remaining lifetime otherwise.
     // eslint-disable-next-line no-console
-    console.log(`[magic-link] ${to}: ${url}`);
+    console.log(`[magic-link] sent to ${to}`);
   }
 }
 
@@ -76,8 +86,14 @@ export class ConsoleEmailSender implements EmailSender {
  * Requests a magic link for `email` to sign in to `orgId` (#200's User Stories 12, 6, 4/5/7):
  * an existing Seat's email always qualifies; an email with no Seat yet only qualifies when the
  * org accepts Open Invite joins (ADR-0026) - and either way the email must match the org's own
- * prospect domain (`assertDomainMatches`), so a clearly-wrong-domain or clearly-uninvited email
- * is rejected here rather than only failing once someone tries the link.
+ * prospect domain (`assertDomainMatches`), checked *first*, so a clearly-wrong-domain email
+ * always gets the clear 403 rejection #200's own User Stories 5/7 ask for - never masked by the
+ * no-invitation case below, whichever org type it's checked against.
+ *
+ * A right-domain email with no invitation resolves silently instead of throwing (CodeRabbit,
+ * PR #318): the alternative - a 404 - would let an external caller enumerate which right-domain
+ * addresses have a Seat on a targeted-only org (CWE-204), the exact thing this function's own
+ * "always 202, never reveals whether a given email has a Seat" contract exists to prevent.
  *
  * Deliberately creates no Seat itself: an Open Invite Link's first-ever use only actually joins
  * once `verifyMagicLink` runs, so a requested-but-never-opened link never occupies a seat.
@@ -95,11 +111,10 @@ export async function requestMagicLink(
   const org = await getOrgRecord(gateway, orgId);
   if (!org) throw new OrgNotFoundError(orgId);
 
-  const existingSeat = await findSeatByEmail(gateway, orgId, email);
-  if (!existingSeat && org.inviteType !== 'open') {
-    throw new NoSuchInvitationError(orgId, email);
-  }
   assertDomainMatches(org, email);
+
+  const existingSeat = await findSeatByEmail(gateway, orgId, email);
+  if (!existingSeat && org.inviteType !== 'open') return;
 
   const token = await store.issue({
     orgId,

@@ -1770,7 +1770,7 @@
             }
           },
           "404": {
-            "description": "No such org, or the email has no invitation on it",
+            "description": "No such org",
             "content": {
               "application/json": {
                 "schema": {
@@ -1993,8 +1993,8 @@
               }
             }
           },
-          "429": {
-            "description": "Rate limited - too many wake attempts for this org",
+          "409": {
+            "description": "An Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
             "headers": {
               "Retry-After": {
                 "schema": {
@@ -2005,6 +2005,36 @@
                 "required": false
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited - too many wake attempts for this org",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string",
+                  "description": "Seconds to wait before retrying this org's wake - only set on a 429 (rate limited).",
+                  "example": "3"
+                },
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The provisioner failed; no state change was made",
             "content": {
               "application/json": {
                 "schema": {

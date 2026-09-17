@@ -110,18 +110,6 @@ export class OpenInviteNotEnabledError extends Error {
   }
 }
 
-/** Raised by `auth/magicLink.ts`'s `requestMagicLink` when the email has no existing Seat and
- * the org doesn't accept Open Invite joins - there is no invitation this email could be signing
- * in to (#200's User Story 5: "an invitation to a non-company email rejected clearly" extends to
- * "there was never an invitation at all"). Distinct from `CrossDomainInviteError`, which fires
- * for a *wrong-domain* email; this fires for a *right-domain* email with nothing to sign in to. */
-export class NoSuchInvitationError extends Error {
-  constructor(readonly orgId: string, readonly email: string) {
-    super(`${email} has no invitation on org ${orgId}`);
-    this.name = 'NoSuchInvitationError';
-  }
-}
-
 /** The transactional seat-counter increment (`docs/dynamodb-access-patterns.md`) rejected a new
  * seat because it would push `seatsUsed` past `seatsTotal` - this ticket's Acceptance Criteria:
  * "an invite that would exceed the org's seat cap is rejected". Raised whether the seat came

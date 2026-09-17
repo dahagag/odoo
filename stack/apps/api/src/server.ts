@@ -36,7 +36,6 @@ import {
   InvalidDnsLabelError,
   InvalidExpiryDateError,
   MalformedEmailError,
-  NoSuchInvitationError,
   OpenInviteNotEnabledError,
   OrgNotFoundError,
   ProvisionerFailedError,
@@ -136,10 +135,6 @@ function knownOrgErrorResponse(error: unknown, reply: FastifyReply): ReturnType<
   if (error instanceof SeatNotAcceptedError) {
     reply.code(403);
     return problem(403, 'Inviting seat has not accepted yet', error.message);
-  }
-  if (error instanceof NoSuchInvitationError) {
-    reply.code(404);
-    return problem(404, 'No invitation for this email', error.message);
   }
   if (error instanceof InvalidMagicLinkError) {
     reply.code(404);

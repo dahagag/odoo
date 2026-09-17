@@ -54,6 +54,15 @@ function stillProcessingResponse(description: string) {
   return { ...problemResponse(description), headers: retryAfterHeaderSchema };
 }
 
+/** The public Wake route's own 429 - a rate-limit backoff, never an idempotency conflict, so it
+ * needs its own wording rather than reusing `retryAfterHeaderSchema`'s (CodeRabbit, PR #318). */
+const wakeRetryAfterHeaderSchema = z.object({
+  'Retry-After': z.string().optional().openapi({
+    description: 'Seconds to wait before retrying this org\'s wake - only set on a 429 (rate limited).',
+    example: '3',
+  }),
+});
+
 export const OrgRegistrationSchema = z
   .object({
     orgId: OrgIdSchema,
@@ -408,7 +417,7 @@ registry.registerPath({
     202: { description: 'Accepted - a magic link was sent if the email qualifies' },
     400: problemResponse('Malformed request body, or a malformed email'),
     403: problemResponse('The email does not match this org\'s prospect domain'),
-    404: problemResponse("No such org, or the email has no invitation on it"),
+    404: problemResponse('No such org'),
   },
 });
 
@@ -493,7 +502,9 @@ registry.registerPath({
   responses: {
     200: { description: 'OK', content: { 'application/json': { schema: AsleepStatusSchema } } },
     404: problemResponse('No such org'),
-    429: { ...problemResponse('Rate limited - too many wake attempts for this org'), headers: retryAfterHeaderSchema },
+    409: stillProcessingResponse('An Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)'),
+    429: { ...problemResponse('Rate limited - too many wake attempts for this org'), headers: wakeRetryAfterHeaderSchema },
+    502: problemResponse('The provisioner failed; no state change was made'),
   },
 });
 

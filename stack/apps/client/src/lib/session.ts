@@ -23,12 +23,17 @@ export function loadSession(): Session | undefined {
   }
 }
 
-export function saveSession(session: Session): void {
+/** Returns whether the session actually persisted. A caller that's about to burn a single-use
+ * magic link on the strength of this call (`VerifyPage`) needs to know before it redirects
+ * somewhere that only reads from `localStorage` - otherwise a private window or a full storage
+ * quota silently strands the visitor with no session and no link left to retry with
+ * (CodeRabbit, PR #318). */
+export function saveSession(session: Session): boolean {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    return true;
   } catch {
-    // A private window or a full storage quota just means the next page load asks the visitor
-    // to sign in again - never a reason to crash the page that just successfully signed them in.
+    return false;
   }
 }
 

@@ -76,6 +76,31 @@ const EnvSchema = BaseEnvSchema.superRefine((env, ctx) => {
       path: ['CLIENT_APP_BASE_URL'],
       message: 'CLIENT_APP_BASE_URL must be set explicitly when NODE_ENV=production',
     });
+  } else {
+    // The magic-link token travels in this URL's own query string (CodeRabbit, PR #318) - an
+    // http:// origin would send that live credential in cleartext, and a path/query/fragment/
+    // credentials here would mean two different callers building the same verify URL disagree
+    // on where the token actually goes.
+    let clientAppUrl: URL | undefined;
+    try {
+      clientAppUrl = new URL(env.CLIENT_APP_BASE_URL);
+    } catch {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['CLIENT_APP_BASE_URL'], message: 'CLIENT_APP_BASE_URL must be a syntactically valid URL' });
+    }
+    if (clientAppUrl) {
+      if (clientAppUrl.protocol !== 'https:') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['CLIENT_APP_BASE_URL'], message: 'CLIENT_APP_BASE_URL must use https: in production' });
+      }
+      if (clientAppUrl.username || clientAppUrl.password) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['CLIENT_APP_BASE_URL'], message: 'CLIENT_APP_BASE_URL must not carry credentials' });
+      }
+      if (clientAppUrl.search || clientAppUrl.hash) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['CLIENT_APP_BASE_URL'], message: 'CLIENT_APP_BASE_URL must not carry a query string or fragment' });
+      }
+      if (clientAppUrl.pathname !== '/') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['CLIENT_APP_BASE_URL'], message: 'CLIENT_APP_BASE_URL must be an origin only, with no path' });
+      }
+    }
   }
   // Mirrors the STACK_AWS_MODE guard above: an unset STEP_FUNCTIONS_STATE_MACHINE_ARN silently
   // keeps every org on StubProvisioner (#280's buildProvisioner) - a true no-op that never

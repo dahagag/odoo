@@ -83,4 +83,16 @@ describe('AsleepPage - the ported design\'s three phases', () => {
     await waitFor(() => expect(publicWake).toHaveBeenCalledWith('org-1', 'test-idempotency-key'));
     expect(await screen.findByText('Waking up your trial')).toBeInTheDocument();
   });
+
+  it('re-enables Wake Up and shows a retryable error when the wake call itself fails (CodeRabbit, PR #318)', async () => {
+    publicAsleepStatus.mockResolvedValue({ phase: 'idle', elapsedSeconds: 0, expectedSeconds: 90 });
+    publicWake.mockRejectedValue(new Error('429 rate limited'));
+
+    render(<AsleepPage org={ORG} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Wake Up' }));
+
+    const button = await screen.findByRole('button', { name: 'Wake Up' });
+    await waitFor(() => expect(button).not.toBeDisabled());
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not start your instance. Try again.');
+  });
 });

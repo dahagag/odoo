@@ -131,6 +131,7 @@
   100% { transform: translateX(250%); }
 }
 .o_asleep_step_note { margin: 10px 0 0; font-size: 13px; }
+.o_asleep_page [role='alert'] { color: var(--o-alert, #b02a37); }
 .o_asleep_waking_note { margin-top: 4px; font-size: 12px; color: var(--o-gray-600); }
 .o_asleep_footer { margin-top: calc(var(--o-spacer) * 1.5); font-size: 12px; color: var(--o-gray-600); }
 
