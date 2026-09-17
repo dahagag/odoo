@@ -1015,7 +1015,9 @@ jobs:
       - uses: actions/setup-node@v4
         if: needs.changes.outputs.stack_relevant == 'true'
         with:
-          node-version: '22'
+          # Reads stack/.nvmrc rather than a hardcoded version, so CI and local dev can never
+          # drift from each other silently.
+          node-version-file: stack/.nvmrc
           cache: npm
           cache-dependency-path: stack/package-lock.json
       - name: npm ci
@@ -1030,6 +1032,14 @@ jobs:
         if: needs.changes.outputs.stack_relevant == 'true'
         working-directory: stack
         run: npm run test
+      - name: Build
+        # Only stack/apps/client declares a `build` script (Vite) - `--workspaces --if-present`
+        # skips every other workspace, so this is deliberately the one place a client-only,
+        # build-time failure (a bad asset import, a bundler config break) that `typecheck`
+        # alone wouldn't catch actually gets caught in CI, not first noticed at deploy time.
+        if: needs.changes.outputs.stack_relevant == 'true'
+        working-directory: stack
+        run: npm run build
       - name: OpenAPI document is committed and matches the validators (docs/adr/0036)
         if: needs.changes.outputs.stack_relevant == 'true'
         working-directory: stack

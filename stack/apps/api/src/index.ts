@@ -1,5 +1,7 @@
 import { buildAwsGateway } from './aws/gateway';
+import { ConsoleEmailSender, InMemoryMagicLinkStore } from './auth/magicLink';
 import { InMemoryOrgTokenStore } from './auth/orgToken';
+import { InMemoryWakeRateLimiter } from './auth/wakeRateLimit';
 import { loadEnv } from './config/env';
 import { DynamoIdempotencyStore } from './idempotency/store';
 import { buildProvisioner } from './org/awsProvisioner';
@@ -18,6 +20,11 @@ async function main(): Promise<void> {
     // No `STEP_FUNCTIONS_STATE_MACHINE_ARN` configured keeps this on the no-op default (#278);
     // configuring one switches to the real Step Functions-backed provisioner (#280).
     provisioner: buildProvisioner(env, awsGateway),
+    // A durable, SES-backed pair lands once #200's magic-link flow needs to survive a restart -
+    // same "in-memory now" precedent as orgTokenStore above.
+    magicLinkStore: new InMemoryMagicLinkStore(),
+    emailSender: new ConsoleEmailSender(),
+    wakeRateLimiter: new InMemoryWakeRateLimiter(),
   });
 
   await app.listen({ port: env.PORT, host: env.HOST });

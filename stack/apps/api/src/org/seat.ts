@@ -49,16 +49,49 @@ export async function getSeat(gateway: AwsGateway, orgId: string, seatId: string
   return item ? fromItem(item) : undefined;
 }
 
+/** Every Seat for an org, for the client app's own status view (#200's User Story 3: "I want
+ * to see who has a seat on my org"). A plain `Query` on the org's `pk` with a `seat#` sort-key
+ * prefix - no GSI needed (`docs/dynamodb-access-patterns.md`) - since the system-wide seat cap
+ * (`SYSTEM_WIDE_SEAT_CAP`, `@stack/domain`) keeps this a small, single-page read in practice. */
+export async function listSeats(gateway: AwsGateway, orgId: string): Promise<SeatRecord[]> {
+  const seats: SeatRecord[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await gateway.dynamoDb.query({
+      table: ORGS_TABLE,
+      partitionKey: { name: 'pk', value: orgPk(orgId) },
+      sortKeyPrefix: { name: 'sk', value: 'seat#' },
+      cursor,
+    });
+    for (const item of page.items) seats.push(fromItem(item));
+    cursor = page.nextCursor;
+  } while (cursor);
+  return seats;
+}
+
+/** Finds the Seat (if any) already invited under `email` for this org - the magic-link
+ * sign-in flow's own lookup (#200): "does this email already have a Seat here". Case-
+ * insensitive, matching how `assertDomainMatches` already compares domains. Reads the same
+ * small per-org page `listSeats` does; a dedicated email index would be premature at the
+ * system-wide 25-seat cap this store already enforces. */
+export async function findSeatByEmail(gateway: AwsGateway, orgId: string, email: string): Promise<SeatRecord | undefined> {
+  const seats = await listSeats(gateway, orgId);
+  return seats.find((seat) => seat.email.toLowerCase() === email.toLowerCase());
+}
+
 /** Checked before any seat is created (this ticket's Acceptance Criteria: "a malformed email is
- * rejected before any seat is created") - a pure, no-I/O check, so it never races anything. */
-function assertWellFormedEmail(email: string): void {
+ * rejected before any seat is created") - a pure, no-I/O check, so it never races anything.
+ * Exported so `auth/magicLink.ts`'s sign-in request path applies the identical shape check
+ * before ever looking an email up (#200). */
+export function assertWellFormedEmail(email: string): void {
   if (!EMAIL_RE.test(email)) throw new MalformedEmailError(email);
 }
 
 /** Both invitation paths guard identically against the org's own prospect domain (`OrgRecord.
  * domain`) - ADR-0026: "this keeps the same safety property the Targeted Invite path always
- * had". */
-function assertDomainMatches(org: OrgRecord, email: string): void {
+ * had". Exported so `auth/magicLink.ts`'s sign-in request path (#200) applies the identical
+ * guard before ever minting a link, rather than re-deriving it. */
+export function assertDomainMatches(org: OrgRecord, email: string): void {
   const emailDomain = email.split('@').pop() ?? '';
   if (emailDomain.toLowerCase() !== org.domain.toLowerCase()) {
     throw new CrossDomainInviteError(org.orgId, email);

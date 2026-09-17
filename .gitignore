@@ -11,6 +11,7 @@ _build/
 !.mailmap
 !.weblate.json
 !/stack/**/.dockerignore
+!/stack/.nvmrc
 # compiled python files
 *.py[co]
 __pycache__/
