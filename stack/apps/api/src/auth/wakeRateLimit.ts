@@ -10,6 +10,18 @@
  * only ever relaxes the limit, never breaks the underlying "one wake per suspended org" safety
  * property `org/record.ts`'s own state check already enforces.
  */
+/** Raised by the public wake route's own idempotent `op` (`server.ts`) when `WakeRateLimiter.
+ * attempt` refuses this attempt - deliberately checked *inside* the idempotency-replay boundary
+ * (docs/adr/0036's idempotency seam), not before it: a genuine retry of the same click (the same
+ * `Idempotency-Key`) replays the stored result without calling `attempt()` again, so it can never
+ * itself consume another slot in the window - only a distinct new attempt (a fresh key) can. */
+export class WakeRateLimitedError extends Error {
+  constructor(readonly orgId: string, readonly retryAfterSeconds: number) {
+    super(`Too many wake attempts for org ${orgId}; retry after ${retryAfterSeconds}s`);
+    this.name = 'WakeRateLimitedError';
+  }
+}
+
 export interface WakeRateLimiter {
   /** Records an attempt for `orgId` and reports whether it's allowed. Called once per incoming
    * request, before checking whether the org is actually suspended - a flood of requests must

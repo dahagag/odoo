@@ -5,7 +5,7 @@ import { AsleepPage } from './pages/AsleepPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { SignInPage } from './pages/SignInPage';
 import { VerifyPage } from './pages/VerifyPage';
-import type { PublicOrg } from '@stack/api-client';
+import { StackApiError, type PublicOrg } from '@stack/api-client';
 
 /** The first label of the current `Host` (`<dnsSubdomainLabel>.<ORG_ROOT_DNS_ZONE>`, matching
  * `record.ts`'s own `dnsSubdomainLabel` shape) - a request only lands on a label like this at
@@ -22,17 +22,29 @@ function hostLabel(): string {
  *   for that org - never anything else, and never a self-service action beyond Wake itself.
  * - Reached at the client app's own base domain: sign-in, verify, and the org dashboard.
  */
+type PublicOrgLookup = PublicOrg | 'not-a-failover-host' | 'lookup-failed';
+
 export function App() {
-  const [publicOrg, setPublicOrg] = useState<PublicOrg | 'none' | undefined>(undefined);
+  const [lookup, setLookup] = useState<PublicOrgLookup | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const org = await publicApi.publicOrgByDnsLabel(hostLabel());
-        if (!cancelled) setPublicOrg(org);
-      } catch {
-        if (!cancelled) setPublicOrg('none');
+        if (!cancelled) setLookup(org);
+      } catch (error) {
+        if (cancelled) return;
+        // A clean 404 means this Host genuinely reserves no org - the ordinary case at the
+        // client app's own base domain. Anything else (a network blip, the stack itself being
+        // briefly unreachable) must not be treated the same way: this app IS the failover
+        // surface (ADR-0030), so silently falling through to the normal sign-in app here would
+        // hide the one case #200's own Testing Decisions calls out by name - "the asleep page
+        // must render correctly when the stack cannot reach the org's record at all... degrade
+        // to something honest rather than erroring." A distinct, honest "can't tell right now"
+        // state is that degrade; pretending nothing's wrong is not.
+        const notFound = error instanceof StackApiError && error.problem.status === 404;
+        setLookup(notFound ? 'not-a-failover-host' : 'lookup-failed');
       }
     })();
     return () => {
@@ -40,8 +52,16 @@ export function App() {
     };
   }, []);
 
-  if (publicOrg === undefined) return null;
-  if (publicOrg !== 'none') return <AsleepPage org={publicOrg} />;
+  if (lookup === undefined) return null;
+  if (lookup === 'lookup-failed') {
+    return (
+      <main className="o_page">
+        <h1>We can't tell your org's status right now</h1>
+        <p>This is a temporary problem on our end, not with your trial. Try reloading in a moment.</p>
+      </main>
+    );
+  }
+  if (lookup !== 'not-a-failover-host') return <AsleepPage org={lookup} />;
 
   return <NormalApp />;
 }

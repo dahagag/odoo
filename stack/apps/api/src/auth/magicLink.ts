@@ -116,24 +116,31 @@ export interface VerifiedMagicLink {
   orgToken: string;
 }
 
+/** Raised by `verifyMagicLink` for an unknown, already-used, or expired token (#200's User
+ * Story 13) - a single error type covering all three, since the route layer's "this link no
+ * longer works" response is deliberately the same for each (never revealing which). */
+export class InvalidMagicLinkError extends Error {
+  constructor() {
+    super('This magic-link token is unknown, already used, or expired.');
+    this.name = 'InvalidMagicLinkError';
+  }
+}
+
 /**
  * Verifies a magic-link `token` (#200's User Stories 6, 12): accepts the pending Seat it names,
  * or - for an Open Invite Link's first use, which named no Seat at request time - joins one now
  * via `joinOpenInvite`, re-running the exact same domain guard as the original request (a seat
  * count that filled up in between is still correctly rejected by that call's own seat-cap
  * check). Either way, mints a fresh org token scoped to that Seat.
- *
- * Returns `undefined` for an unknown, already-used, or expired token (#200's User Story 13) -
- * the route layer maps that to a clear "this link no longer works" response, not a generic 500.
  */
 export async function verifyMagicLink(
   gateway: AwsGateway,
   store: MagicLinkStore,
   orgTokenStore: OrgTokenStore,
   token: string,
-): Promise<VerifiedMagicLink | undefined> {
+): Promise<VerifiedMagicLink> {
   const claim = await store.consume(token);
-  if (!claim) return undefined;
+  if (!claim) throw new InvalidMagicLinkError();
 
   const seat = claim.seatId
     ? await acceptSeat(gateway, claim.orgId, claim.seatId)

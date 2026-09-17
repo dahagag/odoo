@@ -243,6 +243,25 @@ describe('seat cap under genuine concurrency (this ticket\'s Acceptance Criteria
     expect(finalOrg?.seatsUsed).toBe(4);
     expect(finalOrg?.seatsUsed).toBeLessThanOrEqual(finalOrg?.seatsTotal ?? Infinity);
   });
+
+  it('rejects a cross-domain open-invite join under genuine concurrency too, matching test_trial_org_open_invite_concurrency.py\'s own invariant', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await createOrg(gateway, orgInput({ inviteType: 'open', seatsTotal: 10 }), CONFIG);
+
+    // Unlike the seat-cap race above, the domain guard needs no shared counter to race against -
+    // it's a pure check against the org record each call already read. This still fires many
+    // concurrent mismatched joins at once, so a lucky interleaving getting one past the guard
+    // would show up as a real bug, not a theoretical one.
+    const results = await Promise.allSettled(
+      Array.from({ length: 8 }, (_, i) => joinOpenInvite(gateway, org.orgId, `stranger${i}@other.example.com`)),
+    );
+
+    expect(results.every((result) => result.status === 'rejected')).toBe(true);
+    for (const failure of results) {
+      expect((failure as PromiseRejectedResult).reason).toBeInstanceOf(CrossDomainInviteError);
+    }
+    expect((await getOrgRecord(gateway, org.orgId))?.seatsUsed).toBe(0);
+  });
 });
 
 describe('getSeat/acceptSeat', () => {

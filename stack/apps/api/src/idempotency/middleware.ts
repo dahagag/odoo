@@ -77,11 +77,26 @@ export interface IdempotencyContext {
 }
 
 /**
- * Scopes the client-supplied `Idempotency-Key` header by the authenticated admin principal
- * (`request.adminPrincipal.arn`, the same trusted identity source the admin surface already
- * establishes per docs/adr/0036 - not a second, weaker notion of caller identity) and by HTTP
- * method + registered route template (`request.routeOptions.url`, e.g.
- * `/v1/admin/orgs/:orgId/suspend` - the *template*, not the raw path with `orgId` already
+ * The identity a scoped key is keyed by, one per surface (docs/adr/0036's three surfaces): the
+ * trusted admin principal on the staff surface, the resolved org (and Seat, once signed in via
+ * a magic link) on the org-facing surface, or - for #200's public surface, which has no
+ * principal at all by design (Wake, and a magic-link request/verify before any org token
+ * exists) - a fixed literal. `public` still scopes correctly: two different callers reusing the
+ * same raw key on the same route+params is exactly the "did you mean this?" collision this
+ * function exists to catch, principal or not.
+ */
+function callerPrincipal(request: FastifyRequest): string {
+  if (request.adminPrincipal?.arn) return `admin:${request.adminPrincipal.arn}`;
+  if (request.orgId) return `org:${request.orgId}${request.seatId ? `:seat:${request.seatId}` : ''}`;
+  return 'public';
+}
+
+/**
+ * Scopes the client-supplied `Idempotency-Key` header by the caller's own identity on whichever
+ * surface it reached (`callerPrincipal` above - admin principal, org/Seat, or `public`; not a
+ * second, weaker notion of caller identity than what that surface already establishes per
+ * docs/adr/0036) and by HTTP method + registered route template (`request.routeOptions.url`,
+ * e.g. `/v1/admin/orgs/:orgId/suspend` - the *template*, not the raw path with `orgId` already
  * substituted in, so `suspend` and `destroy` on the very same org never collide even though only
  * their final path segment differs).
  *
@@ -96,10 +111,7 @@ export interface IdempotencyContext {
  */
 export function idempotencyContext(request: FastifyRequest): IdempotencyContext {
   const rawKey = idempotencyKeyOf(request);
-  const principal = request.adminPrincipal?.arn;
-  if (!principal) {
-    throw new Error('request.adminPrincipal is unset - did requireAdminPrincipal run as a preHandler?');
-  }
+  const principal = callerPrincipal(request);
   const route = request.routeOptions.url;
   if (!route) {
     // Only unset for a 404 (no route matched) - unreachable from inside a registered route

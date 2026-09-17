@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createOrg } from '../src/org/record';
+import { createOrg, getOrgRecord } from '../src/org/record';
 import { inviteTargeted } from '../src/org/seat';
 import { buildTestServer } from './testServer';
 
@@ -127,6 +127,35 @@ describe('POST /v1/org/:orgId/seats/invite (#200 User Story 4, ADR-0026 Targeted
     });
 
     expect(response.statusCode).toBe(403);
+  });
+
+  it('replays the same seat on a retry with the same Idempotency-Key, rather than inviting twice', async () => {
+    const { app, awsGateway, orgTokenStore } = buildTestServer();
+    const org = await createOrg(awsGateway, orgInput(), CONFIG);
+    const firstSeat = await inviteTargetedBootstrap(awsGateway, org.orgId);
+    orgTokenStore.issue(org.orgId, 'org-token', firstSeat.seatId);
+    const headers = { authorization: 'Bearer org-token', 'idempotency-key': 'invite-replay-1' };
+
+    const first = await app.inject({ method: 'POST', url: `/v1/org/${org.orgId}/seats/invite`, headers, payload: { email: 'teammate@acme.example.com' } });
+    const replay = await app.inject({ method: 'POST', url: `/v1/org/${org.orgId}/seats/invite`, headers, payload: { email: 'teammate@acme.example.com' } });
+
+    expect(first.statusCode).toBe(201);
+    expect(replay.statusCode).toBe(201);
+    expect(replay.json()).toEqual(first.json());
+    expect((await getOrgRecord(awsGateway, org.orgId))?.seatsUsed).toBe(2);
+  });
+
+  it('rejects a reused Idempotency-Key against a materially different invite body with 409', async () => {
+    const { app, awsGateway, orgTokenStore } = buildTestServer();
+    const org = await createOrg(awsGateway, orgInput(), CONFIG);
+    const firstSeat = await inviteTargetedBootstrap(awsGateway, org.orgId);
+    orgTokenStore.issue(org.orgId, 'org-token', firstSeat.seatId);
+    const headers = { authorization: 'Bearer org-token', 'idempotency-key': 'invite-mismatch-1' };
+    await app.inject({ method: 'POST', url: `/v1/org/${org.orgId}/seats/invite`, headers, payload: { email: 'teammate@acme.example.com' } });
+
+    const mismatched = await app.inject({ method: 'POST', url: `/v1/org/${org.orgId}/seats/invite`, headers, payload: { email: 'someone-else@acme.example.com' } });
+
+    expect(mismatched.statusCode).toBe(409);
   });
 
   it('rejects an invite that would exceed the seat cap', async () => {

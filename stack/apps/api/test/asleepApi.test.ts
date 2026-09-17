@@ -142,6 +142,25 @@ describe('POST /v1/public/orgs/:orgId/wake (#200 User Stories 9, 10, 11, 16)', (
     expect(response.statusCode).toBe(200);
   });
 
+  it('replays the same result on a retry with the same Idempotency-Key, without recounting against the rate limit', async () => {
+    const { app, awsGateway } = buildTestServer();
+    const org = await suspendedOrg(app, awsGateway);
+    const headers = { 'idempotency-key': 'wake-replay-1' };
+
+    const first = await app.inject({ method: 'POST', url: `/v1/public/orgs/${org.orgId}/wake`, headers });
+    // Two more genuinely distinct attempts exhaust the 3-per-window allowance.
+    await app.inject({ method: 'POST', url: `/v1/public/orgs/${org.orgId}/wake`, headers: { 'idempotency-key': 'wake-replay-2' } });
+    await app.inject({ method: 'POST', url: `/v1/public/orgs/${org.orgId}/wake`, headers: { 'idempotency-key': 'wake-replay-3' } });
+    const freshFourth = await app.inject({ method: 'POST', url: `/v1/public/orgs/${org.orgId}/wake`, headers: { 'idempotency-key': 'wake-replay-4' } });
+    expect(freshFourth.statusCode).toBe(429);
+
+    // A *retry* of the very first key still replays its cached success, even though the
+    // allowance is now exhausted - proof it never consumed a second slot of its own.
+    const replay = await app.inject({ method: 'POST', url: `/v1/public/orgs/${org.orgId}/wake`, headers });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual(first.json());
+  });
+
   it('rate limits excess wake attempts for the same org (#200 Further Notes: per-org, not per-IP)', async () => {
     const { app, awsGateway } = buildTestServer();
     const org = await suspendedOrg(app, awsGateway);

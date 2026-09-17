@@ -3,9 +3,9 @@ import { OrgActionSchema, OrgIdSchema, DnsSubdomainLabelSchema } from '@stack/do
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { requireAdminPrincipal } from './auth/admin';
 import type { EmailSender, MagicLinkStore } from './auth/magicLink';
-import { requestMagicLink, verifyMagicLink } from './auth/magicLink';
+import { InvalidMagicLinkError, requestMagicLink, verifyMagicLink } from './auth/magicLink';
 import { forbidCrossOrgAccess, requireOrgToken, requireSeatPrincipal, type OrgTokenStore } from './auth/orgToken';
-import type { WakeRateLimiter } from './auth/wakeRateLimit';
+import { WakeRateLimitedError, type WakeRateLimiter } from './auth/wakeRateLimit';
 import type { Env } from './config/env';
 import { IdempotencyKeyReusedError, IdempotencyStillProcessingError } from './idempotency/errors';
 import { idempotencyContext, requireIdempotencyKey, withIdempotency } from './idempotency/middleware';
@@ -23,6 +23,7 @@ import {
   SweepResultSchema,
   UpdateOrgRequestSchema,
   VerifyMagicLinkRequestSchema,
+  VerifyMagicLinkResponseSchema,
 } from './openapi/registry';
 import { asleepStatus } from './org/asleep';
 import {
@@ -140,6 +141,14 @@ function knownOrgErrorResponse(error: unknown, reply: FastifyReply): ReturnType<
     reply.code(404);
     return problem(404, 'No invitation for this email', error.message);
   }
+  if (error instanceof InvalidMagicLinkError) {
+    reply.code(404);
+    return problem(404, 'This link no longer works', error.message);
+  }
+  if (error instanceof WakeRateLimitedError) {
+    reply.code(429).header('Retry-After', String(error.retryAfterSeconds));
+    return problem(429, 'Too many wake attempts for this org', error.message);
+  }
   if (error instanceof ProvisionerFailedError) {
     // A provisioner failure is an upstream dependency failing, not this service's own fault,
     // and this ticket's Acceptance Criteria only promises the state change doesn't happen -
@@ -192,6 +201,12 @@ function respondWithOrg(
 ): Promise<unknown> {
   return respondWithIdempotentResult(deps, request, reply, status, OrgSchema, op);
 }
+
+/** For an idempotent write whose success response has no body (#200's magic-link request:
+ * always a bare 202, so as never to reveal whether a given email actually has a Seat) - `op`'s
+ * `void` return still flows through `withIdempotency`'s own claim/replay machinery exactly like
+ * every other mutating route's. */
+const NoContentSchema = { parse: (): undefined => undefined };
 
 /** Every path takes `orgId` through this, rather than trusting the raw path segment, so a
  * malformed id 404s here instead of reaching `readOrgRegistration` with something that was
@@ -400,15 +415,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         reply.code(400);
         return problem(400, 'Malformed request body', parsed.error.message);
       }
-      try {
-        const seat = await inviteTargeted(deps.awsGateway, orgId, seatPrincipal.seatId, parsed.data.email);
-        reply.code(201);
-        return SeatSchema.parse(seat);
-      } catch (error) {
-        const known = knownOrgErrorResponse(error, reply);
-        if (known) return known;
-        throw error;
-      }
+      return respondWithIdempotentResult(
+        deps, request, reply, 201, SeatSchema,
+        () => inviteTargeted(deps.awsGateway, orgId, seatPrincipal.seatId, parsed.data.email),
+      );
     },
   );
 
@@ -422,22 +432,14 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       reply.code(400);
       return problem(400, 'Malformed request body', parsed.error.message);
     }
-    try {
-      await requestMagicLink(
-        deps.awsGateway,
-        deps.magicLinkStore,
-        deps.emailSender,
-        (token) => `${deps.env.CLIENT_APP_BASE_URL}/sign-in/verify?token=${encodeURIComponent(token)}`,
-        orgId,
-        parsed.data.email,
-      );
-      reply.code(202);
-      return undefined;
-    } catch (error) {
-      const known = knownOrgErrorResponse(error, reply);
-      if (known) return known;
-      throw error;
-    }
+    return respondWithIdempotentResult(deps, request, reply, 202, NoContentSchema, () => requestMagicLink(
+      deps.awsGateway,
+      deps.magicLinkStore,
+      deps.emailSender,
+      (token) => `${deps.env.CLIENT_APP_BASE_URL}/sign-in/verify?token=${encodeURIComponent(token)}`,
+      orgId,
+      parsed.data.email,
+    ));
   });
 
   app.post('/v1/auth/magic-links/verify', async (request, reply) => {
@@ -446,18 +448,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       reply.code(400);
       return problem(400, 'Malformed request body', parsed.error.message);
     }
-    try {
-      const verified = await verifyMagicLink(deps.awsGateway, deps.magicLinkStore, deps.orgTokenStore, parsed.data.token);
-      if (!verified) {
-        reply.code(404);
-        return problem(404, 'This link no longer works', 'It is unknown, already used, or expired.');
-      }
-      return { orgId: verified.orgId, orgToken: verified.orgToken, seat: SeatSchema.parse(verified.seat) };
-    } catch (error) {
-      const known = knownOrgErrorResponse(error, reply);
-      if (known) return known;
-      throw error;
-    }
+    return respondWithIdempotentResult(
+      deps, request, reply, 200, VerifyMagicLinkResponseSchema,
+      () => verifyMagicLink(deps.awsGateway, deps.magicLinkStore, deps.orgTokenStore, parsed.data.token),
+    );
   });
 
   // ---- The public surface: asleep/Wake-Up (#200) -------------------------------------------------
@@ -496,30 +490,24 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     const orgId = parseOrgIdParam(request.params.orgId, reply);
     if (!orgId) return undefined;
 
-    const attempt = deps.wakeRateLimiter.attempt(orgId);
-    if (!attempt.allowed) {
-      reply.code(429).header('Retry-After', String(attempt.retryAfterSeconds));
-      return problem(429, 'Too many wake attempts for this org', 'Try again shortly.');
-    }
+    return respondWithIdempotentResult(deps, request, reply, 200, AsleepStatusSchema, async () => {
+      // Checked *inside* the idempotent op, not before it: a genuine retry of the same click
+      // (the same Idempotency-Key) replays the stored result without calling `attempt()` again,
+      // so it can never itself consume another slot in the window - only a distinct new attempt
+      // (a fresh key, e.g. a second real click) does.
+      const attempt = deps.wakeRateLimiter.attempt(orgId);
+      if (!attempt.allowed) throw new WakeRateLimitedError(orgId, attempt.retryAfterSeconds);
 
-    let org = await getOrgRecord(deps.awsGateway, orgId);
-    if (!org) {
-      reply.code(404);
-      return problem(404, 'No such org');
-    }
-    // A no-op, not an error, once the org is no longer suspended - a slow double-click or a
-    // second open tab racing this one is completely ordinary (mirrors `controllers/asleep.py`'s
-    // own `if trial_org.state == 'suspended':` guard).
-    if (org.state === 'suspended') {
-      try {
+      let org = await getOrgRecord(deps.awsGateway, orgId);
+      if (!org) throw new OrgNotFoundError(orgId);
+      // A no-op, not an error, once the org is no longer suspended - a slow double-click or a
+      // second open tab racing this one is completely ordinary (mirrors `controllers/asleep.py`'s
+      // own `if trial_org.state == 'suspended':` guard).
+      if (org.state === 'suspended') {
         org = await applyTransition(deps.awsGateway, deps.provisioner, orgId, 'wake');
-      } catch (error) {
-        const known = knownOrgErrorResponse(error, reply);
-        if (known) return known;
-        throw error;
       }
-    }
-    return AsleepStatusSchema.parse(asleepStatus(org));
+      return asleepStatus(org);
+    });
   });
 
   return app;
