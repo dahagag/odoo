@@ -26,6 +26,7 @@ const { App } = await import('../src/App');
 
 beforeEach(() => {
   window.history.replaceState(null, '', '/');
+  localStorage.clear();
 });
 
 afterEach(() => {
@@ -92,5 +93,15 @@ describe('App - sign-in hands off to the dashboard as a state transition, not a 
     render(<App />);
 
     expect(await screen.findByText('Sign in required')).toBeInTheDocument();
+  });
+
+  it('ignores a stale session sitting in localStorage - nothing here reads browser storage anymore (#323)', async () => {
+    localStorage.setItem('stack.client.session', JSON.stringify({ orgId: 'org-1', orgToken: 'token-1' }));
+    window.history.replaceState(null, '', '/dashboard');
+
+    render(<App />);
+
+    expect(await screen.findByText('Sign in required')).toBeInTheDocument();
+    expect(screen.queryByText('Acme Trial')).not.toBeInTheDocument();
   });
 });

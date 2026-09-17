@@ -1,7 +1,7 @@
 import type { OrgRegistration, Seat, StackApiError } from '@stack/api-client';
 import { useCallback, useEffect, useState } from 'react';
 import { newIdempotencyKey, orgApi } from '../lib/apiClient';
-import type { Session } from '../lib/session';
+import type { Session, SessionSetter } from '../lib/session';
 import { clearSession } from '../lib/session';
 
 function daysRemaining(expiryDate: string | undefined): number | undefined {
@@ -18,7 +18,7 @@ function daysRemaining(expiryDate: string | undefined): number | undefined {
  * `setSession` is the app root's own session-state setter (#323) - this page never persists or
  * reads a session itself, it only asks to end the one it was given.
  */
-export function DashboardPage({ session, setSession }: { session: Session; setSession: (session: Session | undefined) => void }) {
+export function DashboardPage({ session, setSession }: { session: Session; setSession: SessionSetter }) {
   const api = orgApi(session);
   const [registration, setRegistration] = useState<OrgRegistration | undefined>(undefined);
   const [seats, setSeats] = useState<Seat[]>([]);
@@ -44,6 +44,8 @@ export function DashboardPage({ session, setSession }: { session: Session; setSe
       <main className="o_page">
         <h1>Could not load your org</h1>
         <p>{loadError}</p>
+        {/* No page reload needed here (unlike before #323): clearing the in-memory session is
+            itself enough to re-render the "Sign in required" branch above this page. */}
         <button type="button" onClick={() => clearSession(setSession)}>
           Sign in again
         </button>

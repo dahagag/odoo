@@ -12,8 +12,13 @@ export interface Session {
   orgToken: string;
 }
 
+/** The app root's own session-state setter (`useState`'s), threaded down to whichever page needs
+ * to start or end a session - named here so every page shares one type instead of writing this
+ * function shape out fresh. */
+export type SessionSetter = (session: Session | undefined) => void;
+
 /** The one documented way to end a session, so a future page doesn't invent its own. Takes the
  * app root's own `setSession` so there is exactly one place session state actually lives. */
-export function clearSession(setSession: (session: Session | undefined) => void): void {
+export function clearSession(setSession: SessionSetter): void {
   setSession(undefined);
 }
