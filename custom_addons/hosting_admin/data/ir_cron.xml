@@ -2,56 +2,17 @@
 <odoo>
     <data noupdate="1">
 
-        <!-- Idle-timeout Suspend (docs/adr/0014): active -> suspended after ~30 min with no
-             recorded activity. Never wakes anything itself - only action_wake() does that. -->
-        <record id="ir_cron_hosting_trial_org_suspend_idle" model="ir.cron">
-            <field name="name">Hosting: Suspend idle Trial Orgs</field>
+        <!-- Light periodic sync (docs/adr/0034, this ticket's Implementation Decisions):
+             mirrored state is "refreshed on read and by a light periodic sync" - the stack
+             itself is now the sole authority on idle-suspend, auto-destroy, and job status, so
+             this only refreshes what Odoo caches for display, never decides a transition. -->
+        <record id="ir_cron_hosting_trial_org_sync_from_stack" model="ir.cron">
+            <field name="name">Hosting: Sync Trial Org state from the administration stack</field>
             <field name="model_id" ref="model_hosting_trial_org"/>
             <field name="state">code</field>
-            <field name="code">model._cron_suspend_idle()</field>
-            <field name="interval_number">15</field>
+            <field name="code">model._cron_sync_from_stack()</field>
+            <field name="interval_number">5</field>
             <field name="interval_type">minutes</field>
-            <field name="active">True</field>
-        </record>
-
-        <!-- Expiry-triggered Auto-Destroy (docs/contexts/hosting/CONTEXT.md's Auto-Destroy
-             entry): active/suspended -> destroyed once expiry_date has passed. Manual teardown
-             goes through action_destroy() directly and shares the same snapshot-marker logic. -->
-        <record id="ir_cron_hosting_trial_org_auto_destroy_expired" model="ir.cron">
-            <field name="name">Hosting: Auto-Destroy expired Trial Orgs</field>
-            <field name="model_id" ref="model_hosting_trial_org"/>
-            <field name="state">code</field>
-            <field name="code">model._cron_auto_destroy_expired()</field>
-            <field name="interval_number">1</field>
-            <field name="interval_type">hours</field>
-            <field name="active">True</field>
-        </record>
-
-        <!-- Poll unfinished lifecycle jobs (docs/adr/0019): surfaces a Step Functions
-             execution's succeeded/failed status back onto the Trial Org record once it
-             finishes. A no-op for any record still on the StubProvisioner (no AWS wiring
-             configured). -->
-        <record id="ir_cron_hosting_trial_org_poll_pending_jobs" model="ir.cron">
-            <field name="name">Hosting: Poll pending Trial Org lifecycle jobs</field>
-            <field name="model_id" ref="model_hosting_trial_org"/>
-            <field name="state">code</field>
-            <field name="code">model._cron_poll_pending_jobs()</field>
-            <field name="interval_number">2</field>
-            <field name="interval_type">minutes</field>
-            <field name="active">True</field>
-        </record>
-
-        <!-- Cost Dashboard daily refresh (docs/adr/0030): pulls AWS's own cost-and-usage data
-             grouped by the TrialOrgId cost-allocation tag and upserts today's snapshot. Once
-             daily, not on every dashboard open - see action_open_dashboard/docs/adr/0030 for
-             why. -->
-        <record id="ir_cron_hosting_cost_dashboard_refresh_snapshot" model="ir.cron">
-            <field name="name">Hosting: Refresh Cost Dashboard snapshot</field>
-            <field name="model_id" ref="model_hosting_cost_dashboard_snapshot"/>
-            <field name="state">code</field>
-            <field name="code">model._cron_refresh_snapshot()</field>
-            <field name="interval_number">1</field>
-            <field name="interval_type">days</field>
             <field name="active">True</field>
         </record>
 

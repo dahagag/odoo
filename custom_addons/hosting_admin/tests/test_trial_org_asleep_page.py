@@ -89,9 +89,9 @@ class TestTrialOrgAsleepPage(HttpCase):
         self.assertIn(f'https://{HOST}/web/login', response.text)
 
     def test_status_endpoint_reports_awake_once_the_waking_timeout_elapses_with_no_provisioner(self):
-        # A StubProvisioner-backed record (no AWS wiring configured - dev/test/demo, see
-        # docs/agents/odoo-19-development.md's walkthrough guidance) has no real execution for
-        # _cron_poll_pending_jobs to ever observe, so last_job_status alone would never leave
+        # A StubHostingStackClient-backed record (no stack configured - dev/test/demo, see
+        # docs/agents/odoo-19-development.md's walkthrough guidance) has no real job for the
+        # periodic sync to ever observe finishing, so last_job_status alone would never leave
         # 'running' - this page must not show "Waking up" forever in that environment.
         self._post('/hosting_admin/asleep/wake')
         self.trial_org.write({
