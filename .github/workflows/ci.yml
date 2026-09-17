@@ -1015,7 +1015,9 @@ jobs:
       - uses: actions/setup-node@v4
         if: needs.changes.outputs.stack_relevant == 'true'
         with:
-          node-version: '22'
+          # Reads stack/.nvmrc rather than a hardcoded version, so CI and local dev can never
+          # drift from each other silently.
+          node-version-file: stack/.nvmrc
           cache: npm
           cache-dependency-path: stack/package-lock.json
       - name: npm ci

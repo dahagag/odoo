@@ -6,8 +6,7 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "declaration": false,
-    "noEmit": true,
-    "rootDir": "src"
+    "noEmit": true
   },
-  "include": ["src"]
+  "include": ["src", "test"]
 }
