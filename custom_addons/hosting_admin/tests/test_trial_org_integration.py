@@ -94,6 +94,44 @@ class TestTrialOrgIntegration(TransactionCase):
         with self.assertRaises(UserError):
             self.env['hosting.trial.org']._get_stack_client()
 
+    def test_create_rejects_a_missing_name_before_calling_the_stack(self):
+        # CodeRabbit, PR #314: validated before any outbound call, not left for the stack (or,
+        # under the stub, a raw NOT NULL constraint violation from super().create()) to reject.
+        client = RecordingStackClient()
+        self._inject_stack_client(client)
+        with self.assertRaises(UserError):
+            self.env['hosting.trial.org'].sudo().create(
+                {'prospect_domain': "acme.example", 'seat_cap': 5})
+        self.assertEqual(client.calls, [])
+
+    def test_create_rejects_a_missing_prospect_domain_before_calling_the_stack(self):
+        client = RecordingStackClient()
+        self._inject_stack_client(client)
+        with self.assertRaises(UserError):
+            self.env['hosting.trial.org'].sudo().create({'name': "Acme", 'seat_cap': 5})
+        self.assertEqual(client.calls, [])
+
+    def test_create_rejects_a_non_positive_seat_cap_before_calling_the_stack(self):
+        client = RecordingStackClient()
+        self._inject_stack_client(client)
+        with self.assertRaises(UserError):
+            self.env['hosting.trial.org'].sudo().create(
+                {'name': "Acme", 'prospect_domain': "acme.example", 'seat_cap': 0})
+        self.assertEqual(client.calls, [])
+
+    def test_create_batch_validates_every_item_before_calling_the_stack_for_any(self):
+        # CodeRabbit, PR #314: a multi-record create() must not create a real org on the stack
+        # for an earlier valid item and then raise on a later invalid one - that would orphan the
+        # earlier org with no local Odoo row ever pointing at it.
+        client = RecordingStackClient()
+        self._inject_stack_client(client)
+        with self.assertRaises(UserError):
+            self.env['hosting.trial.org'].sudo().create([
+                {'name': "Acme", 'prospect_domain': "acme.example", 'seat_cap': 5},
+                {'name': "Broken", 'prospect_domain': "broken.example", 'seat_cap': 0},
+            ])
+        self.assertEqual(client.calls, [])
+
     def test_create_calls_the_stack_client_and_mirrors_its_response(self):
         client = RecordingStackClient()
         self._inject_stack_client(client)

@@ -166,6 +166,20 @@ class HostingTrialOrg(models.Model):
         # ORM create() would - vals.get('seat_cap') alone would instead send None to the stack,
         # which create_org() would forward as a literal null seatsTotal.
         defaults = self.default_get(['seat_cap', 'invite_type'])
+        # Validate every item before calling the stack for any of them (CodeRabbit, PR #314): a
+        # multi-record create() would otherwise create a real, billable org on the stack for an
+        # earlier valid item, then raise on a later invalid one before super().create() ever
+        # runs - orphaning that earlier org with no local Odoo row to ever reference it again.
+        # This also gives every caller (StubHostingStackClient included, which "trusts every
+        # call it receives" and does not itself validate) a clear UserError instead of a raw
+        # NOT NULL/CHECK constraint violation from super().create() below.
+        for vals in vals_list:
+            seat_cap = vals.get('seat_cap', defaults.get('seat_cap'))
+            if not vals.get('name') or not vals.get('prospect_domain'):
+                raise UserError(_(
+                    "An org name and a prospect domain are required to issue a Trial Org."))
+            if not seat_cap or seat_cap <= 0:
+                raise UserError(_("Seat cap must be a positive number."))
         resolved_vals_list = []
         for vals in vals_list:
             org = client.create_org(

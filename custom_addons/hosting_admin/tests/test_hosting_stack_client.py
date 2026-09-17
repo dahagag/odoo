@@ -158,3 +158,14 @@ class TestRealHostingStackClient(BaseCase):
         with patch.object(RealHostingStackClient, '_sign', side_effect=lambda method, url, body, headers: headers):
             with self.assertRaises(UserError):
                 client.get_org('org-1')
+
+    def test_a_bodyless_2xx_response_raises_a_clear_user_error_not_a_key_error(self):
+        # CodeRabbit, PR #314: `_call` returns `{}` for a bodyless 2xx (e.g. an unexpected 204
+        # from a misbehaving proxy in front of the real deployment) - _org_from_json must not let
+        # that reach a bare `payload['orgId']` KeyError, which _cron_sync_from_stack's own
+        # `except UserError` wouldn't catch.
+        session = _FakeSession(response=_FakeResponse(200, json_body=None))
+        client = RealHostingStackClient(base_url="https://stack.example", session=session)
+        with patch.object(RealHostingStackClient, '_sign', side_effect=lambda method, url, body, headers: headers):
+            with self.assertRaises(UserError):
+                client.get_org('org-1')

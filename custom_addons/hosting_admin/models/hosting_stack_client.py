@@ -34,7 +34,17 @@ def _org_from_json(payload):
     """Translate one ``OrgSchema`` JSON object (stack/apps/api/src/openapi/registry.ts) into the
     snake_case dict shape every ``HostingStackClient`` method returns - one definition of that
     mapping shared by every real HTTP response and by ``StubHostingStackClient``'s own in-memory
-    records, so the two can never drift apart in what a caller receives."""
+    records, so the two can never drift apart in what a caller receives.
+
+    Raises a clear ``UserError`` (CodeRabbit, PR #314) rather than a bare ``KeyError`` if
+    ``payload`` isn't the org record this is meant to parse - e.g. ``_call``'s own ``{}`` for an
+    unexpected bodyless 2xx response (a misbehaving proxy in front of the real deployment). A
+    ``KeyError`` here would otherwise escape uncaught: ``_cron_sync_from_stack`` only catches
+    ``UserError``, so one unparseable response would kill that entire sync run instead of being
+    skipped like any other unreachable-stack failure."""
+    if not isinstance(payload, dict) or 'orgId' not in payload:
+        raise UserError(_(
+            "The administration stack returned an unexpected response with no org record."))
     expiry_date = _parse_stack_datetime(payload.get('expiryDate'))
     last_activity_at = _parse_stack_datetime(payload.get('lastActivityAt'))
     snapshot_retention_until = _parse_stack_datetime(payload.get('snapshotRetentionUntil'))
