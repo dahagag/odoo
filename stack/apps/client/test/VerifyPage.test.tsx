@@ -1,8 +1,9 @@
 import { render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const verifyMagicLink = vi.fn();
 const saveSession = vi.fn();
+const redirectToDashboard = vi.fn();
 
 vi.mock('../src/lib/apiClient', () => ({
   publicApi: { verifyMagicLink: (...args: unknown[]) => verifyMagicLink(...args) },
@@ -13,15 +14,13 @@ vi.mock('../src/lib/session', () => ({
   saveSession: (...args: unknown[]) => saveSession(...args),
 }));
 
+// Mocking this seam directly, rather than jsdom's own window.location, avoids depending on
+// jsdom's non-configurable-location internals at all (CodeRabbit, PR #318).
+vi.mock('../src/lib/navigation', () => ({
+  redirectToDashboard: (...args: unknown[]) => redirectToDashboard(...args),
+}));
+
 const { VerifyPage } = await import('../src/pages/VerifyPage');
-
-const replace = vi.fn();
-
-beforeEach(() => {
-  // jsdom's window.location is non-configurable - vi.spyOn(window.location, 'replace') throws
-  // "Cannot redefine property". Replacing the whole object is the standard workaround.
-  Object.defineProperty(window, 'location', { value: { replace }, writable: true, configurable: true });
-});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -34,7 +33,7 @@ describe('VerifyPage - does not redirect on a session that failed to persist (Co
 
     render(<VerifyPage token="tok" />);
 
-    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard'));
+    await vi.waitFor(() => expect(redirectToDashboard).toHaveBeenCalled());
   });
 
   it('shows a recoverable message and never redirects when saveSession reports failure', async () => {
@@ -45,7 +44,7 @@ describe('VerifyPage - does not redirect on a session that failed to persist (Co
 
     expect(await screen.findByText('Signed in, but couldn\'t stay signed in')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('ask for a new link');
-    expect(replace).not.toHaveBeenCalled();
+    expect(redirectToDashboard).not.toHaveBeenCalled();
   });
 
   it('shows the generic "no longer works" message for an invalid token', async () => {

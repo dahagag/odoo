@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { newIdempotencyKey, publicApi } from '../lib/apiClient';
+import { redirectToDashboard } from '../lib/navigation';
 import { saveSession } from '../lib/session';
 
 /**
@@ -28,7 +29,7 @@ export function VerifyPage({ token }: { token: string | undefined }) {
           setState('save-failed');
           return;
         }
-        window.location.replace('/dashboard');
+        redirectToDashboard();
       } catch {
         // Surfaced generically (#200's own "clear rejection" is about domain mismatch at
         // *request* time, User Stories 5/7 - a token that's already unknown/used/expired by
