@@ -10,6 +10,7 @@ import {
   ExpiryNotSupportedError,
   IllegalTransitionError,
   InvalidDnsLabelError,
+  InvalidExpiryDateError,
   OrgNotFoundError,
   ProvisionerFailedError,
 } from './errors';
@@ -342,13 +343,23 @@ export async function extendOrgExpiry(gateway: AwsGateway, orgId: string, additi
     // existed, matching `fromItem`'s own defaulting precedent for `inviteType`) - mirrors
     // `action_extend_trial`'s own `base_date = trial_org.expiry_date or today`.
     const base = org.expiryDate ? new Date(org.expiryDate) : new Date();
-    const expiryDate = new Date(base.getTime() + additionalDays * 24 * 60 * 60 * 1000).toISOString();
+    const computed = new Date(base.getTime() + additionalDays * 24 * 60 * 60 * 1000);
+    // Defense in depth (CodeRabbit, PR #313) alongside ExtendOrgRequestSchema's own upper bound
+    // on additionalDays: an out-of-range Date's own getTime() is NaN, and toISOString() would
+    // throw a RangeError on it - checked here, before that call, for any caller of this function
+    // that bypasses the HTTP schema validation.
+    if (Number.isNaN(computed.getTime())) throw new InvalidExpiryDateError(orgId, additionalDays);
+    const expiryDate = computed.toISOString();
 
     try {
       await gateway.dynamoDb.updateItem({
         table: ORGS_TABLE,
         key: { pk: orgPk(orgId) },
-        set: { expiryDate, gsi2sk: expiryDate },
+        // gsi2pk must be (re)written alongside gsi2sk whenever expiryDate is (re)established -
+        // toItem()'s own convention for the same GSI - or an org taking the "no prior
+        // expiryDate" branch below would silently never appear in the auto-destroy sweep's
+        // EXPIRY_SWEEP_INDEX query, which reads gsi2pk (CodeRabbit, PR #313).
+        set: { expiryDate, gsi2pk: EXPIRY_SWEEP_PARTITION, gsi2sk: expiryDate },
         condition: org.expiryDate
           ? { type: 'attribute_equals', attribute: 'expiryDate', value: org.expiryDate }
           : { type: 'attribute_not_exists', attribute: 'expiryDate' },

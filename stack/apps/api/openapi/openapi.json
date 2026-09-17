@@ -305,7 +305,8 @@
           "additionalDays": {
             "type": "integer",
             "minimum": 0,
-            "exclusiveMinimum": true
+            "exclusiveMinimum": true,
+            "maximum": 36500
           }
         },
         "required": [

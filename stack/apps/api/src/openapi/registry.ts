@@ -204,7 +204,16 @@ registry.registerPath({
 });
 
 export const ExtendOrgRequestSchema = z
-  .object({ additionalDays: z.number().int().positive() })
+  .object({
+    // Upper-bounded (CodeRabbit, PR #313) so the computed expiry timestamp can never exceed
+    // JavaScript's own Date range: `extendOrgExpiry` (record.ts) adds this many days, in
+    // milliseconds, to the org's current expiryDate before calling toISOString() - an
+    // unbounded value could overflow that range and throw a RangeError, surfacing as an
+    // unhandled 500 instead of a clean 400. 36500 (100 years) is nowhere near a real Extension
+    // request but leaves an enormous safety margin under the actual overflow point (~100
+    // million days).
+    additionalDays: z.number().int().positive().max(36500),
+  })
   .openapi('ExtendOrgRequest');
 
 registry.registerPath({

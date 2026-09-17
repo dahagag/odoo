@@ -15,6 +15,7 @@ import {
   ExpiryNotSupportedError,
   IllegalTransitionError,
   InvalidDnsLabelError,
+  InvalidExpiryDateError,
   OrgNotFoundError,
   ProvisionerFailedError,
 } from './org/errors';
@@ -76,6 +77,10 @@ function knownOrgErrorResponse(error: unknown, reply: FastifyReply): ReturnType<
   if (error instanceof ExpiryNotSupportedError) {
     reply.code(409);
     return problem(409, 'Org has no expiryDate to extend', error.message);
+  }
+  if (error instanceof InvalidExpiryDateError) {
+    reply.code(400);
+    return problem(400, 'additionalDays would produce an out-of-range date', error.message);
   }
   if (error instanceof ProvisionerFailedError) {
     // A provisioner failure is an upstream dependency failing, not this service's own fault,

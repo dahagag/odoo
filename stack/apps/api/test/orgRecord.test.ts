@@ -7,6 +7,7 @@ import {
   ExpiryNotSupportedError,
   IllegalTransitionError,
   InvalidDnsLabelError,
+  InvalidExpiryDateError,
   OrgNotFoundError,
   ProvisionerFailedError,
 } from '../src/org/errors';
@@ -237,6 +238,26 @@ describe('extendOrgExpiry (#312)', () => {
 
     expect(expiry).toBeGreaterThan(before + 4 * 24 * 60 * 60 * 1000);
     expect(expiry).toBeLessThan(before + 6 * 24 * 60 * 60 * 1000);
+
+    // CodeRabbit, PR #313: establishing an expiryDate for the first time through this path must
+    // also (re)write gsi2pk, or the org would silently never appear in the auto-destroy sweep's
+    // own EXPIRY_SWEEP_INDEX query - not just gsi2sk, which alone isn't enough to be found by it.
+    const sweepableIds = await queryOrgIds(gateway, {
+      indexName: EXPIRY_SWEEP_INDEX,
+      partitionKey: { name: 'gsi2pk', value: EXPIRY_SWEEP_PARTITION },
+    });
+    expect(sweepableIds).toContain(org.orgId);
+  });
+
+  it('rejects an additionalDays large enough to overflow the Date range, rather than throwing a raw RangeError', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+
+    // Bypasses ExtendOrgRequestSchema's own upper bound (enforced at the HTTP boundary,
+    // orgAdminApi.test.ts) - this proves extendOrgExpiry's own defense-in-depth guard for any
+    // caller that isn't going through that schema.
+    await expect(extendOrgExpiry(gateway, org.orgId, 100_000_001))
+      .rejects.toBeInstanceOf(InvalidExpiryDateError);
   });
 
   it('404s for an org that does not exist', async () => {

@@ -309,6 +309,20 @@ describe('POST /v1/admin/orgs/:orgId/extend (#312)', () => {
     expect(response.statusCode).toBe(400);
   });
 
+  it('rejects an additionalDays above the maximum (CodeRabbit, PR #313)', async () => {
+    const { app } = buildTestServer();
+    const org = await createOrgViaApi(app, 'create-extend-max', { dnsSubdomainLabel: 'acme-extend-max' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/orgs/${org.orgId}/extend`,
+      headers: { ...ADMIN_HEADERS, 'idempotency-key': 'extend-max' },
+      payload: { additionalDays: 36501 },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
   it('requires an admin principal', async () => {
     const { app } = buildTestServer();
     const org = await createOrgViaApi(app, 'create-extend-3', { dnsSubdomainLabel: 'acme-extend-3' });
