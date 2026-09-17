@@ -335,9 +335,13 @@ export async function extendOrgExpiry(gateway: AwsGateway, orgId: string, additi
   for (let attempt = 0; attempt < EXTEND_MAX_ATTEMPTS; attempt++) {
     const org = await getOrgRecord(gateway, orgId, { consistentRead: true });
     if (!org) throw new OrgNotFoundError(orgId);
-    if (org.type !== 'trial' || !org.expiryDate) throw new ExpiryNotSupportedError(orgId);
+    if (org.type !== 'trial') throw new ExpiryNotSupportedError(orgId);
 
-    const base = new Date(org.expiryDate);
+    // A Trial Org always gets an expiryDate at createOrg, but falls back to `now` rather than
+    // rejecting outright if one is somehow blank (a pre-existing record from before this field
+    // existed, matching `fromItem`'s own defaulting precedent for `inviteType`) - mirrors
+    // `action_extend_trial`'s own `base_date = trial_org.expiry_date or today`.
+    const base = org.expiryDate ? new Date(org.expiryDate) : new Date();
     const expiryDate = new Date(base.getTime() + additionalDays * 24 * 60 * 60 * 1000).toISOString();
 
     try {
@@ -345,7 +349,9 @@ export async function extendOrgExpiry(gateway: AwsGateway, orgId: string, additi
         table: ORGS_TABLE,
         key: { pk: orgPk(orgId) },
         set: { expiryDate, gsi2sk: expiryDate },
-        condition: { type: 'attribute_equals', attribute: 'expiryDate', value: org.expiryDate },
+        condition: org.expiryDate
+          ? { type: 'attribute_equals', attribute: 'expiryDate', value: org.expiryDate }
+          : { type: 'attribute_not_exists', attribute: 'expiryDate' },
       });
       return { ...org, expiryDate };
     } catch (error) {

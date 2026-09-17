@@ -219,6 +219,26 @@ describe('extendOrgExpiry (#312)', () => {
     await expect(extendOrgExpiry(gateway, org.orgId, 5)).rejects.toBeInstanceOf(ExpiryNotSupportedError);
   });
 
+  it('falls back to now for a Trial Org whose expiryDate is somehow blank', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+    // Simulate a pre-existing record from before expiryDate always got set (fromItem's own
+    // inviteType-defaulting precedent) rather than one createOrg could ever produce today -
+    // putItem a full replacement item with no expiryDate/gsi2sk attribute at all.
+    const { expiryDate: _drop, ...withoutExpiry } = org;
+    await gateway.dynamoDb.putItem({
+      table: ORGS_TABLE,
+      item: { pk: orgPk(org.orgId), ...withoutExpiry, gsi1pk: statePartition(org.state), gsi1sk: orgPk(org.orgId) },
+    });
+
+    const before = Date.now();
+    const extended = await extendOrgExpiry(gateway, org.orgId, 5);
+    const expiry = new Date(extended.expiryDate!).getTime();
+
+    expect(expiry).toBeGreaterThan(before + 4 * 24 * 60 * 60 * 1000);
+    expect(expiry).toBeLessThan(before + 6 * 24 * 60 * 60 * 1000);
+  });
+
   it('404s for an org that does not exist', async () => {
     const gateway = new InMemoryAwsGateway();
     await expect(extendOrgExpiry(gateway, '11111111-1111-4111-8111-111111111111', 5))
