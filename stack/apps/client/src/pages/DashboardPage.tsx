@@ -14,8 +14,11 @@ function daysRemaining(expiryDate: string | undefined): number | undefined {
  * The signed-in prospect's own org status, seats, and invite form (#200 User Stories 1-4, 14):
  * read scope is strictly this one org, enforced server-side by the org token every call here
  * carries - this page renders whatever the server hands back, never a wider query.
+ *
+ * `setSession` is the app root's own session-state setter (#323) - this page never persists or
+ * reads a session itself, it only asks to end the one it was given.
  */
-export function DashboardPage({ session }: { session: Session }) {
+export function DashboardPage({ session, setSession }: { session: Session; setSession: (session: Session | undefined) => void }) {
   const api = orgApi(session);
   const [registration, setRegistration] = useState<OrgRegistration | undefined>(undefined);
   const [seats, setSeats] = useState<Seat[]>([]);
@@ -41,7 +44,7 @@ export function DashboardPage({ session }: { session: Session }) {
       <main className="o_page">
         <h1>Could not load your org</h1>
         <p>{loadError}</p>
-        <button type="button" onClick={() => { clearSession(); window.location.reload(); }}>
+        <button type="button" onClick={() => clearSession(setSession)}>
           Sign in again
         </button>
       </main>

@@ -1,17 +1,21 @@
 import { StackApiError } from '@stack/api-client';
 import { render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const publicOrgByDnsLabel = vi.fn();
 const publicAsleepStatus = vi.fn();
+const verifyMagicLink = vi.fn();
+const orgRegistration = vi.fn();
+const listSeats = vi.fn();
 
 vi.mock('../src/lib/apiClient', () => ({
   publicApi: {
     publicOrgByDnsLabel: (...args: unknown[]) => publicOrgByDnsLabel(...args),
     publicAsleepStatus: (...args: unknown[]) => publicAsleepStatus(...args),
     publicWake: vi.fn(),
+    verifyMagicLink: (...args: unknown[]) => verifyMagicLink(...args),
   },
-  orgApi: vi.fn(),
+  orgApi: () => ({ orgRegistration, listSeats, inviteSeat: vi.fn() }),
   newIdempotencyKey: () => 'test-idempotency-key',
 }));
 
@@ -19,6 +23,10 @@ vi.mock('../src/lib/apiClient', () => ({
 // resolves to the mocked module (#200's own gap this test closes: nothing exercised this
 // branching before).
 const { App } = await import('../src/App');
+
+beforeEach(() => {
+  window.history.replaceState(null, '', '/');
+});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -58,5 +66,31 @@ describe('App - deciding which of this app\'s two jobs the current request is fo
     render(<App />);
 
     expect(await screen.findByText('We can\'t tell your org\'s status right now')).toBeInTheDocument();
+  });
+});
+
+describe('App - sign-in hands off to the dashboard as a state transition, not a persisted session (#323)', () => {
+  beforeEach(() => {
+    publicOrgByDnsLabel.mockRejectedValue(new StackApiError({ type: 'about:blank', title: 'No org reserves this label', status: 404 }));
+    orgRegistration.mockResolvedValue({ name: 'Acme Trial', state: 'active', seatsUsed: 1, seatsTotal: 5 });
+    listSeats.mockResolvedValue([]);
+  });
+
+  it('renders the dashboard straight after verifying, with no page navigation', async () => {
+    window.history.replaceState(null, '', '/sign-in/verify?token=tok');
+    verifyMagicLink.mockResolvedValue({ orgId: 'org-1', orgToken: 'token-1', seat: { seatId: 's-1' } });
+
+    render(<App />);
+
+    expect(await screen.findByText('Acme Trial')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/dashboard');
+  });
+
+  it('shows "Sign in required" at /dashboard when nothing has signed in this tab', async () => {
+    window.history.replaceState(null, '', '/dashboard');
+
+    render(<App />);
+
+    expect(await screen.findByText('Sign in required')).toBeInTheDocument();
   });
 });
