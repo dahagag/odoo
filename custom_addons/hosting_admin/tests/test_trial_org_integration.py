@@ -181,7 +181,8 @@ class TestTrialOrgIntegration(TransactionCase):
     def test_an_unreachable_stack_surfaces_as_a_user_error_not_a_traceback(self):
         class FailingStackClient(StubHostingStackClient):
             def issue(self, stack_org_id):
-                raise UserError("Could not reach the hosting administration stack: boom.")
+                error_message = "Could not reach the hosting administration stack: boom."
+                raise UserError(error_message)
 
         client = FailingStackClient()
         self._inject_stack_client(client)

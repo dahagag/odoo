@@ -17,11 +17,6 @@ class _FakeResponse:
         self._json_body = json_body or {}
         self.content = json.dumps(self._json_body).encode('utf-8') if json_body is not None else b''
 
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            error_message = f"{self.status_code} error"
-            raise Exception(error_message)
-
     def json(self):
         return self._json_body
 

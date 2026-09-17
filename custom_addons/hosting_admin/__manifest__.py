@@ -18,7 +18,11 @@ Suspended, Wake, Auto-Destroy, Deployment Version).
     """,
     'author': "agentic-erp",
     'category': 'Hosting',
-    'version': '19.0.2.0.0',
+    # Per the amended docs/adr/0004 (#202): an owned addon's manifest version is derived from
+    # the repo's one release tag, not hand-maintained per module - scripts/release_version
+    # enforces this in CI. This ticket's own has-migration label is what signals the next
+    # release cut needs a major bump (and this manifest along with it), not a version edit here.
+    'version': '19.0.1.0.0',
 
     'depends': ['base', 'bus'],
 
