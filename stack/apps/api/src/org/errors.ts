@@ -122,6 +122,17 @@ export class SeatCapExceededError extends Error {
   }
 }
 
+/** Raised by `record.ts`'s `extendOrgExpiry` when the target org has no `expiryDate` to push out
+ * - a Client Org, which never carries one (docs/adr/0034: an org's `type` decides this, not its
+ * current state). Mirrors the fact that `crm_lead.action_extend_trial` only ever exists for a
+ * Trial Org in the first place (a Client Org has no `trial_org_id` counterpart in Odoo). */
+export class ExpiryNotSupportedError extends Error {
+  constructor(readonly orgId: string) {
+    super(`Org ${orgId} has no expiryDate to extend (not a Trial Org)`);
+    this.name = 'ExpiryNotSupportedError';
+  }
+}
+
 /** Wraps whatever the injected `Provisioner` itself threw (`applyTransition`, `record.ts`), so
  * `server.ts` can map *specifically* a provisioner failure to 502 - and nothing else. Without
  * this wrapper, a later failure in the same call (e.g. the conditional `updateItem` after the

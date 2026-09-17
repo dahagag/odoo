@@ -7,18 +7,19 @@ import type { Env } from './config/env';
 import { IdempotencyKeyReusedError, IdempotencyStillProcessingError } from './idempotency/errors';
 import { idempotencyContext, requireIdempotencyKey, withIdempotency } from './idempotency/middleware';
 import type { IdempotencyStore } from './idempotency/store';
-import { CreateOrgRequestSchema, OrgSchema, OrgRegistrationSchema, SweepResultSchema, UpdateOrgRequestSchema } from './openapi/registry';
+import { CreateOrgRequestSchema, ExtendOrgRequestSchema, OrgSchema, OrgRegistrationSchema, SweepResultSchema, UpdateOrgRequestSchema } from './openapi/registry';
 import {
   ConcurrentWriteError,
   DnsLabelImmutableError,
   DnsLabelInUseError,
+  ExpiryNotSupportedError,
   IllegalTransitionError,
   InvalidDnsLabelError,
   OrgNotFoundError,
   ProvisionerFailedError,
 } from './org/errors';
 import type { Provisioner } from './org/provisioner';
-import { applyTransition, checkOrgStatus, createOrg, updateDnsSubdomainLabel } from './org/record';
+import { applyTransition, checkOrgStatus, createOrg, extendOrgExpiry, updateDnsSubdomainLabel } from './org/record';
 import type { OrgRecord } from './org/record';
 import { sweepAutoDestroy, sweepIdleSuspend } from './org/sweeps';
 import { readOrgRegistration } from './orgRegistration';
@@ -71,6 +72,10 @@ function knownOrgErrorResponse(error: unknown, reply: FastifyReply): ReturnType<
   if (error instanceof ConcurrentWriteError) {
     reply.code(409);
     return problem(409, 'Concurrent transition', error.message);
+  }
+  if (error instanceof ExpiryNotSupportedError) {
+    reply.code(409);
+    return problem(409, 'Org has no expiryDate to extend', error.message);
   }
   if (error instanceof ProvisionerFailedError) {
     // A provisioner failure is an upstream dependency failing, not this service's own fault,
@@ -245,6 +250,27 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       },
     );
   }
+
+  // #312: pushes a Trial Org's expiryDate out by additionalDays. Extension's own authorisation
+  // (the sales-methodology qualification gate) is Odoo's own concern (ADR-0034) - this route
+  // performs the write once Odoo has already decided to allow it, the same trust boundary every
+  // other admin route already assumes.
+  app.post<{ Params: { orgId: string } }>(
+    '/v1/admin/orgs/:orgId/extend',
+    { preHandler: requireAdminPrincipal },
+    async (request, reply) => {
+      const orgId = parseOrgIdParam(request.params.orgId, reply);
+      if (!orgId) return undefined;
+
+      const parsed = ExtendOrgRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        reply.code(400);
+        return problem(400, 'Malformed request body', parsed.error.message);
+      }
+
+      return respondWithOrg(deps, request, reply, 200, () => extendOrgExpiry(deps.awsGateway, orgId, parsed.data.additionalDays));
+    },
+  );
 
   // Production entry point for `Provisioner.checkStatus` (#298, #281): reachable by an external
   // scheduler for each org it knows has a job running - a per-org poll rather than a batch sweep,

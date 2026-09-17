@@ -7,6 +7,7 @@ import {
   ConcurrentWriteError,
   DnsLabelImmutableError,
   DnsLabelInUseError,
+  ExpiryNotSupportedError,
   IllegalTransitionError,
   InvalidDnsLabelError,
   OrgNotFoundError,
@@ -307,6 +308,52 @@ export async function updateDnsSubdomainLabel(gateway: AwsGateway, orgId: string
   }
 
   return { ...org, dnsSubdomainLabel };
+}
+
+/** Bounds the optimistic-retry loop below - a real collision needs at most one retry (the loser
+ * re-reads the winner's freshly-written `expiryDate` and its own second attempt then wins
+ * against that), so this only guards against pathological repeated contention rather than being
+ * expected to run out under normal traffic. */
+const EXTEND_MAX_ATTEMPTS = 5;
+
+/**
+ * Pushes `expiryDate` out by `additionalDays`, from whatever the org's current `expiryDate` is
+ * (this ticket's #312 Acceptance Criteria) - mirrors `crm_lead.action_extend_trial`'s own
+ * `base_date = trial_org.expiry_date or today` (`custom_addons/crm_methodology/models/
+ * crm_lead.py`), except a Client Org - which never carries an `expiryDate` at all
+ * (docs/adr/0034) - is rejected outright rather than silently gaining one.
+ *
+ * No row lock exists here (there is no row to lock, same as every other write in this module) -
+ * instead an optimistic `attribute_equals` write, conditioned on the exact `expiryDate` this call
+ * observed, so a concurrent extend landing first is detected rather than silently overwritten
+ * (the read-then-write race `action_extend_trial`'s own `FOR UPDATE` lock closes in Odoo). A
+ * losing attempt retries against the winner's freshly-written value instead of surfacing the
+ * race to the caller, since (unlike a lifecycle transition) two concurrent extends are not in
+ * conflict with each other - both should be applied, one after the other.
+ */
+export async function extendOrgExpiry(gateway: AwsGateway, orgId: string, additionalDays: number): Promise<OrgRecord> {
+  for (let attempt = 0; attempt < EXTEND_MAX_ATTEMPTS; attempt++) {
+    const org = await getOrgRecord(gateway, orgId, { consistentRead: true });
+    if (!org) throw new OrgNotFoundError(orgId);
+    if (org.type !== 'trial' || !org.expiryDate) throw new ExpiryNotSupportedError(orgId);
+
+    const base = new Date(org.expiryDate);
+    const expiryDate = new Date(base.getTime() + additionalDays * 24 * 60 * 60 * 1000).toISOString();
+
+    try {
+      await gateway.dynamoDb.updateItem({
+        table: ORGS_TABLE,
+        key: { pk: orgPk(orgId) },
+        set: { expiryDate, gsi2sk: expiryDate },
+        condition: { type: 'attribute_equals', attribute: 'expiryDate', value: org.expiryDate },
+      });
+      return { ...org, expiryDate };
+    } catch (error) {
+      if (error instanceof ConditionalCheckFailedError) continue;
+      throw error;
+    }
+  }
+  throw new ConcurrentWriteError(orgId, 'extend');
 }
 
 /** The legal transition graph (this ticket's What to build): `issue: issued->active`,

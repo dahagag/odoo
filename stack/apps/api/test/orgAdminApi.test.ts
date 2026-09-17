@@ -268,6 +268,89 @@ describe('PATCH /v1/admin/orgs/:orgId and lifecycle actions (this ticket\'s Acce
   });
 });
 
+describe('POST /v1/admin/orgs/:orgId/extend (#312)', () => {
+  async function createOrgViaApi(app: ReturnType<typeof buildTestServer>['app'], key: string, overrides: Record<string, unknown> = {}) {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/orgs',
+      headers: { ...ADMIN_HEADERS, 'idempotency-key': key },
+      payload: createPayload(overrides),
+    });
+    return response.json() as { orgId: string; expiryDate: string };
+  }
+
+  it('pushes expiryDate out by additionalDays', async () => {
+    const { app } = buildTestServer();
+    const org = await createOrgViaApi(app, 'create-extend-1', { dnsSubdomainLabel: 'acme-extend-1' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/orgs/${org.orgId}/extend`,
+      headers: { ...ADMIN_HEADERS, 'idempotency-key': 'extend-1' },
+      payload: { additionalDays: 14 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const expected = new Date(new Date(org.expiryDate).getTime() + 14 * 24 * 60 * 60 * 1000).toISOString();
+    expect(response.json()).toMatchObject({ expiryDate: expected });
+  });
+
+  it('rejects a malformed request body', async () => {
+    const { app } = buildTestServer();
+    const org = await createOrgViaApi(app, 'create-extend-2', { dnsSubdomainLabel: 'acme-extend-2' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/orgs/${org.orgId}/extend`,
+      headers: { ...ADMIN_HEADERS, 'idempotency-key': 'extend-2' },
+      payload: { additionalDays: -1 },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('requires an admin principal', async () => {
+    const { app } = buildTestServer();
+    const org = await createOrgViaApi(app, 'create-extend-3', { dnsSubdomainLabel: 'acme-extend-3' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/orgs/${org.orgId}/extend`,
+      headers: { 'idempotency-key': 'extend-3' },
+      payload: { additionalDays: 14 },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('404s for an org that does not exist', async () => {
+    const { app } = buildTestServer();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/orgs/11111111-1111-4111-8111-111111111111/extend',
+      headers: { ...ADMIN_HEADERS, 'idempotency-key': 'extend-4' },
+      payload: { additionalDays: 14 },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('rejects a Client Org with 409, which has no expiryDate to extend', async () => {
+    const { app } = buildTestServer();
+    const org = await createOrgViaApi(app, 'create-extend-5', { type: 'client', dnsSubdomainLabel: 'acme-extend-5' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/orgs/${org.orgId}/extend`,
+      headers: { ...ADMIN_HEADERS, 'idempotency-key': 'extend-5' },
+      payload: { additionalDays: 14 },
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+});
+
 describe('POST /v1/admin/orgs/:orgId/check-status (#298: production entry point for Provisioner.checkStatus)', () => {
   async function createOrgViaApi(app: ReturnType<typeof buildTestServer>['app'], key: string, overrides: Record<string, unknown> = {}) {
     const response = await app.inject({

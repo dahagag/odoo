@@ -4,6 +4,7 @@ import {
   ConcurrentWriteError,
   DnsLabelImmutableError,
   DnsLabelInUseError,
+  ExpiryNotSupportedError,
   IllegalTransitionError,
   InvalidDnsLabelError,
   OrgNotFoundError,
@@ -17,6 +18,7 @@ import {
   createOrg,
   EXPIRY_SWEEP_INDEX,
   EXPIRY_SWEEP_PARTITION,
+  extendOrgExpiry,
   getOrgRecord,
   orgPk,
   ORGS_TABLE,
@@ -195,6 +197,46 @@ describe('updateDnsSubdomainLabel (this ticket\'s Acceptance Criteria)', () => {
     const gateway = new InMemoryAwsGateway();
     await expect(updateDnsSubdomainLabel(gateway, '11111111-1111-4111-8111-111111111111', 'x'))
       .rejects.toBeInstanceOf(OrgNotFoundError);
+  });
+});
+
+describe('extendOrgExpiry (#312)', () => {
+  it('pushes expiryDate out by additionalDays from its current value', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+
+    const extended = await extendOrgExpiry(gateway, org.orgId, 5);
+
+    const expected = new Date(new Date(org.expiryDate!).getTime() + 5 * 24 * 60 * 60 * 1000).toISOString();
+    expect(extended.expiryDate).toBe(expected);
+    await expect(getOrgRecord(gateway, org.orgId)).resolves.toMatchObject({ expiryDate: expected });
+  });
+
+  it('rejects a Client Org, which has no expiryDate to extend', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await createOrg(gateway, { type: 'client', name: 'Acme Client', domain: 'acme.example', seatsTotal: 25 }, CONFIG);
+
+    await expect(extendOrgExpiry(gateway, org.orgId, 5)).rejects.toBeInstanceOf(ExpiryNotSupportedError);
+  });
+
+  it('404s for an org that does not exist', async () => {
+    const gateway = new InMemoryAwsGateway();
+    await expect(extendOrgExpiry(gateway, '11111111-1111-4111-8111-111111111111', 5))
+      .rejects.toBeInstanceOf(OrgNotFoundError);
+  });
+
+  it('two genuinely concurrent extends on the same org both land - no lost update', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const org = await createOrg(gateway, trialInput(), CONFIG);
+
+    const results = await Promise.allSettled([
+      extendOrgExpiry(gateway, org.orgId, 3),
+      extendOrgExpiry(gateway, org.orgId, 7),
+    ]);
+
+    expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
+    const expected = new Date(new Date(org.expiryDate!).getTime() + 10 * 24 * 60 * 60 * 1000).toISOString();
+    await expect(getOrgRecord(gateway, org.orgId)).resolves.toMatchObject({ expiryDate: expected });
   });
 });
 

@@ -203,6 +203,34 @@ registry.registerPath({
   },
 });
 
+export const ExtendOrgRequestSchema = z
+  .object({ additionalDays: z.number().int().positive() })
+  .openapi('ExtendOrgRequest');
+
+registry.registerPath({
+  method: 'post',
+  path: `/${API_VERSION}/admin/orgs/{orgId}/extend`,
+  summary: "Push a Trial Org's expiryDate out by additionalDays",
+  description:
+    'Rejected for a Client Org, which has no expiryDate (docs/adr/0034). Extension\'s own ' +
+    'authorisation (the sales-methodology qualification gate) is enforced by the caller (Odoo), ' +
+    'not here - this endpoint only performs the write once Odoo has decided to allow it.',
+  tags: ['admin'],
+  security: [{ sigv4: [] }],
+  request: {
+    params: z.object({ orgId: OrgIdSchema }),
+    headers: idempotencyKeyHeaderSchema,
+    body: { required: true, content: { 'application/json': { schema: ExtendOrgRequestSchema } } },
+  },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: OrgSchema } } },
+    400: problemResponse('Malformed request body'),
+    401: problemResponse('Missing admin principal'),
+    404: problemResponse('No such org'),
+    409: stillProcessingResponse('Not a Trial Org (no expiryDate to extend), a concurrent extend exhausted retries, or an Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)'),
+  },
+});
+
 for (const action of ['issue', 'suspend', 'wake', 'destroy'] as const) {
   registry.registerPath({
     method: 'post',
