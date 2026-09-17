@@ -137,6 +137,26 @@ class TestCrmLeadTrial(TransactionCase):
         with self.assertRaises(UserError):
             lead.with_user(self.salesperson).action_extend_trial(additional_days=7)
 
+    def test_salesperson_can_read_trial_state_seats_and_provisioning_error(self):
+        # #197 User Stories 3/4/8: the rep sees live state, seats used/available, and why
+        # provisioning failed, without ever needing direct access to hosting.trial.org itself
+        # (Platform-only, docs/adr/0018) - all three are related fields, which default
+        # compute_sudo=True, same reasoning as trial_expiry_date's own precedent.
+        lead = self._create_lead(user_id=self.salesperson.id)
+        trial_org = lead.with_user(self.salesperson).action_issue_trial(
+            prospect_domain="prospect.example.com", seat_cap=8, invite_type='open',
+        )
+        salesperson_lead = lead.with_user(self.salesperson)
+
+        self.assertEqual(salesperson_lead.trial_state, 'active')
+        self.assertEqual(salesperson_lead.trial_seat_cap, 8)
+        self.assertEqual(salesperson_lead.trial_seats_used, 0)
+        self.assertFalse(salesperson_lead.trial_last_job_error)
+
+        trial_org.sudo().write({'last_job_error': "The provisioner is unavailable."})
+        salesperson_lead.invalidate_recordset()
+        self.assertEqual(salesperson_lead.trial_last_job_error, "The provisioner is unavailable.")
+
     def test_salesperson_without_hosting_access_can_read_trial_expiry_display(self):
         # Regression test: trial_expiry_countdown/trial_expiry_display are plain compute=
         # fields, which default compute_sudo to False (unlike related= fields, which default it

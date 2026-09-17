@@ -39,6 +39,31 @@ class CrmLead(models.Model):
              "Extension. Rendered in the viewing user's own date format/timezone by the Date "
              "widget, same as any other date field.",
     )
+    # #197 User Stories 3/4/8: the rep's own view of the Trial Org's live state, seat usage, and
+    # any provisioning failure - mirrored (docs/adr/0034) same as trial_expiry_date above, via
+    # related fields rather than a direct hosting.trial.org form (Platform-only, docs/adr/0018 -
+    # no sales group has ACL access to open it). related='' defaults compute_sudo=True, the same
+    # thing trial_expiry_countdown below has to opt into explicitly for a plain compute='' field.
+    trial_state = fields.Selection(
+        related='trial_org_id.state', string="Trial State",
+        help="Whether the prospect can currently log in to this opportunity's Trial Org - "
+             "mirrored from the administration stack, never decided by Odoo.",
+    )
+    trial_seats_used = fields.Integer(
+        related='trial_org_id.seats_used', string="Trial Seats Used",
+        help="How many of trial_seat_cap are currently claimed - mirrored from the "
+             "administration stack.",
+    )
+    trial_seat_cap = fields.Integer(
+        related='trial_org_id.seat_cap', string="Trial Seat Cap",
+        help="Seats available on this opportunity's Trial Org, set at issuance.",
+    )
+    trial_last_job_error = fields.Text(
+        related='trial_org_id.last_job_error', string="Trial Provisioning Error",
+        help="A clear, actionable reason the Trial Org's most recent provisioning action failed "
+             "(blank whenever the last observed outcome wasn't a failure) - mirrored from the "
+             "administration stack, so the rep knows to ask for help rather than wait.",
+    )
     trial_expiry_countdown = fields.Char(
         string="Trial Expiry Countdown", compute='_compute_trial_expiry_countdown',
         # A plain compute='' field defaults compute_sudo to False (unlike related='', which
