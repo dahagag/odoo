@@ -1,60 +1,20 @@
-import re
-import uuid
-from datetime import timedelta, timezone
-
 from odoo import _, api, fields, models
-from odoo.exceptions import AccessError, UserError, ValidationError
+from odoo.exceptions import AccessError, UserError
 
-from .provisioner import SNAPSHOT_RETENTION_DAYS, AwsProvisioner, StubProvisioner
+from .hosting_stack_client import RealHostingStackClient, StubHostingStackClient
 
-# The system-wide seat cap from docs/contexts/hosting/CONTEXT.md's Seat entry: "The count is
-# set per-trial at issuance (system-wide max 25)". A single Trial Org's own seat_cap may be
-# anywhere from 1 up to this ceiling; it is not a cross-trial total.
-SYSTEM_WIDE_SEAT_CAP = 25
+# ir.config_parameter keys HostingStackClient is configured from (_get_stack_client below).
+# Unset base_url (the default for dev/test environments, and any environment before the
+# production cutover completes) falls back to StubHostingStackClient - docs/adr/0034, this
+# ticket's Implementation Decisions: "the stack's base URL: unset means the stub, so dev and
+# test environments make no network call at all rather than failing obscurely."
+CONFIG_PARAM_STACK_BASE_URL = 'hosting_admin.stack_base_url'
+CONFIG_PARAM_STACK_AWS_REGION = 'hosting_admin.stack_aws_region'
 
-# The idle timeout docs/adr/0014 sets for a Trial Org's compute: "stopped after an idle timeout
-# (~30 min)". Checked by a scheduled action (_cron_suspend_idle), never inline on request.
-IDLE_TIMEOUT_MINUTES = 30
-
-# A pragmatic hostname/domain check (labels of letters/digits/hyphens, no leading/trailing
-# hyphen, at least one dot) - good enough to reject an obviously-malformed prospect domain
-# without pulling in a DNS-validation dependency.
-_DOMAIN_RE = re.compile(
-    r'^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$',
-)
-
-# Matches infra/modules/trial_org/variables.tf's own trial_org_subdomain_label validation regex
-# exactly, so a value accepted here can never fail tofu's own variable validation, and dns_
-# subdomain_label's derived default (_slugify_dns_label below) can never produce a value this
-# rejects.
-_DNS_LABEL_RE = re.compile(r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$')
-
-# Valid lifecycle actions as (source states, target state) pairs, keyed by action name. Mirrors
-# the ticket's "issued -> active -> suspended -> active -> destroyed" sequence: Issue is one-way
-# from issued, Suspend and Wake move back and forth between active and suspended, and
-# Auto-Destroy is reachable from either operating state but never reversible. Issue and Wake
-# share a target state (active) but not a source state, so each action is validated by its own
-# name rather than by target state alone - a Wake called on a still-issued (never-provisioned)
-# Trial Org must be rejected even though issued -> active is a valid move for Issue.
-_TRANSITIONS = {
-    'issue': ({'issued'}, 'active'),
-    'suspend': ({'active'}, 'suspended'),
-    'wake': ({'suspended'}, 'active'),
-    'destroy': ({'active', 'suspended'}, 'destroyed'),
-}
-
-# ir.config_parameter keys AwsProvisioner is configured from (_get_provisioner below). Unset
-# (the default for dev/test environments with no AWS wiring) falls back to StubProvisioner -
-# see docs/adr/0019 for the state machine/IAM design these values plug into.
-CONFIG_PARAM_STATE_MACHINE_ARN = 'hosting_admin.aws_state_machine_arn'
-CONFIG_PARAM_AWS_REGION = 'hosting_admin.aws_region'
-CONFIG_PARAM_BASE_AMI_ID = 'hosting_admin.base_ami_id'
-CONFIG_PARAM_TOFU_MODULE_GIT_SHA = 'hosting_admin.tofu_module_git_sha'
-# The domain suffix (e.g. "method.factory1.io" or "dev.method.factory1.io") this Platform
-# instance's configured foundation deployment issues Trial Orgs under - whichever of
-# infra/foundation's two wildcard domains (var.root_domain / var.dev_subdomain) this environment
-# actually uses. Combined with a Trial Org's own dns_subdomain_label to compute the exact
-# Route53 record name that invocation's IAM session tag scopes DNS mutations to (issue #125).
+# The domain suffix (e.g. "method.factory1.io") this Platform instance's configured foundation
+# deployment issues Trial Orgs under - combined with a Trial Org's own dns_subdomain_label to
+# resolve the Host header a suspended org's own visitor's browser sends (issue #125,
+# controllers/asleep.py, models/ir_http.py). Unchanged by this ticket.
 CONFIG_PARAM_DNS_DOMAIN_SUFFIX = 'hosting_admin.dns_domain_suffix'
 
 # The two invitation paths ADR-0026 describes, shared with crm_methodology's action_issue_trial
@@ -64,62 +24,48 @@ INVITE_TYPES = [
     ('open', "Open Invite Link"),
 ]
 
-# Bus channel prefix for the real-time log viewer (docs/adr/0023): the full channel name is
-# this prefix plus the Trial Org's own id, so it is guessable (unlike bus.bus._sendone()'s own
-# docstring recommendation for a bare string channel) - authorization is enforced separately at
-# subscribe time by IrWebsocket._build_bus_channel_list (models/ir_websocket.py) checking the
-# connecting user's own read access to that Trial Org, not by channel secrecy.
-TRIAL_ORG_LOG_BUS_CHANNEL_PREFIX = 'hosting_admin.trial_org_log-'
-
-# bus.bus notification type the log webhook controller (controllers/log_webhook.py) publishes
-# new log lines under, and the frontend log-viewer widget subscribes to.
-TRIAL_ORG_LOG_BUS_NOTIFICATION_TYPE = 'hosting_admin.trial_org_log_lines'
-
-
-def trial_org_log_bus_channel(trial_org_id):
-    """Return the bus.bus channel name (docs/adr/0023) a Trial Org's log-viewer widget
-    subscribes to, and the log webhook controller publishes new lines onto."""
-    return f'{TRIAL_ORG_LOG_BUS_CHANNEL_PREFIX}{trial_org_id}'
+# Fields mirrored from the stack's own OrgSchema (docs/adr/0034: "a read-only projection it never
+# authors") - never set directly by a caller, only ever overwritten wholesale by
+# _write_from_stack() from what the stack itself just returned. Shared by create()/write()'s own
+# guard and by _write_from_stack() so the two can never drift on which fields that covers.
+_MIRRORED_FIELDS = (
+    'state', 'stack_org_id', 'seats_used', 'dns_subdomain_label', 'expiry_date', 'last_job_id',
+    'last_job_action', 'last_job_status', 'last_job_error', 'last_activity_at',
+    'snapshot_retention_until',
+)
 
 
 class HostingTrialOrg(models.Model):
-    # Named 'hosting.trial.org' per the ticket's own literal suggestion, not
-    # 'hosting.admin.trial.org'. docs/adr/0018 describes the addon's conceptual namespace as
-    # "hosting.admin", but that's the addon's own admin/cross-org identity (already carried by
-    # the technical addon name 'hosting_admin' and its ir.module.category/security group below)
-    # - it is not a mandate to prefix every model inside it with an 'admin' segment. Repeating
-    # it on the model itself would be redundant given the addon boundary already enforces that
-    # this is the only place Trial Org data lives, and the org-facing 'hosting' addon (ADR-0018)
-    # never defines a model of this name to collide with.
+    # Named 'hosting.trial.org' per the ticket's own literal suggestion - see the model's own
+    # history (docs/adr/0018) for why it isn't 'hosting.admin.trial.org'. This ticket (#197)
+    # changes what the model *is* - a read-only mirror of the administration stack's own record
+    # (docs/adr/0034), not the authoritative Trial Org - without renaming it, so every existing
+    # caller (crm_methodology's crm_lead.py) keeps calling the same model by the same name.
     _name = 'hosting.trial.org'
-    _description = "Trial Org"
+    _description = "Trial Org (mirrored from the administration stack)"
     _order = 'create_date desc'
 
     name = fields.Char(string="Org Name", required=True)
     prospect_domain = fields.Char(
         required=True,
-        help="The prospect's email domain this Trial Org is provisioned for. Every Seat "
-             "invite must match it.",
+        help="The prospect's email domain this Trial Org is provisioned for. Set once, at "
+             "issuance - the stack (docs/adr/0034) is what actually enforces it against every "
+             "Seat invite from here on.",
     )
     dns_subdomain_label = fields.Char(
-        string="DNS Label",
-        help="DNS label this Trial Org's instance is reachable under, e.g. \"acme-widgets\" "
-             "for acme-widgets.<domain> (infra/modules/trial_org's own "
-             "trial_org_subdomain_label input). Defaults to a slugified Org Name if left "
-             "blank on create - distinct from the numeric trial_org_id, since the module's "
-             "hostname convention doesn't embed it, which is exactly why the per-execution "
-             "DNS IAM isolation (issue #125) keys off this field's exact value via a session "
-             "tag rather than off trial_org_id.",
+        string="DNS Label", readonly=True,
+        help="DNS label this Trial Org's instance is reachable under - mirrored from the stack, "
+             "which derives or validates it (docs/adr/0034); never set locally.",
     )
     seat_cap = fields.Integer(
         string="Seat Cap", required=True, default=5,
-        help="Number of Seats available on this Trial Org, set at issuance. "
-             f"Capped system-wide at {SYSTEM_WIDE_SEAT_CAP}.",
+        help="Number of Seats available on this Trial Org, set at issuance. The stack (docs/"
+             "adr/0034) enforces the system-wide seat cap and every per-Seat rule from here on.",
     )
-    # Which of the two invitation paths (docs/adr/0026) this Trial Org was issued through. Both
-    # lock the same prospect_domain at issuance; only 'open' ever accepts a join through
-    # action_join_open_invite() below - a 'targeted' invite's Seat is confirmed by construction
-    # (the rep already named the specific email), so it has no first-login domain prompt to gate.
+    seats_used = fields.Integer(
+        string="Seats Used", readonly=True,
+        help="Mirrored from the stack (docs/adr/0034) - never authoritative here.",
+    )
     invite_type = fields.Selection(
         INVITE_TYPES, default='targeted', required=True)
     state = fields.Selection([
@@ -127,228 +73,231 @@ class HostingTrialOrg(models.Model):
         ('active', "Active"),
         ('suspended', "Suspended"),
         ('destroyed', "Destroyed"),
-    ], default='issued', required=True, readonly=True, copy=False)
+    ], default='issued', required=True, readonly=True, copy=False,
+        help="Mirrored from the stack (docs/adr/0034), which is the sole authority for this "
+             "Trial Org's lifecycle - Odoo never decides a transition from this cached value.",
+    )
     expiry_date = fields.Date(
-        help="The date Auto-Destroy fires for this Trial Org, absent an Extension.")
+        readonly=True,
+        help="The date Auto-Destroy fires for this Trial Org, absent an Extension. Mirrored "
+             "from the stack, which sets it at issuance and moves it on Extension (#312).",
+    )
 
-    # Deployment Version (docs/adr/0024, docs/contexts/hosting/CONTEXT.md): audit-only facts
-    # recording what a Trial Org actually ran. Populated by AwsProvisioner.issue() - blank on
-    # StubProvisioner-backed records, since no real AWS call was ever made.
-    ami_id = fields.Char(
-        string="AMI ID", copy=False,
-        help="The base AMI this Trial Org was provisioned from. Audit-only; populated by the "
-             "real Provisioner implementation.")
-    tofu_module_git_sha = fields.Char(
-        string="OpenTofu Module Git SHA", copy=False,
-        help="The git SHA of the per-trial OpenTofu module this Trial Org was provisioned "
-             "from. Audit-only; populated by the real Provisioner implementation.")
-    pending_ami_id = fields.Char(
-        copy=False, readonly=True,
-        help="ami_id staged by AwsProvisioner.issue() before its execution has finished. "
-             "Promoted to ami_id once check_status() sees that job SUCCEEDED, so a failed or "
-             "still-running deploy never claims a version it didn't complete.")
-    pending_tofu_module_git_sha = fields.Char(
-        copy=False, readonly=True,
-        help="tofu_module_git_sha staged by AwsProvisioner.issue() before its execution has "
-             "finished - see pending_ami_id.")
-
-    # The most recent lifecycle action's job id (docs/adr/0019): a fresh UUID minted for every
-    # call to _new_job_id(). last_job_action/last_job_started_at record which action it
-    # was for and when; last_job_status/last_job_error/last_execution_arn are what
-    # AwsProvisioner.check_status() polls onto the record once that job's Step Functions
-    # execution finishes.
+    # ADR-0019's job identity, mirrored (docs/adr/0034) rather than tracked locally - the stack
+    # is what actually starts/polls the underlying provisioning job.
     last_job_id = fields.Char(copy=False, readonly=True)
     last_job_action = fields.Char(copy=False, readonly=True)
-    last_job_started_at = fields.Datetime(copy=False, readonly=True)
     last_job_status = fields.Selection([
         ('running', "Running"),
         ('succeeded', "Succeeded"),
         ('failed', "Failed"),
     ], copy=False, readonly=True)
     last_job_error = fields.Text(copy=False, readonly=True)
-    last_execution_arn = fields.Char(
-        copy=False, readonly=True,
-        help="Step Functions execution ARN for last_job_id, recorded by AwsProvisioner so "
-             "check_status() knows what to poll (docs/adr/0019).")
+    # Odoo's own clock, not mirrored: the moment *this instance* last called issue/wake on the
+    # stack (the stack's own OrgSchema carries no job-start timestamp for Odoo to mirror instead).
+    # controllers/asleep.py's Wake-Up progress estimate is the only reader.
+    last_job_started_at = fields.Datetime(copy=False, readonly=True)
 
-    # Lifecycle audit trail (docs/adr/0022): pulled live from AWS every time this record is
-    # read, never cached or persisted - non-stored computed fields are the natural fit, since
-    # an ordinary (stored) field only recomputes on write, while these must reflect whatever
-    # AWS says *right now*. _compute_audit_trail() below is a single method computing all of
-    # them together (one Provisioner.get_audit_trail() call per record) rather than one compute
-    # method per field, since they're all facets of that one call's result.
-    audit_trail_available = fields.Boolean(
-        compute='_compute_audit_trail',
-        help="Whether a lifecycle audit trail could be read from AWS at all for this Trial "
-             "Org (false if it has never run a lifecycle action, or the AWS call itself "
-             "failed).")
-    audit_trail_action = fields.Char(compute='_compute_audit_trail', string="Audited Action")
-    audit_trail_status = fields.Char(compute='_compute_audit_trail', string="Audited Status")
-    audit_trail_started_at = fields.Datetime(compute='_compute_audit_trail', string="Audited Start")
-    audit_trail_stopped_at = fields.Datetime(compute='_compute_audit_trail', string="Audited Stop")
-    audit_trail_steps_available = fields.Boolean(
-        compute='_compute_audit_trail',
-        help="Whether step-by-step execution history could be read from AWS, even when the "
-             "execution's overall status/timing above is still available.")
-    audit_trail_steps_unavailable_reason = fields.Char(
-        compute='_compute_audit_trail',
-        help="The AWS error code GetExecutionHistory actually reported when "
-             "audit_trail_steps_available is false (e.g. AccessDeniedException, "
-             "ThrottlingException) - never a guessed cause such as retention expiry, which AWS "
-             "does not report as a distinct exception.")
-    audit_trail_steps = fields.Text(
-        compute='_compute_audit_trail', string="Audited Steps",
-        help="One line per Step Functions execution-history event: when it happened, which "
-             "state/task it belongs to, and its error/cause if it failed.")
-
-    # EC2 instance id Suspend/Wake need for their execution input
-    # (infra/foundation/state_machine.asl.json.tftpl's SuspendInstance/WakeInstance Task
-    # states, docs/adr/0021). Not populated by this ticket: it's only known once an Issue
-    # execution's `tofu apply` actually runs, and #113's state machine doesn't yet surface its
-    # outputs back onto the execution's own result for hosting_admin to read (a gap for a
-    # follow-up ticket, not something #114 can close from the hosting_admin side alone).
-    # AwsProvisioner.suspend()/wake() raise a clear error rather than start an execution AWS
-    # would reject anyway if this is still blank.
-    instance_id = fields.Char(copy=False, readonly=True)
-
-    # Last recorded activity on this Trial Org's compute, checked by the idle-timeout Suspend
-    # scheduled action (docs/adr/0014) against IDLE_TIMEOUT_MINUTES. Seeded to the moment it goes
-    # active (Issue or Wake) so a freshly-issued or just-woken Trial Org gets a full idle window
-    # before the next Suspend sweep, rather than being immediately eligible.
-    last_activity_at = fields.Datetime(readonly=True, copy=False)
-
-    # Auto-Destroy always records a short-lived snapshot marker (docs/contexts/hosting/
-    # CONTEXT.md's Auto-Destroy entry) regardless of what triggered it - expiry-driven or manual
-    # teardown alike. This ticket only records the retention date; the real snapshot itself is
-    # a later ticket's Provisioner concern.
+    last_activity_at = fields.Datetime(
+        readonly=True, copy=False,
+        help="Mirrored from the stack's own idle-suspend clock (docs/adr/0034).",
+    )
     snapshot_retention_until = fields.Date(
         readonly=True, copy=False,
-        help="The date this Trial Org's post-destroy database snapshot may be discarded "
-             f"({SNAPSHOT_RETENTION_DAYS} days after Auto-Destroy).")
+        help="Mirrored from the stack, set on every destroy (docs/adr/0034).",
+    )
+
+    # The stack's own identity for this org (docs/adr/0034, docs/adr/0036) - every call this
+    # model makes to HostingStackClient after creation targets this id, never a locally-derived
+    # one. Blank only for the brief in-memory window between super().create() being about to run
+    # and this same create() call finishing (never observable from outside this method).
+    stack_org_id = fields.Char(readonly=True, copy=False, index=True)
 
     _seat_cap_positive = models.Constraint(
         'CHECK(seat_cap > 0)',
         "Seat cap must be a positive number.",
     )
-    # One DNS label must map to exactly one Trial Org (CodeRabbit, PR #171): duplicate labels
-    # would produce the same DnsRecordName session tag (issue #125's per-Trial-Org DNS IAM
-    # isolation), letting one Trial Org's execution match and mutate another's DNS record.
-    _dns_subdomain_label_unique = models.Constraint(
-        'unique(dns_subdomain_label)',
-        "This DNS label is already in use by another Trial Org.",
+    _stack_org_id_unique = models.Constraint(
+        'unique(stack_org_id)',
+        "This stack org id is already mirrored by another Trial Org record.",
     )
 
-    @api.constrains('seat_cap')
-    def _check_seat_cap_within_system_wide_max(self):
-        for trial_org in self:
-            if trial_org.seat_cap > SYSTEM_WIDE_SEAT_CAP:
-                raise ValidationError(_(
-                    "Seat cap (%(seat_cap)s) cannot exceed the system-wide maximum of "
-                    "%(max_seats)s seats.",
-                    seat_cap=trial_org.seat_cap, max_seats=SYSTEM_WIDE_SEAT_CAP,
-                ))
-
-    @api.constrains('prospect_domain')
-    def _check_prospect_domain(self):
-        for trial_org in self:
-            if not _DOMAIN_RE.fullmatch(trial_org.prospect_domain or ''):
-                raise ValidationError(_(
-                    "%(domain)r is not a valid prospect domain.",
-                    domain=trial_org.prospect_domain,
-                ))
-
-    @api.constrains('dns_subdomain_label')
-    def _check_dns_subdomain_label(self):
-        for trial_org in self:
-            if not _DNS_LABEL_RE.fullmatch(trial_org.dns_subdomain_label or ''):
-                raise ValidationError(_(
-                    "%(label)r is not a valid DNS label (lowercase letters, digits and "
-                    "internal hyphens only, at most 63 characters).",
-                    label=trial_org.dns_subdomain_label,
-                ))
+    def _get_stack_client(self):
+        """Return the `HostingStackClient` implementation to call: `RealHostingStackClient`
+        once a stack is configured (CONFIG_PARAM_STACK_BASE_URL), `StubHostingStackClient`
+        otherwise - dev/test environments, and any environment before the production cutover
+        completes (this ticket's Sequencing note). Tests override this method directly to inject
+        a recording fake."""
+        ICP = self.env['ir.config_parameter'].sudo()
+        base_url = ICP.get_param(CONFIG_PARAM_STACK_BASE_URL)
+        if not base_url:
+            return StubHostingStackClient()
+        region = ICP.get_param(CONFIG_PARAM_STACK_AWS_REGION)
+        if not region:
+            # Fail clearly here, at configuration time - SigV4Auth (models/hosting_stack_client.py)
+            # would otherwise be constructed with a blank region and either mis-sign every request
+            # or fail deep inside botocore with a message that names neither this addon nor its
+            # actual cause (this ticket's User Stories: "a clear message when the stack is
+            # unreachable", not a confusing one).
+            raise UserError(_(
+                "%(param)s is configured but %(region_param)s is not - both are required to "
+                "reach the administration stack.",
+                param=CONFIG_PARAM_STACK_BASE_URL, region_param=CONFIG_PARAM_STACK_AWS_REGION,
+            ))
+        return RealHostingStackClient(base_url=base_url, region_name=region)
 
     @api.model_create_multi
     def create(self, vals_list):
-        """Reject a caller-supplied ``state`` on create unless the call is already elevated via
-        ``sudo()`` - ``readonly=True`` only hides the field in form views, so this is the only
-        thing stopping a direct ORM/RPC create() from setting it to something other than the
-        model's own default. See write() below for why this checks ``self.env.su`` rather than
+        """Issue a Trial Org: call the stack's own create_org for each vals dict, then persist
+        the mirrored fields the stack returned alongside the caller's own input. Rejects a
+        caller-supplied mirrored field (`state`, `stack_org_id`, ...) unless the call is already
+        elevated via `sudo()` - see write() below for why this checks `self.env.su` rather than
         a context flag."""
         if not self.env.su:
             for vals in vals_list:
-                if 'state' in vals:
-                    raise AccessError(_(
-                        "Trial Org state cannot be set directly; it can only change through "
-                        "its lifecycle actions (Issue, Suspend, Wake, Auto-Destroy)."))
+                for field_name in _MIRRORED_FIELDS:
+                    if field_name in vals:
+                        raise AccessError(_(
+                            "%(field)s cannot be set directly; it is only ever mirrored from "
+                            "the administration stack.", field=field_name))
+        client = self._get_stack_client()
+        # default_get(), not each field's own bare default value: a caller may omit seat_cap
+        # entirely and still expect this model's own default (5) to apply, same as an ordinary
+        # ORM create() would - vals.get('seat_cap') alone would instead send None to the stack,
+        # which create_org() would forward as a literal null seatsTotal.
+        defaults = self.default_get(['seat_cap', 'invite_type'])
+        # Validate every item before calling the stack for any of them (CodeRabbit, PR #314): a
+        # multi-record create() would otherwise create a real, billable org on the stack for an
+        # earlier valid item, then raise on a later invalid one before super().create() ever
+        # runs - orphaning that earlier org with no local Odoo row to ever reference it again.
+        # This also gives every caller (StubHostingStackClient included, which "trusts every
+        # call it receives" and does not itself validate) a clear UserError instead of a raw
+        # NOT NULL/CHECK constraint violation from super().create() below.
         for vals in vals_list:
-            if not vals.get('dns_subdomain_label'):
-                vals['dns_subdomain_label'] = self._slugify_dns_label(vals.get('name') or '')
-        return super().create(vals_list)
-
-    @staticmethod
-    def _slugify_dns_label(name):
-        """Derive a dns_subdomain_label default from ``name`` when it isn't supplied
-        explicitly: lowercase, runs of characters outside [a-z0-9] collapsed to a single
-        hyphen, leading/trailing hyphens stripped, capped at 63 characters
-        (infra/modules/trial_org's own DNS label limit). Never raises - an empty or
-        entirely-non-alphanumeric name just derives an empty string, caught by
-        _check_dns_subdomain_label's own constraint like any other invalid value."""
-        slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
-        return slug[:63].rstrip('-')
+            seat_cap = vals.get('seat_cap', defaults.get('seat_cap'))
+            if not vals.get('name') or not vals.get('prospect_domain'):
+                raise UserError(_(
+                    "An org name and a prospect domain are required to issue a Trial Org."))
+            if not seat_cap or seat_cap <= 0:
+                raise UserError(_("Seat cap must be a positive number."))
+        resolved_vals_list = []
+        for vals in vals_list:
+            org = client.create_org(
+                name=vals.get('name'),
+                domain=vals.get('prospect_domain'),
+                seat_cap=vals.get('seat_cap', defaults.get('seat_cap')),
+                invite_type=vals.get('invite_type', defaults.get('invite_type')) or 'targeted',
+                dns_subdomain_label=vals.get('dns_subdomain_label'),
+            )
+            resolved_vals_list.append({**vals, **org})
+        return super().create(resolved_vals_list)
 
     def write(self, vals):
-        """Reject a caller-supplied ``state`` on write unless the call is already elevated via
-        ``sudo()`` (as ``_apply_transition()`` itself is, below).
+        """Reject a caller-supplied mirrored field unless the call is already elevated via
+        `sudo()` (as every `_write_from_stack()` caller in this class is, below).
 
-        This checks ``self.env.su`` rather than a context flag deliberately: ``context`` is a
-        plain caller-supplied dict on every ORM/RPC call (``with_context()`` is public API, and
-        RPC's ``execute_kw`` takes a ``context`` kwarg directly from the client), so gating on a
-        context key - as an earlier version of this guard did - can be forged by any caller with
-        ordinary write access to this model and defeats the guard entirely, bypassing
-        _apply_transition()'s source-state validation and Provisioner call. ``env.su`` can only
-        become true via an internal ``.sudo()`` call, which no RPC client can inject (same
-        pattern as crm_lead.py's trial_org_id write guard, CodeRabbit on PR #131).
-
-        Also reject a ``dns_subdomain_label`` change once any record has left 'issued'
-        (CodeRabbit, PR #171): Issue's execution binds the DNS record and the assumed-role
-        session tag (issue #125) to whatever label is on the record at that moment, so changing
-        it afterward would leave Destroy targeting a record name that no longer matches what
-        Issue actually created.
-
-        This check locks the affected rows and re-reads ``state`` straight from the database
-        rather than trusting ``trial_org.state``'s ORM-cached value (CodeRabbit, PR #168):
-        _apply_transition() reads the label for its Provisioner call while a record is still
-        'issued', and only writes the new state in a final sudo().write() afterward, so a plain
-        cached read here could see 'issued' and let this write proceed, then block on that
-        final write's row lock, then land anyway once unblocked - changing the label to
-        something the Provisioner never saw, after the fact. Locking first forces this write to
-        either finish (and take the lock) before _apply_transition starts, or wait for
-        _apply_transition's transaction to conclude and then see its committed, no-longer-
-        'issued' state - same row-locking pattern as action_join_open_invite's seat-cap guard
-        (CodeRabbit, PR #160)."""
-        if 'state' in vals and not self.env.su:
-            raise AccessError(_(
-                "Trial Org state cannot be set directly; it can only change through its "
-                "lifecycle actions (Issue, Suspend, Wake, Auto-Destroy)."))
-        if 'dns_subdomain_label' in vals and self:
-            self.env.cr.execute(
-                "SELECT id, state FROM hosting_trial_org WHERE id = ANY(%s) FOR UPDATE",
-                (self.ids,))
-            if any(state != 'issued' for _id, state in self.env.cr.fetchall()):
-                raise UserError(_(
-                    "The DNS label cannot change once a Trial Org has been issued."))
+        This checks `self.env.su` rather than a context flag deliberately: `context` is a plain
+        caller-supplied dict on every ORM/RPC call (`with_context()` is public API, and RPC's
+        `execute_kw` takes a `context` kwarg directly from the client), so gating on a context
+        key can be forged by any caller with ordinary write access to this model and defeats the
+        guard entirely (the same reasoning `crm_lead.py`'s own `trial_org_id` guard documents).
+        `env.su` can only become true via an internal `.sudo()` call, which no RPC client can
+        inject."""
+        if not self.env.su:
+            for field_name in _MIRRORED_FIELDS:
+                if field_name in vals:
+                    raise AccessError(_(
+                        "%(field)s cannot be set directly; it is only ever mirrored from the "
+                        "administration stack.", field=field_name))
         return super().write(vals)
+
+    def _write_from_stack(self, org, extra_vals=None):
+        """Persist a `HostingStackClient` response dict onto this record's own mirrored fields -
+        the one path every lifecycle action and sync below writes through, so the mapping from
+        the stack's response to this model's fields exists in exactly one place."""
+        self.ensure_one()
+        vals = {field_name: org[field_name] for field_name in _MIRRORED_FIELDS if field_name in org}
+        if extra_vals:
+            vals.update(extra_vals)
+        self.sudo().write(vals)
+
+    def action_issue(self):
+        """Issue this Trial Org: issued -> active, via the stack (docs/adr/0034)."""
+        self.ensure_one()
+        org = self._get_stack_client().issue(self.stack_org_id)
+        self._write_from_stack(org, {'last_job_started_at': fields.Datetime.now()})
+
+    def action_suspend(self):
+        """Suspend this Trial Org's compute: active -> suspended, via the stack."""
+        self.ensure_one()
+        org = self._get_stack_client().suspend(self.stack_org_id)
+        self._write_from_stack(org, {'last_job_started_at': fields.Datetime.now()})
+
+    def action_wake(self):
+        """Wake this Trial Org's compute back up: suspended -> active, via the stack. Called by
+        an operator's own backend button, and by controllers/asleep.py's Wake Up button on
+        behalf of an anonymous visitor to a suspended org's own hostname."""
+        self.ensure_one()
+        org = self._get_stack_client().wake(self.stack_org_id)
+        self._write_from_stack(org, {'last_job_started_at': fields.Datetime.now()})
+
+    def action_destroy(self):
+        """Tear this Trial Org down: -> destroyed, via the stack."""
+        self.ensure_one()
+        org = self._get_stack_client().destroy(self.stack_org_id)
+        self._write_from_stack(org, {'last_job_started_at': fields.Datetime.now()})
+
+    def action_extend(self, additional_days):
+        """Push this Trial Org's expiry_date out by additional_days (#312), via the stack.
+        Extension's own authorisation - the sales-methodology qualification gate - is entirely
+        `crm_lead.action_extend_trial`'s concern (docs/adr/0034: "the stack exposes the
+        extension write; Odoo is the only actor permitted to invoke it"); this method performs
+        the write once that caller has already decided to allow it.
+
+        Unlike the pre-#197 model, this takes no local row lock before writing: two concurrent
+        extensions racing here are the stack's own concern now, proven by its own optimistic-
+        concurrency test (`extendOrgExpiry`, stack/apps/api/test/orgRecord.test.ts, #312) rather
+        than re-tested from the Odoo side (this ticket's Testing Decisions: "never re-test
+        lifecycle rules, which now belong to the stack")."""
+        self.ensure_one()
+        if not isinstance(additional_days, int) or additional_days <= 0:
+            raise UserError(_("Additional days must be a positive whole number."))
+        org = self._get_stack_client().extend(self.stack_org_id, additional_days)
+        self._write_from_stack(org)
+
+    def action_sync_from_stack(self):
+        """Refresh this Trial Org's mirrored fields from the stack's own current record -
+        settling a running job to succeeded/failed first (`check_status`, a safe no-op when
+        nothing is running) so this doesn't just re-read a stale snapshot. Available as a manual
+        button and as the light periodic sync `_cron_sync_from_stack` below runs (this ticket's
+        Implementation Decisions: "refreshed on read and by a light periodic sync")."""
+        for trial_org in self:
+            client = trial_org._get_stack_client()
+            client.check_status(trial_org.stack_org_id)
+            org = client.get_org(trial_org.stack_org_id)
+            trial_org._write_from_stack(org)
+
+    def _cron_sync_from_stack(self):
+        """Scheduled action: lightly refresh every Trial Org that isn't already `destroyed` (a
+        terminal state the stack itself never moves on from) - this ticket's Implementation
+        Decisions: mirrored state is "refreshed on read and by a light periodic sync"."""
+        trial_orgs = self.search([('state', '!=', 'destroyed')])
+        for trial_org in trial_orgs:
+            try:
+                trial_org.action_sync_from_stack()
+            except UserError:
+                # An unreachable stack must not stop this cron from syncing every other Trial
+                # Org in the same run - the next scheduled run tries again.
+                continue
 
     @api.model
     def _trial_org_for_host(self, host):
-        """Resolve the Trial Org (if any) whose ``dns_subdomain_label`` matches ``host`` under
-        the configured domain suffix (``CONFIG_PARAM_DNS_DOMAIN_SUFFIX``, issue #125) - the
-        single resolution rule shared by the asleep-page controller and ``IrHttp``'s host-based
-        redirect (ADR-0030, ``models/ir_http.py``), so a Host header a customer's browser
-        actually sends is only ever matched one way. Returns an empty recordset (never raises)
-        for a host that doesn't end in the configured suffix, an unknown label, or when the
-        suffix itself isn't configured - a public HTTP handler should 404, not error, on a Host
-        header it doesn't recognize."""
+        """Resolve the Trial Org (if any) whose `dns_subdomain_label` matches `host` under the
+        configured domain suffix (`hosting_admin.dns_domain_suffix`, issue #125) - unchanged from
+        before this ticket: controllers/asleep.py and IrHttp's host-based redirect (ADR-0030)
+        both still resolve against this same mirrored field. Returns an empty recordset (never
+        raises) for a host that doesn't end in the configured suffix, an unknown label, or when
+        the suffix itself isn't configured."""
         if not host:
             return self.browse()
         domain_suffix = self.env['ir.config_parameter'].sudo().get_param(
@@ -359,261 +308,3 @@ class HostingTrialOrg(models.Model):
         if not label:
             return self.browse()
         return self.sudo().search([('dns_subdomain_label', '=', label)], limit=1)
-
-    def _get_provisioner(self):
-        """Return the ``Provisioner`` implementation to call at each lifecycle transition:
-        ``AwsProvisioner`` once AWS wiring is configured (CONFIG_PARAM_STATE_MACHINE_ARN and
-        friends, above), ``StubProvisioner`` otherwise - dev/test environments with no AWS
-        account to talk to. Tests override this method directly to inject a recording fake."""
-        ICP = self.env['ir.config_parameter'].sudo()
-        state_machine_arn = ICP.get_param(CONFIG_PARAM_STATE_MACHINE_ARN)
-        if not state_machine_arn:
-            return StubProvisioner()
-        return AwsProvisioner(
-            state_machine_arn=state_machine_arn,
-            base_ami_id=ICP.get_param(CONFIG_PARAM_BASE_AMI_ID),
-            tofu_module_git_sha=ICP.get_param(CONFIG_PARAM_TOFU_MODULE_GIT_SHA),
-            dns_domain_suffix=ICP.get_param(CONFIG_PARAM_DNS_DOMAIN_SUFFIX),
-            region_name=ICP.get_param(CONFIG_PARAM_AWS_REGION),
-        )
-
-    def _compute_audit_trail(self):
-        """Populate the audit_trail_* fields (docs/adr/0022) by calling the current
-        Provisioner's get_audit_trail() for each record - live, on every read, since these are
-        non-stored computed fields with no @api.depends: there's nothing in Odoo for an AWS
-        Step Functions execution's status to depend on. Degrades every field to its falsy
-        default when the trail isn't available, rather than raising, so opening a Trial Org
-        whose audit trail can't be read still renders a form instead of an error page."""
-        for trial_org in self:
-            trail = trial_org._get_provisioner().get_audit_trail(trial_org)
-            trial_org.audit_trail_available = trail.get('available', False)
-            trial_org.audit_trail_action = trail.get('action')
-            trial_org.audit_trail_status = trail.get('status')
-            trial_org.audit_trail_started_at = self._audit_trail_datetime(trail.get('start_date'))
-            trial_org.audit_trail_stopped_at = self._audit_trail_datetime(trail.get('stop_date'))
-            trial_org.audit_trail_steps_available = trail.get('steps_available', False)
-            trial_org.audit_trail_steps_unavailable_reason = trail.get('steps_unavailable_reason')
-            trial_org.audit_trail_steps = self._format_audit_trail_steps(trail.get('steps') or [])
-
-    @staticmethod
-    def _audit_trail_datetime(value):
-        """AWS SDK datetimes are timezone-aware; Odoo's Datetime field stores naive UTC. None
-        passes through as False, this model's own convention for "nothing to show" on a
-        Datetime field."""
-        if value is None:
-            return False
-        if value.tzinfo is not None:
-            value = value.astimezone(timezone.utc).replace(tzinfo=None)
-        return value
-
-    @classmethod
-    def _format_audit_trail_steps(cls, steps):
-        """Render get_audit_trail()'s ``steps`` list as one readable line per event - state/
-        task name first (falling back to the event type itself for events with no name, e.g.
-        ``ExecutionStarted``), then its error/cause when it has one."""
-        lines = []
-        for step in steps:
-            label = step.get('name') or step.get('type')
-            timestamp = cls._audit_trail_datetime(step.get('timestamp'))
-            line = f"{timestamp or '?'}  {label}"
-            if step.get('error'):
-                line += f" - {step['error']}"
-                if step.get('cause'):
-                    line += f": {step['cause']}"
-            lines.append(line)
-        return "\n".join(lines)
-
-    def action_issue(self):
-        """Issue this Trial Org: issued -> active."""
-        self._apply_transition('issue')
-
-    def action_suspend(self):
-        """Suspend this Trial Org's compute: active -> suspended."""
-        self._apply_transition('suspend')
-
-    def action_wake(self):
-        """Wake this Trial Org's compute back up: suspended -> active."""
-        self._apply_transition('wake')
-
-    def action_destroy(self):
-        """Auto-Destroy (or manually tear down) this Trial Org: active/suspended -> destroyed."""
-        self._apply_transition('destroy')
-
-    def action_join_open_invite(self, email):
-        """Join this Trial Org through its Open Invite Link (ADR-0026, ticket #120): the person
-        who just completed login supplies their company ``email``, creating their (accepted)
-        Seat if it matches this Trial Org's prospect domain - already locked at issuance, the
-        same as a Targeted Invite's - or raising and creating nothing if it doesn't.
-
-        Only ever called for an 'open' Trial Org: a Targeted Invite's Seat is confirmed by
-        construction and never goes through this prompt. Domain-match and seat-cap enforcement
-        both live on hosting.trial.org.seat's own constraints
-        (_check_email_matches_prospect_domain, _check_seat_cap), so this call is unconditionally
-        safe to repeat: the very first use is what confirms the domain the ticket describes, and
-        every next person who follows the same link makes the identical call, which is exactly
-        the self-service invite behaviour ticket #110 already established (same fixed domain,
-        subject to the same seat cap) - there is no separate "already confirmed" state to track.
-
-        hosting.trial.org and hosting.trial.org.seat are Platform-only models (docs/adr/0018):
-        neither grants base.group_user any access (security/ir.model.access.csv). The person
-        completing this join is an ordinary user, not a Platform operator, so this method itself
-        is the narrow, post-validation sudo() boundary (same pattern as crm_lead.action_issue_
-        trial()) - it elevates only after ensure_one() and the invite_type check above, and only
-        for the exact record read and Seat create() this call promises. The domain-match and
-        seat-cap constraints on hosting.trial.org.seat still apply on top of that elevation, so a
-        caller who names the wrong Trial Org id or a mismatched email is still rejected; sudo()
-        only lifts the ACL that would otherwise block a legitimate join too."""
-        self.ensure_one()
-        trial_org = self.sudo()
-        if trial_org.invite_type != 'open':
-            raise UserError(_(
-                "%(name)s was not issued via an Open Invite Link.", name=trial_org.name))
-        # Lock this Trial Org's own row before the Seat create() below, so two concurrent joins
-        # racing the last remaining seat serialize instead of both reading the same
-        # not-yet-at-cap count and both committing (CodeRabbit, PR #160) - same pattern as
-        # crm_lead.action_issue_trial's own concurrent-issue guard (crm_lead.py, CodeRabbit #131).
-        # The blocked caller resumes only once the first join commits, so _check_seat_cap() on
-        # its create() sees that join's row and correctly rejects if the cap is now reached.
-        self.env.cr.execute(
-            "SELECT id FROM hosting_trial_org WHERE id = %s FOR UPDATE", (trial_org.id,))
-        return self.env['hosting.trial.org.seat'].sudo().create({
-            'trial_org_id': trial_org.id,
-            'email': email,
-            'state': 'accepted',
-        })
-
-    def _new_job_id(self):
-        """Return (job_id, started_at) for a lifecycle action about to start on this record
-        (docs/adr/0019's Job identity design): a fresh UUID and the current time, every call.
-
-        There's no reuse-across-calls path: _apply_transition() writes the new ``state``
-        together with ``last_job_status: 'running'`` in the same call that starts the job, so by
-        the time any later call could reach this method, the source-state check in
-        _apply_transition() has already moved on or rejected it - a same-action retry never gets
-        here with the prior job still recorded as 'running'. The job id still does real work
-        within a single call: it's what StartExecution's execution name and the ECS ClientToken
-        are derived from (docs/adr/0019, docs/adr/0020's DynamoDB lock is the actual backstop for
-        a stray duplicate execution, not this)."""
-        self.ensure_one()
-        return str(uuid.uuid4()), fields.Datetime.now()
-
-    @staticmethod
-    def _check_source_state(trial_org, allowed_source_states, target_state):
-        """Shared by both the batch-wide pre-check and the per-record post-lock re-check in
-        ``_apply_transition()`` below, so the two can never drift apart into raising different
-        messages for what is otherwise the same rule."""
-        if trial_org.state not in allowed_source_states:
-            raise ValidationError(_(
-                "Trial Org %(name)s cannot move from %(current_state)s to "
-                "%(target_state)s.",
-                name=trial_org.name,
-                current_state=trial_org.state,
-                target_state=target_state,
-            ))
-
-    def _apply_transition(self, action_name):
-        """Validate every record in ``self`` is in a source state ``action_name`` allows, then
-        call the matching ``Provisioner`` method (with a fresh job id from ``_new_job_id``) for
-        each one before recording the new state and job id. The whole batch is applied
-        inside one savepoint, so a rejected transition or a Provisioner failure on any single
-        record rolls every record in the call back - a multi-record call is genuinely
-        all-or-nothing, not just pre-validated-then-hopefully-safe."""
-        allowed_source_states, target_state = _TRANSITIONS[action_name]
-        # Locked in a fixed, id-ascending order (below) regardless of how the caller assembled
-        # ``self`` - two concurrent batch calls sharing more than one Trial Org could otherwise
-        # each lock one shared record and then block waiting for the other's, a classic
-        # lock-ordering deadlock (CodeRabbit follow-up on PR #168).
-        ordered = self.sorted('id')
-        with self.env.cr.savepoint():
-            for trial_org in ordered:
-                self._check_source_state(trial_org, allowed_source_states, target_state)
-
-            provisioner = self._get_provisioner()
-            now = fields.Datetime.now()
-            for trial_org in ordered:
-                # Lock this row before the Provisioner reads dns_subdomain_label off it, and
-                # drop any cached value (state included) so both are forced fresh under the
-                # lock. Pairs with write()'s own dns_subdomain_label guard lock (CodeRabbit, PR
-                # #168): whichever of the two gets here first holds the row until its
-                # transaction concludes, so a concurrent label write can no longer land after
-                # the Provisioner has already used the pre-change label - it either finishes
-                # first (and this then sees its committed label) or waits behind this
-                # transition's state write and is rejected by write()'s guard once state is no
-                # longer 'issued'.
-                self.env.cr.execute(
-                    "SELECT id FROM hosting_trial_org WHERE id = %s FOR UPDATE", (trial_org.id,))
-                trial_org.invalidate_recordset(['dns_subdomain_label', 'state'])
-                # Re-validate under the lock (CodeRabbit follow-up on PR #168): the batch-wide
-                # check above runs before any row is locked, so two concurrent transitions on
-                # the same Trial Org could both pass it while state was still the old value. The
-                # DynamoDB per-Trial-Org lock (docs/adr/0020) already stops a losing concurrent
-                # call from provisioning duplicate infrastructure, but it can't stop this
-                # write() from recording that call's job id - StartExecution returns, and this
-                # write() commits, before that lock is ever checked inside the state machine.
-                # Rejecting here, before calling the Provisioner at all, is what actually
-                # prevents a losing call from clobbering last_job_id/last_job_status with an
-                # execution that's certain to fail.
-                self._check_source_state(trial_org, allowed_source_states, target_state)
-                job_id, job_started_at = trial_org._new_job_id()
-                getattr(provisioner, action_name)(trial_org, job_id)
-                values = {
-                    'state': target_state,
-                    'last_job_id': job_id,
-                    'last_job_action': action_name,
-                    'last_job_started_at': job_started_at,
-                    'last_job_status': 'running',
-                    'last_job_error': False,
-                }
-                if target_state == 'active':
-                    # Issue and Wake both start (or restart) the idle-timeout clock.
-                    values['last_activity_at'] = now
-                elif target_state == 'destroyed':
-                    # Always record a snapshot marker on Auto-Destroy, whatever triggered it
-                    # (expiry sweep or manual teardown) - see the field's own docstring above.
-                    values['snapshot_retention_until'] = (
-                        fields.Date.context_today(self) + timedelta(days=SNAPSHOT_RETENTION_DAYS))
-                # Narrow, post-validation sudo() boundary: source state and Provisioner call are
-                # already done above, so this elevates only the exact write() this method
-                # promises - the one path allowed to ever set 'state' (see write()'s own
-                # docstring for why this checks env.su rather than a context flag).
-                trial_org.sudo().write(values)
-
-    def _cron_suspend_idle(self):
-        """Scheduled action: Suspend every active Trial Org whose last recorded activity is
-        older than IDLE_TIMEOUT_MINUTES (docs/adr/0014). Never triggered by anything else - a
-        Trial Org only leaves 'active' via this idle check or an explicit action_suspend()."""
-        cutoff = fields.Datetime.now() - timedelta(minutes=IDLE_TIMEOUT_MINUTES)
-        idle_trial_orgs = self.search([
-            ('state', '=', 'active'),
-            ('last_activity_at', '<=', cutoff),
-        ])
-        if idle_trial_orgs:
-            idle_trial_orgs.action_suspend()
-
-    def _cron_auto_destroy_expired(self):
-        """Scheduled action: Auto-Destroy every active or suspended Trial Org whose expiry_date
-        has passed (docs/contexts/hosting/CONTEXT.md's Auto-Destroy entry). Manual teardown via
-        action_destroy() covers the "or on manual teardown" half of Auto-Destroy; both paths
-        share _apply_transition() so both always record the snapshot marker."""
-        today = fields.Date.context_today(self)
-        expired_trial_orgs = self.search([
-            ('state', 'in', ('active', 'suspended')),
-            ('expiry_date', '!=', False),
-            ('expiry_date', '<=', today),
-        ])
-        if expired_trial_orgs:
-            expired_trial_orgs.action_destroy()
-
-    def _cron_poll_pending_jobs(self):
-        """Scheduled action: poll every Trial Org with an unfinished lifecycle job
-        (last_job_status == 'running') via the Provisioner's check_status() (docs/adr/0019),
-        surfacing succeeded/failed onto the record. A StubProvisioner-backed record (no AWS
-        wiring configured) is included in the search but check_status() is a no-op for it, so
-        it simply stays 'running' forever - harmless, and consistent with the stub never making
-        any AWS call."""
-        pending_trial_orgs = self.search([('last_job_status', '=', 'running')])
-        if not pending_trial_orgs:
-            return
-        provisioner = self._get_provisioner()
-        for trial_org in pending_trial_orgs:
-            provisioner.check_status(trial_org)

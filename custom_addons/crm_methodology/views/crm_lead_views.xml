@@ -42,8 +42,20 @@
                              sales manager (and any admin without the Hosting Administrator
                              group). -->
                         <field name="trial_org_id" options="{'no_open': True}"/>
+                        <field name="trial_state" widget="badge" invisible="not trial_org_id"
+                               decoration-success="trial_state == 'active'"
+                               decoration-warning="trial_state == 'suspended'"
+                               decoration-danger="trial_state == 'destroyed'"/>
+                        <label for="trial_seats_used" string="Seats" invisible="not trial_org_id"/>
+                        <div invisible="not trial_org_id">
+                            <field name="trial_seats_used" nolabel="1" class="oe_inline"/> / <field name="trial_seat_cap" nolabel="1" class="oe_inline"/>
+                        </div>
                         <field name="trial_expiry_display" string="Trial Expiry" invisible="not trial_org_id"/>
                     </group>
+                    <div class="alert alert-danger" role="alert" invisible="not trial_last_job_error">
+                        <strong>Provisioning failed:</strong>
+                        <field name="trial_last_job_error" readonly="1" nolabel="1"/>
+                    </div>
                     <button name="%(crm_methodology_trial_issue_wizard_action)d" type="action"
                             string="Issue Trial" class="btn-primary"
                             invisible="trial_org_id" context="{'default_lead_id': id}"/>

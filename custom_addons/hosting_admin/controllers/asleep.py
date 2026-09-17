@@ -23,8 +23,8 @@ from odoo.http import request
 WAKING_PHASE_TIMEOUT_MINUTES = 5
 
 # Midpoint of ADR-0014's own "~1-2 minutes" Wake Up target. There is no cheap way to read a real
-# percentage back from a Step Functions execution (AwsProvisioner.get_audit_trail(), ADR-0022,
-# exposes discrete state transitions, not a continuous progress figure), so the client estimates
+# percentage back from the administration stack (docs/adr/0034) - its own OrgSchema exposes
+# discrete state transitions, not a continuous progress figure - so the client estimates
 # progress from real elapsed time since last_job_started_at against this expectation - honest in
 # that it is real elapsed time, not a fabricated animation, while still giving the approved
 # design's four step messages (WAKE_STEPS in the page's own script below) something to advance
@@ -360,20 +360,17 @@ class HostingAsleepController(http.Controller):
 
     @staticmethod
     def _phase(trial_org):
-        """'idle' (suspended, showing Wake Up), 'waking' (a wake job started recently and hasn't
-        reached AwsProvisioner.check_status()'s SUCCEEDED promotion yet), or 'awake' (anything
-        else - active with no running wake job).
+        """'idle' (suspended, showing Wake Up), 'waking' (a wake job started recently and the
+        light periodic sync (`_cron_sync_from_stack`, models/trial_org.py, docs/adr/0034) hasn't
+        yet observed it settle), or 'awake' (anything else - active with no running wake job).
 
-        A real AwsProvisioner-backed job tracks 'waking' by last_execution_arn (set the moment
-        AwsProvisioner.wake() starts a Step Functions execution, docs/adr/0019) for as long as
-        _cron_poll_pending_jobs hasn't yet observed it finish - the real WakeInstance Task allows
-        up to ec2_power_timeout_seconds plus retries, comfortably past a few minutes under load,
-        so this must never time out while a real execution is still being tracked. Only a
-        StubProvisioner-backed record (no AWS wiring configured - dev, tests, or a demo
-        environment per docs/agents/odoo-19-development.md's walkthrough guidance, no
-        last_execution_arn ever set) falls back to WAKING_PHASE_TIMEOUT_MINUTES, since it has no
-        real execution for that cron to ever observe and last_job_status would otherwise stay
-        'running' forever, showing "Waking up" indefinitely."""
+        Odoo no longer tracks any AWS-specific job handle (execution ARN, docs/adr/0034 - that
+        detail belongs entirely to the administration stack now), so there is no way from here to
+        tell a genuinely still-running stack-side job apart from `StubHostingStackClient`'s own
+        job, which never resolves on its own by design. WAKING_PHASE_TIMEOUT_MINUTES is therefore
+        a uniform bound rather than a stub-only fallback: past it, this page shows 'awake'
+        regardless of what last_job_status still says, so a StubHostingStackClient-backed record
+        (dev, tests, or a demo environment) never shows "Waking up" indefinitely."""
         if trial_org.state == 'suspended':
             return 'idle'
         started_recently = (
@@ -384,7 +381,7 @@ class HostingAsleepController(http.Controller):
         is_waking = (
             trial_org.last_job_action == 'wake'
             and trial_org.last_job_status == 'running'
-            and (trial_org.last_execution_arn or started_recently)
+            and started_recently
         )
         if is_waking:
             return 'waking'

@@ -9,9 +9,13 @@ from odoo.tools import mute_logger
 
 @tagged('post_install', '-at_install')
 class TestCrmLeadTrialConcurrency(BaseCase):
-    """Real two-connection tests proving the row locks in action_issue_trial()/
-    action_extend_trial() are genuine and correctly scoped (CodeRabbit findings on PR #131: a
-    lost-update race on Extend, and a duplicate-Trial-Org race on Issue).
+    """Real two-connection test proving the row lock in action_issue_trial() is genuine and
+    correctly scoped (CodeRabbit finding on PR #131: a duplicate-Trial-Org race on Issue).
+
+    action_extend_trial()'s own former row lock (the same CodeRabbit finding's other half, a
+    lost-update race on Extend) was retired along with it once #197 moved Extend's actual write
+    to the administration stack (docs/adr/0034) - the stack's own optimistic-concurrency test
+    (`extendOrgExpiry` in orgRecord.test.ts, #312) is what proves that race is closed now.
 
     These use the same same-thread, nested-cursor technique as Odoo core's own
     odoo/addons/base/tests/test_ir_sequence.py (see its
@@ -98,23 +102,3 @@ class TestCrmLeadTrialConcurrency(BaseCase):
                     with self.assertRaises(psycopg2.errors.LockNotAvailable):
                         cr1.execute(
                             "SELECT id FROM crm_lead WHERE id = %s FOR UPDATE NOWAIT", (lead_id,))
-
-    def test_extend_trial_row_lock_blocks_a_concurrent_transaction(self):
-        with self.registry.cursor() as cr:
-            env = api.Environment(cr, api.SUPERUSER_ID, {})
-            _lead, trial_org = self._create_and_issue(env, "concurrency-test-extend.example.com")
-            trial_org_id = trial_org.id
-
-        # action_extend_trial() takes exactly this lock on the Trial Org row before reading
-        # expiry_date. Hold it open here, then prove a second, fully independent transaction's
-        # identical lock attempt is rejected immediately - rather than both transactions
-        # reading the same base expiry_date and one increment silently disappearing.
-        with mute_logger('odoo.sql_db'):
-            with self.registry.cursor() as cr0:
-                cr0.execute(
-                    "SELECT id FROM hosting_trial_org WHERE id = %s FOR UPDATE", (trial_org_id,))
-                with self.registry.cursor() as cr1:
-                    with self.assertRaises(psycopg2.errors.LockNotAvailable):
-                        cr1.execute(
-                            "SELECT id FROM hosting_trial_org WHERE id = %s FOR UPDATE NOWAIT",
-                            (trial_org_id,))

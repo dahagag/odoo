@@ -10,6 +10,7 @@
                 <field name="prospect_domain"/>
                 <field name="invite_type"/>
                 <field name="state"/>
+                <field name="seats_used"/>
                 <field name="seat_cap"/>
                 <field name="expiry_date"/>
                 <field name="last_job_status"/>
@@ -22,19 +23,29 @@
         <field name="model">hosting.trial.org</field>
         <field name="arch" type="xml">
             <form string="Trial Org">
+                <header>
+                    <!-- This addon keeps only mirrored read-only state and the Issue/Extension
+                         actions (this ticket's Implementation Decisions) - Extension itself is
+                         issued from the Opportunity (crm_methodology's own wizard), never from
+                         here, since ADR-0034's authorisation gate (sales-methodology
+                         qualification) lives entirely on that side. Suspend/Wake/Destroy remain
+                         callable methods (action_wake() is what controllers/asleep.py's own Wake
+                         Up button drives), but deliberately have no button here - a staff
+                         operator's actual admin surface is the stack's own future staff app
+                         (#199), not this addon. -->
+                    <button name="action_sync_from_stack" type="object" string="Refresh from Stack"/>
+                </header>
                 <sheet>
-                    <!-- Odoo 19 requires a field referenced by any invisible= expression below
-                         to be present in the view's own field list, even hidden. -->
-                    <field name="audit_trail_available" invisible="1"/>
-                    <field name="audit_trail_steps_available" invisible="1"/>
                     <widget name="web_ribbon" title="Destroyed" bg_color="text-bg-danger" invisible="state != 'destroyed'"/>
                     <field name="state" widget="statusbar" statusbar_visible="issued,active,suspended,destroyed"/>
                     <group>
                         <group>
                             <field name="name"/>
                             <field name="prospect_domain"/>
+                            <field name="dns_subdomain_label"/>
                             <field name="invite_type"/>
                             <field name="seat_cap"/>
+                            <field name="seats_used"/>
                             <field name="expiry_date"/>
                         </group>
                         <group>
@@ -42,44 +53,15 @@
                             <field name="last_job_status"/>
                             <field name="last_job_started_at"/>
                             <field name="last_job_error"/>
+                            <field name="last_activity_at"/>
+                            <field name="snapshot_retention_until"/>
                         </group>
                     </group>
-                    <notebook>
-                        <page string="Lifecycle Audit Trail">
-                            <!-- docs/adr/0022: read live from AWS every time this record is
-                                 opened, never cached or persisted in Odoo - see
-                                 hosting.trial.org._compute_audit_trail(). -->
-                            <div class="alert alert-info" role="alert"
-                                 invisible="audit_trail_available">
-                                No audit trail is available for this Trial Org yet (it has not
-                                run a lifecycle action) or AWS could not be reached just now.
-                            </div>
-                            <group invisible="not audit_trail_available">
-                                <field name="audit_trail_action"/>
-                                <field name="audit_trail_status"/>
-                                <field name="audit_trail_started_at"/>
-                                <field name="audit_trail_stopped_at"/>
-                            </group>
-                            <div class="alert alert-warning" role="alert"
-                                 invisible="not audit_trail_available or audit_trail_steps_available">
-                                Step-by-step detail could not be retrieved for this execution;
-                                the overall status/timing above is still current.
-                                <field name="audit_trail_steps_unavailable_reason"
-                                       invisible="not audit_trail_steps_unavailable_reason"
-                                       class="fw-bold" nolabel="1"/>
-                            </div>
-                            <field name="audit_trail_steps" widget="text" readonly="1"
-                                   invisible="not audit_trail_steps_available"
-                                   nolabel="1"/>
-                        </page>
-                        <!-- docs/adr/0023: live-tailing, filterable-by-user log viewer, fed by
-                             the log webhook controller's bus.bus publications - never polling.
-                             Only meaningful once this record is saved (it subscribes to a
-                             channel keyed on its own id), so it is hidden until then. -->
-                        <page string="Live Log" invisible="not id">
-                            <widget name="hosting_trial_org_log_viewer"/>
-                        </page>
-                    </notebook>
+                    <div class="alert alert-info" role="alert">
+                        Every field above is mirrored from the administration stack (docs/adr/
+                        0034) - Odoo never decides this Trial Org's lifecycle. Use "Refresh from
+                        Stack" for the current state; a light periodic sync also keeps it current.
+                    </div>
                 </sheet>
             </form>
         </field>

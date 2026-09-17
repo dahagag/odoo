@@ -10,22 +10,19 @@ from odoo.tools.misc import babel_locale_parse, format_date, get_lang
 
 from odoo.addons.hosting_admin.models.trial_org import INVITE_TYPES
 
-# docs/contexts/hosting/CONTEXT.md: "An isolated Odoo instance ... running for a fixed window
-# (default 14 days) before Auto-Destroy." hosting_admin's own Trial Org model never sets
-# expiry_date itself (it only tracks the issued/active/suspended/destroyed state machine), so
-# this addon is responsible for the initial 14-day window.
-TRIAL_INITIAL_EXPIRY_DAYS = 14
-
 # docs/contexts/hosting/CONTEXT.md's Extension entry doesn't mandate a specific increment, only
 # that the action "pushes out a Trial Org's expiry date". 14 days is a reasonable, editable
-# starting point on the wizard, not a value the spec ties to TRIAL_INITIAL_EXPIRY_DAYS above -
-# kept as its own constant so the two can diverge later without looking like a bug.
+# starting point on the wizard - deliberately its own constant, independent of whatever initial
+# trial duration the stack itself configures (docs/adr/0034), so the two can diverge without
+# looking like a bug.
 TRIAL_DEFAULT_EXTENSION_DAYS = 14
 
 # docs/contexts/hosting/CONTEXT.md's Auto-Destroy entry: "A short-lived (7-day) database
-# snapshot is retained afterward in case of revival." This is a documented policy figure only -
-# hosting_admin (#108) has no snapshot/retention model or job at all yet, so this constant drives
-# informational display text here, not any enforced system behavior.
+# snapshot is retained afterward in case of revival." Mirrors the stack's own
+# SNAPSHOT_RETENTION_DAYS (stack/apps/api/src/org/record.ts, docs/adr/0034) - a fixed, documented
+# policy figure this constant only drives informational display text from, not a value read back
+# from hosting.trial.org.snapshot_retention_until (which reflects one specific past destroy, not
+# the general policy this countdown display is about).
 TRIAL_DATA_RETENTION_DAYS = 7
 
 
@@ -41,6 +38,31 @@ class CrmLead(models.Model):
         help="The date Auto-Destroy fires for this opportunity's Trial Org, absent a further "
              "Extension. Rendered in the viewing user's own date format/timezone by the Date "
              "widget, same as any other date field.",
+    )
+    # #197 User Stories 3/4/8: the rep's own view of the Trial Org's live state, seat usage, and
+    # any provisioning failure - mirrored (docs/adr/0034) same as trial_expiry_date above, via
+    # related fields rather than a direct hosting.trial.org form (Platform-only, docs/adr/0018 -
+    # no sales group has ACL access to open it). related='' defaults compute_sudo=True, the same
+    # thing trial_expiry_countdown below has to opt into explicitly for a plain compute='' field.
+    trial_state = fields.Selection(
+        related='trial_org_id.state', string="Trial State",
+        help="Whether the prospect can currently log in to this opportunity's Trial Org - "
+             "mirrored from the administration stack, never decided by Odoo.",
+    )
+    trial_seats_used = fields.Integer(
+        related='trial_org_id.seats_used', string="Trial Seats Used",
+        help="How many of trial_seat_cap are currently claimed - mirrored from the "
+             "administration stack.",
+    )
+    trial_seat_cap = fields.Integer(
+        related='trial_org_id.seat_cap', string="Trial Seat Cap",
+        help="Seats available on this opportunity's Trial Org, set at issuance.",
+    )
+    trial_last_job_error = fields.Text(
+        related='trial_org_id.last_job_error', string="Trial Provisioning Error",
+        help="A clear, actionable reason the Trial Org's most recent provisioning action failed "
+             "(blank whenever the last observed outcome wasn't a failure) - mirrored from the "
+             "administration stack, so the rep knows to ask for help rather than wait.",
     )
     trial_expiry_countdown = fields.Char(
         string="Trial Expiry Countdown", compute='_compute_trial_expiry_countdown',
@@ -267,12 +289,12 @@ class CrmLead(models.Model):
         self.team_id.sudo().write({'lead_properties_definition': new_definition})
 
     def action_issue_trial(self, prospect_domain, seat_cap, invite_type, invite_email=False):
-        """Issue a Trial Org for this Opportunity's prospect via hosting_admin's model (docs/adr/
-        0018, docs/adr/0026). Both invite paths lock the same ``prospect_domain`` on the Trial
-        Org; only the delivery mechanism (a specific email vs. a domain-only link) differs -
-        hosting_admin (ticket #108) has no Seat sub-model yet, so there is nothing here to
-        pre-create for a Targeted Invite beyond the Trial Org itself; the distinction is
-        recorded in the chatter message below instead."""
+        """Issue a Trial Org for this Opportunity's prospect via hosting_admin's model, which
+        itself calls through to the administration stack (docs/adr/0034, #197). Both invite
+        paths lock the same ``prospect_domain`` on the Trial Org; only the delivery mechanism (a
+        specific email vs. a domain-only link) differs - Seats are the stack's own concern now
+        (docs/adr/0034), so there is nothing here to pre-create for a Targeted Invite beyond the
+        Trial Org itself; the distinction is recorded in the chatter message below instead."""
         self.ensure_one()
         if not self.env.user.has_group('sales_team.group_sale_salesman'):
             raise AccessError(_("Only Salespeople can issue a Trial Org."))
@@ -301,15 +323,16 @@ class CrmLead(models.Model):
         # hosting.trial.org is Platform-only, cross-org data (docs/adr/0018) that an ordinary
         # salesperson has no direct access to. Elevate only after validating the caller and the
         # collected inputs above, and only for the exact create()/action_issue() this confirmed
-        # action promises. hosting.trial.org's own constraints (domain format, system-wide seat
-        # cap) still apply on top of these checks - this only stops obviously-bad input from
-        # ever reaching the elevated call.
+        # action promises. The stack's own validation (domain format, system-wide seat cap,
+        # docs/adr/0034) still applies on top of these checks, surfaced as a UserError if it
+        # rejects the request - this only stops obviously-bad input from ever reaching it. The
+        # stack itself sets expiry_date at issuance (its own configured trial duration); this
+        # addon no longer computes or supplies one.
         trial_org = self.env['hosting.trial.org'].sudo().create({
             'name': self.partner_id.name or self.name,
             'prospect_domain': prospect_domain,
             'seat_cap': seat_cap,
             'invite_type': invite_type,
-            'expiry_date': fields.Date.context_today(self) + timedelta(days=TRIAL_INITIAL_EXPIRY_DAYS),
         })
         trial_org.action_issue()
         # Narrow, post-validation sudo() boundary, same as the create() above: write() rejects
@@ -326,7 +349,11 @@ class CrmLead(models.Model):
 
     def action_extend_trial(self, additional_days=TRIAL_DEFAULT_EXTENSION_DAYS):
         """Push out the linked Trial Org's expiry date (docs/contexts/hosting/CONTEXT.md's
-        Extension), restricted to the Opportunity's owning salesperson or a sales manager."""
+        Extension), restricted to the Opportunity's owning salesperson or a sales manager. The
+        stack itself is what actually performs the write and resolves any concurrent extension
+        (#312) - this method's only remaining job is the authorisation gate ADR-0034 keeps in
+        Odoo ("the stack exposes the extension write; Odoo is the only actor permitted to invoke
+        it")."""
         self.ensure_one()
         if not (self.user_id == self.env.user or self.env.user.has_group('sales_team.group_sale_manager')):
             raise AccessError(_("Only this Opportunity's owner or a Sales Manager can extend its Trial Org."))
@@ -337,15 +364,7 @@ class CrmLead(models.Model):
             raise UserError(_("Additional days must be a positive whole number."))
         # See action_issue_trial() above: same narrow, post-validation sudo() boundary.
         trial_org = self.trial_org_id.sudo()
-        # Lock the Trial Org's own row before reading expiry_date, so two concurrent
-        # extensions (e.g. the rep and their manager both clicking Extend within the same
-        # second) serialize instead of both reading the same base date and one increment
-        # silently disappearing (CodeRabbit #131). The blocked caller resumes only once we
-        # commit, then re-reads the now-updated expiry_date as its own base.
-        self.env.cr.execute("SELECT id FROM hosting_trial_org WHERE id = %s FOR UPDATE", (trial_org.id,))
-        trial_org.invalidate_recordset(['expiry_date'])
-        base_date = trial_org.expiry_date or fields.Date.context_today(self)
-        trial_org.write({'expiry_date': base_date + timedelta(days=additional_days)})
+        trial_org.action_extend(additional_days)
         self.message_post(body=_(
             "Trial Org extended by %(days)s days, new expiry %(expiry)s.",
             days=additional_days, expiry=trial_org.expiry_date,
