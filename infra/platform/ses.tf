@@ -32,8 +32,10 @@ resource "aws_ses_domain_dkim" "sender" {
 
 data "aws_iam_policy_document" "ecs_task_ses_send" {
   statement {
-    effect    = "Allow"
-    actions   = ["ses:SendEmail", "ses:SendRawEmail"]
+    effect = "Allow"
+    # Only ses:SendEmail - SesEmailSender/AwsSdkSesGateway calls SendEmailCommand, never a raw
+    # MIME message, so ses:SendRawEmail would be an unused, broader-than-needed grant.
+    actions   = ["ses:SendEmail"]
     resources = [aws_ses_domain_identity.sender.arn]
   }
 }

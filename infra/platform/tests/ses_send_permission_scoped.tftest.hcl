@@ -114,8 +114,8 @@ run "verify_ses_send_scoped_to_the_domain_identity" {
   }
 
   assert {
-    condition     = toset(jsondecode(aws_iam_role_policy.ecs_task_ses_send.policy).Statement[0].Action) == toset(["ses:SendEmail", "ses:SendRawEmail"])
-    error_message = "The ecs_task role must be granted exactly ses:SendEmail and ses:SendRawEmail, not a broader SES permission set."
+    condition     = jsondecode(aws_iam_role_policy.ecs_task_ses_send.policy).Statement[0].Action == "ses:SendEmail"
+    error_message = "The ecs_task role must be granted exactly ses:SendEmail, not a broader SES permission set (SesEmailSender never calls SendRawEmail)."
   }
 
   assert {
