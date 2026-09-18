@@ -91,7 +91,15 @@ export class DynamoMagicLinkStore implements MagicLinkStore {
    * `undefined`, exactly like `InMemoryMagicLinkStore`'s single-threaded map delete.
    */
   async consume(token: string, now = Date.now()): Promise<MagicLinkClaim | undefined> {
-    const item = await this.gateway.dynamoDb.getItem({ table: this.table, key: { pk: this.itemKey(token) } });
+    // A strongly consistent read (CodeRabbit, PR #329): issue() and consume() can run on
+    // different instances (this ticket's own cross-instance acceptance criteria), and an
+    // eventually consistent read here could briefly miss a token another instance just wrote -
+    // wrongly rejecting a genuinely valid, just-issued link as unknown.
+    const item = await this.gateway.dynamoDb.getItem({
+      table: this.table,
+      key: { pk: this.itemKey(token) },
+      consistentRead: true,
+    });
     if (!item) return undefined;
 
     try {
