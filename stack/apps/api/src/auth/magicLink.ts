@@ -115,8 +115,12 @@ export class DynamoMagicLinkStore implements MagicLinkStore {
         ],
       });
     } catch (error) {
-      if (!(error instanceof TransactionCanceledError)) throw error;
-      // Another concurrent consume() already deleted it first.
+      // `TransactionCanceledError` also covers a transaction conflict, a capacity/throttling
+      // failure, or a validation error (CodeRabbit, PR #329) - only a `ConditionalCheckFailed`
+      // on this single-item transaction actually means "another concurrent consume() already
+      // deleted it first"; anything else must surface rather than being silently reported as an
+      // unknown/invalid token while the item is left undeleted.
+      if (!(error instanceof TransactionCanceledError) || error.cancellationReasons[0] !== 'ConditionalCheckFailed') throw error;
       return undefined;
     }
 
