@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { AwsGateway } from '@stack/aws-gateway';
+import { TransactionCanceledError } from '@stack/aws-gateway';
+import type { Env } from '../config/env';
 import { OrgNotFoundError } from '../org/errors';
-import { getOrgRecord } from '../org/record';
+import { ORGS_TABLE, getOrgRecord } from '../org/record';
 import { acceptSeat, assertDomainMatches, assertWellFormedEmail, findSeatByEmail, joinOpenInvite, type SeatRecord } from '../org/seat';
 import type { OrgTokenStore } from './orgToken';
 
@@ -22,10 +24,10 @@ export interface MagicLinkClaim {
   expiresAt: number;
 }
 
-/** Issues and consumes magic-link claims. `InMemoryMagicLinkStore` is the only implementation
- * this ticket ships, mirroring `OrgTokenStore`'s own "in-memory now, a durable store is a later
- * ticket's concern" precedent (`auth/orgToken.ts`) - losing pending claims on a restart only
- * costs the visitor a re-request, never a safety property. */
+/** Issues and consumes magic-link claims. `InMemoryMagicLinkStore` is process-local (a lost
+ * claim on restart only costs the visitor a re-request, never a safety property);
+ * `DynamoMagicLinkStore` is the durable production adapter (#326) - both implement the same
+ * contract so tests written against one are trustworthy evidence for the other's behavior. */
 export interface MagicLinkStore {
   issue(claim: MagicLinkClaim): Promise<string>;
   /** Single-use regardless of outcome: a token is deleted the moment this is called, whether or
@@ -57,6 +59,96 @@ export class InMemoryMagicLinkStore implements MagicLinkStore {
     if (claim.expiresAt < now) return undefined;
     return claim;
   }
+}
+
+/** Magic-link claims share the org record store's single table (mirrors `DynamoIdempotencyStore`,
+ * `idempotency/store.ts`, and the `dnslabel#<label>` reservation item, `org/record.ts`) under
+ * `magiclink#<token>` - a distinct item type in the same table, not a table of its own. DynamoDB's
+ * native `ttl` attribute is set to the claim's own `expiresAt` as a storage-cost backstop only -
+ * correctness comes from the `expiresAt` check in `consume` below, never from native TTL sweep
+ * timing, which is asynchronous and not immediate. */
+export class DynamoMagicLinkStore implements MagicLinkStore {
+  constructor(private readonly gateway: AwsGateway, private readonly table = ORGS_TABLE) {}
+
+  async issue(claim: MagicLinkClaim): Promise<string> {
+    const token = randomUUID();
+    await this.gateway.dynamoDb.putItem({
+      table: this.table,
+      item: this.toItem(token, claim),
+      // Guards a (vanishingly unlikely) randomUUID collision the same way every other write in
+      // this table's neighborhood is guarded (`org/record.ts`), rather than trusting uniqueness
+      // by construction alone.
+      condition: { type: 'attribute_not_exists', attribute: 'pk' },
+    });
+    return token;
+  }
+
+  /**
+   * Single-use even under two concurrent `consume` calls on the same token: both may read the
+   * item, but only one's conditional delete below can succeed - the condition is re-checked
+   * against the table at delete time, not against the value this call happened to read earlier.
+   * The loser (and anyone calling with an already-consumed or never-issued token) gets
+   * `undefined`, exactly like `InMemoryMagicLinkStore`'s single-threaded map delete.
+   */
+  async consume(token: string, now = Date.now()): Promise<MagicLinkClaim | undefined> {
+    const item = await this.gateway.dynamoDb.getItem({ table: this.table, key: { pk: this.itemKey(token) } });
+    if (!item) return undefined;
+
+    try {
+      await this.gateway.dynamoDb.transactWrite({
+        items: [
+          {
+            delete: {
+              table: this.table,
+              key: { pk: this.itemKey(token) },
+              condition: { type: 'attribute_exists', attribute: 'pk' },
+            },
+          },
+        ],
+      });
+    } catch (error) {
+      if (!(error instanceof TransactionCanceledError)) throw error;
+      // Another concurrent consume() already deleted it first.
+      return undefined;
+    }
+
+    const claim = this.fromItem(item);
+    if (claim.expiresAt < now) return undefined;
+    return claim;
+  }
+
+  private toItem(token: string, claim: MagicLinkClaim): Record<string, unknown> {
+    const item: Record<string, unknown> = {
+      pk: this.itemKey(token),
+      orgId: claim.orgId,
+      email: claim.email,
+      expiresAt: claim.expiresAt,
+      ttl: Math.floor(claim.expiresAt / 1000),
+    };
+    if (claim.seatId !== undefined) item.seatId = claim.seatId;
+    return item;
+  }
+
+  private fromItem(item: Record<string, unknown>): MagicLinkClaim {
+    return {
+      orgId: item.orgId as string,
+      email: item.email as string,
+      seatId: item.seatId as string | undefined,
+      expiresAt: item.expiresAt as number,
+    };
+  }
+
+  private itemKey(token: string): string {
+    return `magiclink#${token}`;
+  }
+}
+
+/** Chooses the in-memory or the durable `MagicLinkStore` from config (`STACK_AWS_MODE`), mirroring
+ * `buildAwsGateway` (`aws/gateway.ts`) - the one place that decides is this factory, rather than
+ * `index.ts` hardcoding `InMemoryMagicLinkStore` regardless of environment. */
+export function buildMagicLinkStore(env: Env, gateway: AwsGateway): MagicLinkStore {
+  if (env.STACK_AWS_MODE === 'fake') return new InMemoryMagicLinkStore();
+  return new DynamoMagicLinkStore(gateway);
 }
 
 export interface MagicLinkEmail {

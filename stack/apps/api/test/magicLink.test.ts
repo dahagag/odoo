@@ -1,4 +1,6 @@
+import { InMemoryAwsGateway } from '@stack/aws-gateway';
 import { describe, expect, it } from 'vitest';
+import { DynamoMagicLinkStore, InMemoryMagicLinkStore, type MagicLinkStore } from '../src/auth/magicLink';
 import { createOrg, getOrgRecord } from '../src/org/record';
 import { joinOpenInvite } from '../src/org/seat';
 import { CapturingEmailSender, buildTestServer } from './testServer';
@@ -190,5 +192,71 @@ describe('requestMagicLink/verifyMagicLink (#200 User Stories 4, 6, 12, 13)', ()
     const token = await magicLinkStore.issue({ orgId: 'org-1', email: 'e@x.com', expiresAt: Date.now() - 1 });
 
     await expect(magicLinkStore.consume(token)).resolves.toBeUndefined();
+  });
+});
+
+/** Both implementations of the `MagicLinkStore` contract must behave identically (#326's
+ * Acceptance Criteria), mirroring `DynamoIdempotencyStore`'s own `describe.each` pattern
+ * (`idempotency.test.ts`) - every store-level test below runs against both. */
+const STORES: [string, () => MagicLinkStore][] = [
+  ['InMemoryMagicLinkStore', () => new InMemoryMagicLinkStore()],
+  ['DynamoMagicLinkStore', () => new DynamoMagicLinkStore(new InMemoryAwsGateway())],
+];
+
+describe.each(STORES)('%s MagicLinkStore contract (#326)', (_name, buildStore) => {
+  it('issues a token that consume() resolves back to the original claim', async () => {
+    const store = buildStore();
+    const claim = { orgId: 'org-1', email: 'a@acme.example.com', seatId: 'seat-1', expiresAt: Date.now() + 60_000 };
+
+    const token = await store.issue(claim);
+
+    await expect(store.consume(token)).resolves.toEqual(claim);
+  });
+
+  it('issues a token with no seatId (an Open Invite Link\'s first use) that consume() still resolves correctly', async () => {
+    const store = buildStore();
+    const claim = { orgId: 'org-1', email: 'newperson@acme.example.com', expiresAt: Date.now() + 60_000 };
+
+    const token = await store.issue(claim);
+
+    await expect(store.consume(token)).resolves.toEqual(claim);
+  });
+
+  it('consuming an unknown token resolves undefined', async () => {
+    const store = buildStore();
+
+    await expect(store.consume('never-issued')).resolves.toBeUndefined();
+  });
+
+  it('is single-use: consuming the same token twice only succeeds the first time', async () => {
+    const store = buildStore();
+    const claim = { orgId: 'org-1', email: 'once@acme.example.com', expiresAt: Date.now() + 60_000 };
+    const token = await store.issue(claim);
+
+    const first = await store.consume(token);
+    const second = await store.consume(token);
+
+    expect(first).toEqual(claim);
+    expect(second).toBeUndefined();
+  });
+
+  it('an expired claim is never returned by consume()', async () => {
+    const store = buildStore();
+    const token = await store.issue({ orgId: 'org-1', email: 'e@x.com', expiresAt: Date.now() - 1 });
+
+    await expect(store.consume(token)).resolves.toBeUndefined();
+  });
+});
+
+describe('DynamoMagicLinkStore (#326)', () => {
+  it('a magic link issued through one instance is consumable through a second instance backed by the same table', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const issuer = new DynamoMagicLinkStore(gateway);
+    const verifier = new DynamoMagicLinkStore(gateway);
+    const claim = { orgId: 'org-1', email: 'shared@acme.example.com', seatId: 'seat-1', expiresAt: Date.now() + 60_000 };
+
+    const token = await issuer.issue(claim);
+
+    await expect(verifier.consume(token)).resolves.toEqual(claim);
   });
 });
