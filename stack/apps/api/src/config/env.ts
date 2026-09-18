@@ -46,6 +46,10 @@ const BaseEnvSchema = z.object({
   /** The public client app's own origin (#200) - magic-link emails point here, at
    * `/sign-in/verify?token=...`, never back at this API directly. */
   CLIENT_APP_BASE_URL: z.string().default('https://example.invalid'),
+  /** `SesEmailSender`'s (#327) `Source` address - must be a verified identity (or a verified
+   * domain's address) under the SES domain identity `infra/platform` provisions, or SES rejects
+   * the send outright. */
+  SES_FROM_ADDRESS: z.string().default('sign-in@example.invalid'),
 });
 
 /** A production process must not be able to start "successfully" against dev/test defaults -
@@ -101,6 +105,13 @@ const EnvSchema = BaseEnvSchema.superRefine((env, ctx) => {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['CLIENT_APP_BASE_URL'], message: 'CLIENT_APP_BASE_URL must be an origin only, with no path' });
       }
     }
+  }
+  if (env.SES_FROM_ADDRESS === 'sign-in@example.invalid') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['SES_FROM_ADDRESS'],
+      message: 'SES_FROM_ADDRESS must be set explicitly when NODE_ENV=production',
+    });
   }
   // Mirrors the STACK_AWS_MODE guard above: an unset STEP_FUNCTIONS_STATE_MACHINE_ARN silently
   // keeps every org on StubProvisioner (#280's buildProvisioner) - a true no-op that never

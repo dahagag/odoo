@@ -65,9 +65,10 @@ export interface MagicLinkEmail {
   url: string;
 }
 
-/** Delivers a magic-link email. `ConsoleEmailSender` is the only implementation this ticket
- * ships - a real one is an SES send, out of scope here the same way a real `OrgTokenStore` is
- * (this app has no other outbound-email need yet to justify building that seam early). */
+/** Delivers a magic-link email. `ConsoleEmailSender` is process-local, for local/test runs;
+ * `SesEmailSender` (`sesEmailSender.ts`, #327) is the durable production adapter - both
+ * implement this same contract so tests written against one are trustworthy evidence for the
+ * other's behavior, mirroring `MagicLinkStore` above. */
 export interface EmailSender {
   sendMagicLink(email: MagicLinkEmail): Promise<void>;
 }

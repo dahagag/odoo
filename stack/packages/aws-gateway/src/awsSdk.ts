@@ -18,6 +18,8 @@ import type {
   PutItemInput,
   QueryInput,
   QueryResult,
+  SendEmailInput,
+  SesGateway,
   StartExecutionInput,
   StartExecutionResult,
   StepFunctionsGateway,
@@ -478,6 +480,35 @@ class AwsSdkEc2Gateway implements Ec2Gateway {
   }
 }
 
+class AwsSdkSesGateway implements SesGateway {
+  private client: import('@aws-sdk/client-ses').SESClient | undefined;
+
+  constructor(private readonly config: AwsSdkGatewayConfig, client?: import('@aws-sdk/client-ses').SESClient) {
+    this.client = client;
+  }
+
+  private async getClient() {
+    if (!this.client) {
+      const { SESClient } = await import('@aws-sdk/client-ses');
+      this.client = new SESClient({ region: this.config.region });
+    }
+    return this.client;
+  }
+
+  async sendEmail(input: SendEmailInput): Promise<void> {
+    const { SendEmailCommand } = await import('@aws-sdk/client-ses');
+    const client = await this.getClient();
+    await client.send(new SendEmailCommand({
+      Source: input.from,
+      Destination: { ToAddresses: [input.to] },
+      Message: {
+        Subject: { Data: input.subject },
+        Body: { Text: { Data: input.textBody } },
+      },
+    }));
+  }
+}
+
 /** Test-only injection point, one field per sub-gateway's own AWS SDK client type - lets a test
  * exercise `AwsSdkGateway`'s marshaling/error-mapping against a mock `send()` without either
  * touching live AWS or having to import the lazy dynamic-import machinery itself. */
@@ -486,6 +517,7 @@ export interface AwsSdkGatewayClients {
   stepFunctions?: import('@aws-sdk/client-sfn').SFNClient;
   costExplorer?: import('@aws-sdk/client-cost-explorer').CostExplorerClient;
   ec2?: import('@aws-sdk/client-ec2').EC2Client;
+  ses?: import('@aws-sdk/client-ses').SESClient;
 }
 
 /** Real `AwsGateway`: reaches AWS through ADR-0019's narrow cross-account role. Every AWS SDK
@@ -497,11 +529,13 @@ export class AwsSdkGateway implements AwsGateway {
   readonly stepFunctions: StepFunctionsGateway;
   readonly costExplorer: CostExplorerGateway;
   readonly ec2: Ec2Gateway;
+  readonly ses: SesGateway;
 
   constructor(config: AwsSdkGatewayConfig, clients: AwsSdkGatewayClients = {}) {
     this.dynamoDb = new AwsSdkDynamoDbGateway(config, clients.dynamoDb);
     this.stepFunctions = new AwsSdkStepFunctionsGateway(config, clients.stepFunctions);
     this.costExplorer = new AwsSdkCostExplorerGateway(clients.costExplorer);
     this.ec2 = new AwsSdkEc2Gateway(config, clients.ec2);
+    this.ses = new AwsSdkSesGateway(config, clients.ses);
   }
 }

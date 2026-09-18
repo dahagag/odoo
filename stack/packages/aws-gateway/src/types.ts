@@ -206,6 +206,19 @@ export interface Ec2Gateway {
   stopInstance(instanceId: string): Promise<void>;
 }
 
+// ---- SES ---------------------------------------------------------------------------------------
+
+export interface SendEmailInput {
+  from: string;
+  to: string;
+  subject: string;
+  textBody: string;
+}
+
+export interface SesGateway {
+  sendEmail(input: SendEmailInput): Promise<void>;
+}
+
 // ---- The seam ----------------------------------------------------------------------------------
 
 /** One interface covering every AWS call the stack makes (this ticket's Implementation
@@ -215,4 +228,5 @@ export interface AwsGateway {
   readonly dynamoDb: DynamoDbGateway;
   readonly costExplorer: CostExplorerGateway;
   readonly ec2: Ec2Gateway;
+  readonly ses: SesGateway;
 }

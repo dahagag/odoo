@@ -17,3 +17,18 @@ output "administration_stack_deployed_commit_parameter_name" {
   value       = aws_ssm_parameter.administration_stack_deployed_commit.name
   description = "SSM parameter name ci.yml's release-order guard (issue #218) reads/writes."
 }
+
+output "ses_sending_domain" {
+  value       = aws_ses_domain_identity.sender.domain
+  description = "SES sending domain (SesEmailSender's SES_FROM_ADDRESS is an address under this domain, #327)."
+}
+
+output "ses_domain_verification_record" {
+  value       = aws_ses_domain_identity.sender.verification_token
+  description = "TXT record value for \"_amazonses.<ses_sending_domain>\" — add this to the sending domain's real DNS zone to complete SES domain verification (a manual, one-time step, same as infra/foundation/dns.tf's Route53 delegation)."
+}
+
+output "ses_dkim_tokens" {
+  value       = aws_ses_domain_dkim.sender.dkim_tokens
+  description = "DKIM tokens: for each token, add a CNAME from \"<token>._domainkey.<ses_sending_domain>\" to \"<token>.dkim.amazonses.com\" on the sending domain's real DNS zone."
+}

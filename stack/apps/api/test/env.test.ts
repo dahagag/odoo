@@ -53,6 +53,16 @@ describe('loadEnv - production configuration guard', () => {
     expect(() => loadEnv({ ...base, CLIENT_APP_BASE_URL: 'not a url' } as NodeJS.ProcessEnv)).toThrow(/CLIENT_APP_BASE_URL/);
   });
 
+  it('rejects NODE_ENV=production with the placeholder SES_FROM_ADDRESS (#327)', () => {
+    expect(() => loadEnv({
+      NODE_ENV: 'production',
+      STACK_AWS_MODE: 'real',
+      ORG_ROOT_DNS_ZONE: 'orgs.example.com',
+      STEP_FUNCTIONS_STATE_MACHINE_ARN: 'arn:aws:states:us-east-1:123456789012:stateMachine:org-lifecycle',
+      CLIENT_APP_BASE_URL: 'https://app.example.com',
+    } as NodeJS.ProcessEnv)).toThrow(/SES_FROM_ADDRESS/);
+  });
+
   it('accepts NODE_ENV=production once every production-safe value is set', () => {
     expect(() => loadEnv({
       NODE_ENV: 'production',
@@ -60,6 +70,7 @@ describe('loadEnv - production configuration guard', () => {
       ORG_ROOT_DNS_ZONE: 'orgs.example.com',
       STEP_FUNCTIONS_STATE_MACHINE_ARN: 'arn:aws:states:us-east-1:123456789012:stateMachine:org-lifecycle',
       CLIENT_APP_BASE_URL: 'https://app.example.com',
+      SES_FROM_ADDRESS: 'sign-in@app.example.com',
     } as NodeJS.ProcessEnv)).not.toThrow();
   });
 

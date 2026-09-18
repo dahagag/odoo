@@ -197,6 +197,34 @@ describe('AwsSdkGateway dynamoDb', () => {
   });
 });
 
+describe('AwsSdkGateway ses', () => {
+  it('sends a SendEmailCommand shaped from the input', async () => {
+    const send = vi.fn().mockResolvedValue({});
+    const gateway = new AwsSdkGateway(
+      { region: 'us-east-1', dynamoTableNames: {} },
+      { ses: { send } as never },
+    );
+
+    await gateway.ses.sendEmail({
+      from: 'sign-in@example.com',
+      to: 'someone@acme.example.com',
+      subject: 'Your sign-in link',
+      textBody: 'Use this link: https://app.example.com/sign-in/verify?token=abc',
+    });
+
+    const [command] = send.mock.calls[0];
+    expect(command.constructor.name).toBe('SendEmailCommand');
+    expect(command.input).toEqual({
+      Source: 'sign-in@example.com',
+      Destination: { ToAddresses: ['someone@acme.example.com'] },
+      Message: {
+        Subject: { Data: 'Your sign-in link' },
+        Body: { Text: { Data: 'Use this link: https://app.example.com/sign-in/verify?token=abc' } },
+      },
+    });
+  });
+});
+
 describe('AwsSdkGateway stepFunctions', () => {
   it('maps ExecutionAlreadyExists to ExecutionAlreadyExistsError, reconstructing the execution ARN', async () => {
     const send = vi.fn().mockRejectedValue(new ExecutionAlreadyExists({ message: 'exists', $metadata: {} }));

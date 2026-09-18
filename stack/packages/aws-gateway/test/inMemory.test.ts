@@ -320,3 +320,23 @@ describe('InMemoryAwsGateway ec2', () => {
     await expect(gateway.ec2.describeInstanceState('i-fake')).resolves.toBe('stopped');
   });
 });
+
+describe('InMemoryAwsGateway ses', () => {
+  it('records every send instead of reaching real SES (#327)', async () => {
+    const gateway = new InMemoryAwsGateway();
+
+    await gateway.ses.sendEmail({
+      from: 'sign-in@example.com',
+      to: 'someone@acme.example.com',
+      subject: 'Your sign-in link',
+      textBody: 'Use this link: https://app.example.com/sign-in/verify?token=abc',
+    });
+
+    expect(gateway.ses.sentEmails).toEqual([{
+      from: 'sign-in@example.com',
+      to: 'someone@acme.example.com',
+      subject: 'Your sign-in link',
+      textBody: 'Use this link: https://app.example.com/sign-in/verify?token=abc',
+    }]);
+  });
+});
