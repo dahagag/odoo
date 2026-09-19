@@ -1,5 +1,5 @@
 import { buildAwsGateway } from './aws/gateway';
-import { ConsoleEmailSender, InMemoryMagicLinkStore } from './auth/magicLink';
+import { ConsoleEmailSender, buildMagicLinkStore } from './auth/magicLink';
 import { InMemoryOrgTokenStore } from './auth/orgToken';
 import { InMemoryWakeRateLimiter } from './auth/wakeRateLimit';
 import { loadEnv } from './config/env';
@@ -20,9 +20,10 @@ async function main(): Promise<void> {
     // No `STEP_FUNCTIONS_STATE_MACHINE_ARN` configured keeps this on the no-op default (#278);
     // configuring one switches to the real Step Functions-backed provisioner (#280).
     provisioner: buildProvisioner(env, awsGateway),
-    // A durable, SES-backed pair lands once #200's magic-link flow needs to survive a restart -
-    // same "in-memory now" precedent as orgTokenStore above.
-    magicLinkStore: new InMemoryMagicLinkStore(),
+    // Durable (DynamoMagicLinkStore) under STACK_AWS_MODE=real, in-memory under the fake gateway
+    // (#326) - a real SES-backed EmailSender is still a later ticket's concern, same as
+    // orgTokenStore above.
+    magicLinkStore: buildMagicLinkStore(env, awsGateway),
     emailSender: new ConsoleEmailSender(),
     wakeRateLimiter: new InMemoryWakeRateLimiter(),
   });
