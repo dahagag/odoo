@@ -1,5 +1,5 @@
 import { buildAwsGateway } from './aws/gateway';
-import { InMemoryMagicLinkStore } from './auth/magicLink';
+import { buildMagicLinkStore } from './auth/magicLink';
 import { InMemoryOrgTokenStore } from './auth/orgToken';
 import { buildEmailSender } from './auth/sesEmailSender';
 import { InMemoryWakeRateLimiter } from './auth/wakeRateLimit';
@@ -21,9 +21,9 @@ async function main(): Promise<void> {
     // No `STEP_FUNCTIONS_STATE_MACHINE_ARN` configured keeps this on the no-op default (#278);
     // configuring one switches to the real Step Functions-backed provisioner (#280).
     provisioner: buildProvisioner(env, awsGateway),
-    // A durable magic-link store lands once #200's magic-link flow needs to survive a restart -
-    // same "in-memory now" precedent as orgTokenStore above.
-    magicLinkStore: new InMemoryMagicLinkStore(),
+    // Durable (DynamoMagicLinkStore) under STACK_AWS_MODE=real, in-memory under the fake gateway
+    // (#326) - mirroring buildAwsGateway/buildProvisioner above, rather than hardcoding one store.
+    magicLinkStore: buildMagicLinkStore(env, awsGateway),
     // Console under STACK_AWS_MODE=fake, a real SES send under STACK_AWS_MODE=real (#327) -
     // mirroring buildAwsGateway/buildProvisioner above, rather than hardcoding the console one.
     emailSender: buildEmailSender(env, awsGateway),
