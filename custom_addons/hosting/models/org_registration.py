@@ -85,9 +85,13 @@ class HostingOrgRegistration(models.Model):
         registration = self.sudo().search([], limit=1)
         if not registration:
             registration = self.sudo().create({})
-        client = self._get_org_registration_client()
         try:
-            data = client.fetch()
+            # A half-configured instance (e.g. base_url set but org_id/token not yet
+            # provisioned) must degrade to the same stated fetch_error as an unreachable stack,
+            # not raise straight through _cron_sync_from_stack and kill that cron run - the
+            # misconfiguration case User Story #5's "clear message" exists for is exactly this
+            # one, so client construction lives inside this same try as the fetch itself.
+            data = self._get_org_registration_client().fetch()
         except UserError as exc:
             registration.fetch_error = str(exc)
             return registration

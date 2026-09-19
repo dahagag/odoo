@@ -132,6 +132,19 @@ class TestOrgRegistrationSync(TransactionCase):
         self.assertFalse(registration.fetched_at)
         self.assertIn("no token yet", registration.fetch_error)
 
+    def test_a_half_configured_instance_records_a_stated_error_instead_of_raising(self):
+        # A base_url set without an org_id/token yet (e.g. before this org's own token is
+        # provisioned) must degrade the same way an unreachable stack does - not raise straight
+        # through _cron_sync_from_stack and kill that cron run (issue #201's User Story #5).
+        ICP = self.env['ir.config_parameter'].sudo()
+        ICP.set_param(CONFIG_PARAM_STACK_BASE_URL, "https://stack.example")
+        ICP.set_param(CONFIG_PARAM_ORG_ID, False)
+        ICP.set_param(CONFIG_PARAM_ORG_TOKEN, False)
+
+        registration = self.env['hosting.org.registration']._sync_from_stack()
+
+        self.assertTrue(registration.fetch_error)
+
     def test_cron_sync_calls_through_to_sync_from_stack(self):
         client = _FakeOrgRegistrationClient(result={
             'name': "Acme Trial", 'prospect_domain': "acme.example",
