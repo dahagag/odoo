@@ -1,6 +1,7 @@
 import { buildAwsGateway } from './aws/gateway';
-import { ConsoleEmailSender, buildMagicLinkStore } from './auth/magicLink';
+import { buildMagicLinkStore } from './auth/magicLink';
 import { InMemoryOrgTokenStore } from './auth/orgToken';
+import { buildEmailSender } from './auth/sesEmailSender';
 import { InMemoryWakeRateLimiter } from './auth/wakeRateLimit';
 import { loadEnv } from './config/env';
 import { DynamoIdempotencyStore } from './idempotency/store';
@@ -21,10 +22,11 @@ async function main(): Promise<void> {
     // configuring one switches to the real Step Functions-backed provisioner (#280).
     provisioner: buildProvisioner(env, awsGateway),
     // Durable (DynamoMagicLinkStore) under STACK_AWS_MODE=real, in-memory under the fake gateway
-    // (#326) - a real SES-backed EmailSender is still a later ticket's concern, same as
-    // orgTokenStore above.
+    // (#326) - mirroring buildAwsGateway/buildProvisioner above, rather than hardcoding one store.
     magicLinkStore: buildMagicLinkStore(env, awsGateway),
-    emailSender: new ConsoleEmailSender(),
+    // Console under STACK_AWS_MODE=fake, a real SES send under STACK_AWS_MODE=real (#327) -
+    // mirroring buildAwsGateway/buildProvisioner above, rather than hardcoding the console one.
+    emailSender: buildEmailSender(env, awsGateway),
     wakeRateLimiter: new InMemoryWakeRateLimiter(),
   });
 
