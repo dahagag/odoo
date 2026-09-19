@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- Light periodic sync (issue #201's Implementation Decisions): "values are cached
+             briefly with the fetch time recorded" - this only refreshes what this instance
+             caches for display, never decides anything about the org's own lifecycle. -->
+        <record id="ir_cron_hosting_org_registration_sync" model="ir.cron">
+            <field name="name">Hosting: Sync Org Registration from the administration stack</field>
+            <field name="model_id" ref="model_hosting_org_registration"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_sync_from_stack()</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="active">True</field>
+        </record>
+
+    </data>
+</odoo>

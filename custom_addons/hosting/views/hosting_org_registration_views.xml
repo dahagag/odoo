@@ -35,12 +35,22 @@
                             string="Getting Started" class="btn-secondary"/>
                 </header>
                 <sheet>
+                    <!-- A stated reason, not a blank panel, when the last sync failed (issue
+                         #201's User Story #5) - shown alongside whatever values were last
+                         confirmed current below, never in place of them. -->
+                    <div class="alert alert-warning" role="alert" invisible="not fetch_error">
+                        <strong>Could not refresh from the administration stack:</strong>
+                        <field name="fetch_error" readonly="1" nolabel="1"/>
+                    </div>
                     <group>
                         <field name="name"/>
                         <field name="prospect_domain"/>
                         <field name="seats_used"/>
                         <field name="seat_cap"/>
-                        <field name="expiry_date"/>
+                        <!-- Absent, not blank, for a Client Org - it has no Auto-Destroy expiry
+                             to show (issue #201's User Story #6). -->
+                        <field name="expiry_date" invisible="not expiry_date"/>
+                        <field name="fetched_at"/>
                     </group>
                 </sheet>
             </form>

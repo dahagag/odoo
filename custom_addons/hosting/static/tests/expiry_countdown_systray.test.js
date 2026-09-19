@@ -60,6 +60,15 @@ test("no Org Registration record renders nothing", async () => {
     expect(".o_hosting_expiry_countdown_systray").toHaveCount(0);
 });
 
+test("a Client Org's registration (no expiry_date) renders nothing, not a broken countdown", async () => {
+    // Issue #201's User Story #6: a Client Org's registration record exists but carries no
+    // expiry_date (mirrors _org_registration_from_json's own False for an absent expiryDate) -
+    // distinct from "no Org Registration record" above, which has no record at all.
+    HostingOrgRegistration._records = [{ id: 1, expiry_date: false }];
+    await mountWithCleanup(ExpiryCountdownSystray);
+    expect(".o_hosting_expiry_countdown_systray").toHaveCount(0);
+});
+
 test("a failed lookup hides the chip instead of raising", async () => {
     onRpc("hosting.org.registration", "search_read", () => {
         throw new Error("boom");
