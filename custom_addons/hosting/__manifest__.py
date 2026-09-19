@@ -21,6 +21,7 @@ for vocabulary (Trial Org, Seat, Org Registration).
         'security/ir.model.access.csv',
         'views/hosting_org_registration_views.xml',
         'views/hosting_org_registration_menus.xml',
+        'data/ir_cron.xml',
     ],
 
     'assets': {
@@ -38,5 +39,6 @@ for vocabulary (Trial Org, Seat, Org Registration).
         ],
     },
 
+    'post_init_hook': '_post_init_sync_org_registration',
     'license': 'LGPL-3',
 }
