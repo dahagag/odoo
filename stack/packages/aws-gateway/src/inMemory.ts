@@ -16,6 +16,8 @@ import type {
   PutItemInput,
   QueryInput,
   QueryResult,
+  SendEmailInput,
+  SesGateway,
   StartExecutionInput,
   StartExecutionResult,
   StepFunctionsGateway,
@@ -307,6 +309,17 @@ class InMemoryEc2Gateway implements Ec2Gateway {
   }
 }
 
+/** In-memory `SesGateway`: records every send instead of reaching real SES (#327's Testing
+ * Decisions - "a test using the in-memory `ses` fake asserts `SesEmailSender` sends the actual
+ * sign-in URL"), so a test can inspect `sentEmails` directly. */
+class InMemorySesGateway implements SesGateway {
+  readonly sentEmails: SendEmailInput[] = [];
+
+  async sendEmail(input: SendEmailInput): Promise<void> {
+    this.sentEmails.push(input);
+  }
+}
+
 /** The AWS fake this ticket's Implementation Decisions call for: "stack logic tests run with no
  * network and no credentials." Exposes its sub-gateways' concrete classes (not just the
  * `AwsGateway` interface) so a test can seed/inspect state directly, mirroring how
@@ -317,6 +330,7 @@ export class InMemoryAwsGateway implements AwsGateway {
   readonly stepFunctions = new InMemoryStepFunctionsGateway();
   readonly costExplorer = new InMemoryCostExplorerGateway();
   readonly ec2 = new InMemoryEc2Gateway();
+  readonly ses = new InMemorySesGateway();
 
   /** Test helper: moves a started execution to a terminal status, since nothing in this fake
    * runs a real state machine to reach one on its own. */
