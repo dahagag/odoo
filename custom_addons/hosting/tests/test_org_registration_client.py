@@ -11,12 +11,18 @@ from odoo.addons.hosting.models.org_registration_client import (
 
 
 class _FakeResponse:
-    def __init__(self, status_code=200, json_body=None):
+    def __init__(self, status_code=200, json_body=None, json_error=None):
         self.status_code = status_code
         self._json_body = json_body or {}
-        self.content = json.dumps(self._json_body).encode('utf-8') if json_body is not None else b''
+        self._json_error = json_error
+        self.content = (
+            b'not valid json' if json_error
+            else json.dumps(self._json_body).encode('utf-8') if json_body is not None else b''
+        )
 
     def json(self):
+        if self._json_error:
+            raise self._json_error
         return self._json_body
 
 
@@ -86,6 +92,12 @@ class TestRealOrgRegistrationClient(BaseCase):
         with self.assertRaises(ValueError):
             RealOrgRegistrationClient(base_url="https://stack.example", org_id='org-1', token=None)
 
+    def test_rejects_a_non_https_base_url(self):
+        # This org's own bearer token rides on every request this client makes (docs/adr/0036) -
+        # an http:// base_url would send it in cleartext (CWE-319).
+        with self.assertRaises(ValueError):
+            RealOrgRegistrationClient(base_url="http://stack.example", org_id='org-1', token='tok')
+
     def test_fetch_maps_the_response_to_snake_case_and_sends_the_bearer_token(self):
         session = _FakeSession(response=_FakeResponse(200, _registration_json()))
         client = RealOrgRegistrationClient(
@@ -131,6 +143,35 @@ class TestRealOrgRegistrationClient(BaseCase):
 
     def test_a_bodyless_2xx_response_raises_a_clear_user_error_not_a_key_error(self):
         session = _FakeSession(response=_FakeResponse(200, json_body=None))
+        client = RealOrgRegistrationClient(
+            base_url="https://stack.example", org_id='org-1', token='sekret', session=session)
+        with self.assertRaises(UserError):
+            client.fetch()
+
+    def test_invalid_json_on_a_2xx_response_raises_a_clear_user_error(self):
+        # A 2xx response body that isn't valid JSON at all (e.g. a misbehaving proxy's HTML
+        # error page returned with a 200) must not escape as a bare ValueError -
+        # _sync_from_stack() only catches UserError.
+        session = _FakeSession(response=_FakeResponse(200, json_error=ValueError("bad json")))
+        client = RealOrgRegistrationClient(
+            base_url="https://stack.example", org_id='org-1', token='sekret', session=session)
+        with self.assertRaises(UserError):
+            client.fetch()
+
+    def test_a_2xx_response_missing_a_required_field_raises_a_clear_user_error(self):
+        # Drop the field entirely, to trigger _org_registration_from_json's own direct-indexing
+        # KeyError.
+        body = _registration_json()
+        del body['name']
+        session = _FakeSession(response=_FakeResponse(200, body))
+        client = RealOrgRegistrationClient(
+            base_url="https://stack.example", org_id='org-1', token='sekret', session=session)
+        with self.assertRaises(UserError):
+            client.fetch()
+
+    def test_an_unparseable_expiry_date_raises_a_clear_user_error(self):
+        session = _FakeSession(response=_FakeResponse(200, _registration_json(
+            expiryDate='not-a-date')))
         client = RealOrgRegistrationClient(
             base_url="https://stack.example", org_id='org-1', token='sekret', session=session)
         with self.assertRaises(UserError):

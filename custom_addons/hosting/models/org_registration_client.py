@@ -1,6 +1,7 @@
 import logging
 from abc import ABC, abstractmethod
 from datetime import date, datetime, timedelta
+from urllib.parse import urlparse
 
 from odoo import _
 from odoo.exceptions import UserError
@@ -98,6 +99,12 @@ class RealOrgRegistrationClient(OrgRegistrationClient):
         if not token:
             error_message = "RealOrgRegistrationClient requires a token."
             raise ValueError(error_message)
+        if urlparse(base_url).scheme != 'https':
+            # This org's own bearer token (docs/adr/0036) rides on every request this client
+            # makes - an http:// base_url would send it in cleartext to anyone on the network
+            # path, the exact leak the per-org token surface exists to resist one layer up.
+            error_message = "RealOrgRegistrationClient requires an https:// base_url."
+            raise ValueError(error_message)
         self._base_url = base_url.rstrip('/')
         self._org_id = org_id
         self._token = token
@@ -138,7 +145,21 @@ class RealOrgRegistrationClient(OrgRegistrationClient):
                 "The administration stack rejected the request for this org's registration: "
                 "%(reason)s", reason=self._describe_error_response(response),
             ))
-        return _org_registration_from_json(response.json() if response.content else {})
+        try:
+            payload = response.json() if response.content else {}
+            return _org_registration_from_json(payload)
+        except UserError:
+            raise
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            # A 2xx response can still be malformed - invalid JSON, a missing field, or an
+            # unparseable expiryDate - and none of those are UserError on their own.
+            # _sync_from_stack() only catches UserError, so left unwrapped this would escape
+            # uncaught through the cron and the post-install sync instead of recording a stated
+            # fetch_error (issue #201's User Story #5).
+            raise UserError(_(
+                "The administration stack returned a malformed registration response: "
+                "%(error)s", error=exc,
+            )) from exc
 
     @staticmethod
     def _describe_error_response(response):
