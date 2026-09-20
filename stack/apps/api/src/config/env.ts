@@ -62,10 +62,8 @@ const EnvSchema = BaseEnvSchema.superRefine((env, ctx) => {
   if (env.NODE_ENV !== 'production') return;
   if (env.STACK_AWS_MODE !== 'real') {
     // The same flag also decides `buildMagicLinkStore`/`buildEmailSender` (auth/magicLink.ts,
-    // auth/sesEmailSender.ts): anything but "real" wires InMemoryMagicLinkStore and
-    // ConsoleEmailSender (#326, #327's in-memory adapters) instead of DynamoMagicLinkStore and
-    // SesEmailSender - a lost sign-in token on restart and an email that never actually sends,
-    // with no runtime signal that either happened.
+    // auth/sesEmailSender.ts) - a lost sign-in token on restart and an email that never actually
+    // sends (#326, #327's in-memory adapters), with no runtime signal that either happened.
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['STACK_AWS_MODE'],

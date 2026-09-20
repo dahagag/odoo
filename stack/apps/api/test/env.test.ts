@@ -8,9 +8,7 @@ describe('loadEnv - production configuration guard', () => {
 
   it('rejects NODE_ENV=production with fake STACK_AWS_MODE for wiring the in-memory magic-link adapters (#326, #327)', () => {
     expect(() => loadEnv({ NODE_ENV: 'production', STACK_AWS_MODE: 'fake' } as NodeJS.ProcessEnv))
-      .toThrow(/InMemoryMagicLinkStore/);
-    expect(() => loadEnv({ NODE_ENV: 'production', STACK_AWS_MODE: 'fake' } as NodeJS.ProcessEnv))
-      .toThrow(/ConsoleEmailSender/);
+      .toThrow(/(?=.*InMemoryMagicLinkStore)(?=.*ConsoleEmailSender)/);
   });
 
   it('rejects NODE_ENV=production with the placeholder ORG_ROOT_DNS_ZONE', () => {
@@ -70,7 +68,7 @@ describe('loadEnv - production configuration guard', () => {
     } as NodeJS.ProcessEnv)).toThrow(/SES_FROM_ADDRESS/);
   });
 
-  it('accepts NODE_ENV=production once every production-safe value is set', () => {
+  it('accepts NODE_ENV=production once every production-safe value is set, including STACK_AWS_MODE=real selecting the durable magic-link adapters (#326, #327)', () => {
     expect(() => loadEnv({
       NODE_ENV: 'production',
       STACK_AWS_MODE: 'real',
