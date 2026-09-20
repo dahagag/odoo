@@ -6,6 +6,13 @@ describe('loadEnv - production configuration guard', () => {
     expect(() => loadEnv({ NODE_ENV: 'production' } as NodeJS.ProcessEnv)).toThrow(/STACK_AWS_MODE/);
   });
 
+  it('rejects NODE_ENV=production with fake STACK_AWS_MODE for wiring the in-memory magic-link adapters (#326, #327)', () => {
+    expect(() => loadEnv({ NODE_ENV: 'production', STACK_AWS_MODE: 'fake' } as NodeJS.ProcessEnv))
+      .toThrow(/InMemoryMagicLinkStore/);
+    expect(() => loadEnv({ NODE_ENV: 'production', STACK_AWS_MODE: 'fake' } as NodeJS.ProcessEnv))
+      .toThrow(/ConsoleEmailSender/);
+  });
+
   it('rejects NODE_ENV=production with the placeholder ORG_ROOT_DNS_ZONE', () => {
     expect(() => loadEnv({
       NODE_ENV: 'production',
