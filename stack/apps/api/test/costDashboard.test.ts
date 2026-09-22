@@ -137,6 +137,24 @@ describe('refreshSnapshot', () => {
     expect(snapshot.lines).toEqual([{ orgId: org.orgId, orgLabel: 'Acme Evaluation', spend: 11 }]);
   });
 
+  it('splits spend by org type - Trial Org versus Client Org versus Unattributed (this ticket\'s User Stories, #3/#4)', async () => {
+    const gateway = new InMemoryAwsGateway();
+    const trial = await createOrg(gateway, { type: 'trial', name: 'Acme Evaluation', domain: 'acme.example', seatsTotal: 5 }, CONFIG);
+    await applyTransition(gateway, new StubProvisioner(), trial.orgId, 'issue');
+    const client = await createOrg(gateway, { type: 'client', name: 'Acme Inc', domain: 'acme.example', seatsTotal: 5 }, CONFIG);
+    await applyTransition(gateway, new StubProvisioner(), client.orgId, 'issue');
+    gateway.costExplorer.amounts = [
+      { start: '2025-01-01', end: '2025-01-02', unblendedCost: 10, unit: 'USD', tagValue: trial.orgId },
+      { start: '2025-01-01', end: '2025-01-02', unblendedCost: 20, unit: 'USD', tagValue: client.orgId },
+      { start: '2025-01-01', end: '2025-01-02', unblendedCost: 3, unit: 'USD', tagValue: '' },
+      { start: '2025-01-01', end: '2025-01-02', unblendedCost: 4, unit: 'USD', tagValue: 'stale-org-id' },
+    ];
+
+    const snapshot = await refreshSnapshot(gateway, REFRESH_CONFIG, date('2025-01-01'));
+
+    expect(snapshot.spendByType).toEqual({ trial: 10, client: 20, unattributed: 7 });
+  });
+
   it('surfaces a CostExplorerFailedError naming the AWS error and leaves the prior snapshot untouched', async () => {
     const gateway = new InMemoryAwsGateway();
     gateway.costExplorer.amounts = [{ start: '2025-01-01', end: '2025-01-02', unblendedCost: 5, unit: 'USD', tagValue: '' }];

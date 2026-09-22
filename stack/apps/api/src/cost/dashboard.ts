@@ -1,4 +1,5 @@
 import type { AwsGateway } from '@stack/aws-gateway';
+import type { OrgType } from '@stack/domain';
 import { getOrgRecord, ORGS_TABLE } from '../org/record';
 import { CostExplorerFailedError } from './errors';
 import { projectForecast, type OrgProjectionInput } from './projection';
@@ -104,6 +105,18 @@ export interface CostSnapshotLine {
   spend: number;
 }
 
+/** Spend split by org type, so shared/foundation cost never distorts either figure (this
+ * ticket's User Stories, #3/#4: "spend attributed to shared infrastructure separated from
+ * per-org spend" and "spend split by Trial Org versus Client Org, so that I can see the cost of
+ * selling separately from the cost of serving"). `unattributed` carries both the AWS-side
+ * Unattributed bucket (`OrgKey` `null`) and any tagged spend whose org record no longer exists -
+ * neither is a Trial Org or Client Org's own cost. */
+export interface SpendByType {
+  trial: number;
+  client: number;
+  unattributed: number;
+}
+
 export interface CostSnapshot {
   snapshotDate: string;
   totalSpend: number;
@@ -112,6 +125,7 @@ export interface CostSnapshot {
   daysRemainingOnCreditKnown: boolean;
   daysRemainingOnCredit: number;
   lines: CostSnapshotLine[];
+  spendByType: SpendByType;
   forecastExhaustionDate: string | null;
   projectedDailyBurn: number;
 }
@@ -206,6 +220,7 @@ export async function refreshSnapshot(gateway: AwsGateway, config: RefreshSnapsh
 
   const orgKeys = [...figures.perOrgSpend.keys()].filter((key): key is string => key !== null);
   const orgLabels = new Map<string, string>();
+  const orgTypes = new Map<string, OrgType>();
   const orgProjectionInputs: OrgProjectionInput[] = [];
   for (const orgId of orgKeys) {
     // A stale tag value with no matching org record degrades to Unattributed rather than
@@ -215,6 +230,7 @@ export async function refreshSnapshot(gateway: AwsGateway, config: RefreshSnapsh
     const org = await getOrgRecord(gateway, orgId);
     if (org) {
       orgLabels.set(orgId, org.name);
+      orgTypes.set(orgId, org.type);
       const windowSpend = figures.perOrgWindowSpend.get(orgId) ?? 0;
       orgProjectionInputs.push({
         orgId,
@@ -231,6 +247,14 @@ export async function refreshSnapshot(gateway: AwsGateway, config: RefreshSnapsh
     orgLabel: orgId !== null ? (orgLabels.get(orgId) ?? 'Unattributed') : 'Unattributed',
     spend,
   }));
+
+  const spendByType: SpendByType = { trial: 0, client: 0, unattributed: 0 };
+  for (const [orgId, spend] of figures.perOrgSpend.entries()) {
+    const type = orgId !== null ? orgTypes.get(orgId) : undefined;
+    if (type === 'trial') spendByType.trial += spend;
+    else if (type === 'client') spendByType.client += spend;
+    else spendByType.unattributed += spend;
+  }
 
   const unattributedWindowSpend = figures.perOrgWindowSpend.get(null) ?? 0;
   const forecast = projectForecast({
@@ -250,6 +274,7 @@ export async function refreshSnapshot(gateway: AwsGateway, config: RefreshSnapsh
     daysRemainingOnCreditKnown: figures.daysRemainingOnCredit !== null,
     daysRemainingOnCredit: figures.daysRemainingOnCredit ?? 0,
     lines,
+    spendByType,
     forecastExhaustionDate: forecast.forecastExhaustionDate,
     projectedDailyBurn: forecast.projectedDailyBurn,
   };

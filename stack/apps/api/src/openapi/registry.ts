@@ -333,6 +333,19 @@ export const CostSnapshotLineSchema = z
   })
   .openapi('CostSnapshotLine');
 
+export const SpendByTypeSchema = z
+  .object({
+    trial: z.number(),
+    client: z.number(),
+    unattributed: z.number(),
+  })
+  .openapi('SpendByType', {
+    description:
+      'Spend split by org type (this ticket\'s User Stories, #3/#4: "the cost of selling ' +
+      'separately from the cost of serving"). unattributed carries both AWS\'s own Unattributed ' +
+      'bucket and any tagged spend whose org record no longer exists.',
+  });
+
 export const CostSnapshotSchema = z
   .object({
     snapshotDate: z.string().openapi({ description: 'ISO date this snapshot was refreshed for (this ticket\'s User Stories, #12: "know the figures\' as-of time").' }),
@@ -342,6 +355,7 @@ export const CostSnapshotSchema = z
     daysRemainingOnCreditKnown: z.boolean().openapi({ description: 'false when burnRatePerDay is 0 - daysRemainingOnCredit is then meaningless, not a real projection.' }),
     daysRemainingOnCredit: z.number(),
     lines: z.array(CostSnapshotLineSchema),
+    spendByType: SpendByTypeSchema,
     forecastExhaustionDate: z.string().nullable().openapi({ description: 'The state-aware projection\'s forecast credit-exhaustion date, or null if it never exhausts within the simulation horizon.' }),
     projectedDailyBurn: z.number(),
   })

@@ -362,6 +362,26 @@
           "spend"
         ]
       },
+      "SpendByType": {
+        "type": "object",
+        "properties": {
+          "trial": {
+            "type": "number"
+          },
+          "client": {
+            "type": "number"
+          },
+          "unattributed": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "trial",
+          "client",
+          "unattributed"
+        ],
+        "description": "Spend split by org type (this ticket's User Stories, #3/#4: \"the cost of selling separately from the cost of serving\"). unattributed carries both AWS's own Unattributed bucket and any tagged spend whose org record no longer exists."
+      },
       "CostSnapshot": {
         "type": "object",
         "properties": {
@@ -391,6 +411,9 @@
               "$ref": "#/components/schemas/CostSnapshotLine"
             }
           },
+          "spendByType": {
+            "$ref": "#/components/schemas/SpendByType"
+          },
           "forecastExhaustionDate": {
             "type": "string",
             "nullable": true,
@@ -408,6 +431,7 @@
           "daysRemainingOnCreditKnown",
           "daysRemainingOnCredit",
           "lines",
+          "spendByType",
           "forecastExhaustionDate",
           "projectedDailyBurn"
         ]
