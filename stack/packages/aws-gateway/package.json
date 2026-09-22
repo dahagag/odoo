@@ -13,7 +13,8 @@
     "@aws-sdk/client-dynamodb": "^3.716.0",
     "@aws-sdk/client-ec2": "^3.716.0",
     "@aws-sdk/client-ses": "^3.716.0",
-    "@aws-sdk/client-sfn": "^3.716.0"
+    "@aws-sdk/client-sfn": "^3.716.0",
+    "@aws-sdk/client-sns": "^3.716.0"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

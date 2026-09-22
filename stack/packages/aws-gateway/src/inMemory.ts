@@ -14,10 +14,12 @@ import type {
   GetExecutionHistoryResult,
   GetItemInput,
   PutItemInput,
+  PublishInput,
   QueryInput,
   QueryResult,
   SendEmailInput,
   SesGateway,
+  SnsGateway,
   StartExecutionInput,
   StartExecutionResult,
   StepFunctionsGateway,
@@ -284,8 +286,9 @@ class InMemoryStepFunctionsGateway implements StepFunctionsGateway {
 }
 
 class InMemoryCostExplorerGateway implements CostExplorerGateway {
-  /** Seeded by tests; a real Cost Explorer call is fully out of scope here (this ticket's Out
-   * of Scope: "Cost data and projection"). */
+  /** Seeded by tests directly - this fake never filters/groups `amounts` itself (a test seeds
+   * exactly the rows it wants `getCostAndUsage` to return, `groupByTagKey`/`filterTagKey`
+   * included or not, this ticket, #198). */
   amounts: GetCostAndUsageResult['amounts'] = [];
 
   async getCostAndUsage(_input: GetCostAndUsageInput): Promise<GetCostAndUsageResult> {
@@ -320,6 +323,17 @@ class InMemorySesGateway implements SesGateway {
   }
 }
 
+/** In-memory `SnsGateway`: records every publish instead of reaching real SNS, mirroring
+ * `InMemorySesGateway` - a test asserts `publishedMessages` directly rather than trusting a mock
+ * `send()` return value (this ticket, #198). */
+class InMemorySnsGateway implements SnsGateway {
+  readonly publishedMessages: PublishInput[] = [];
+
+  async publish(input: PublishInput): Promise<void> {
+    this.publishedMessages.push(input);
+  }
+}
+
 /** The AWS fake this ticket's Implementation Decisions call for: "stack logic tests run with no
  * network and no credentials." Exposes its sub-gateways' concrete classes (not just the
  * `AwsGateway` interface) so a test can seed/inspect state directly, mirroring how
@@ -331,6 +345,7 @@ export class InMemoryAwsGateway implements AwsGateway {
   readonly costExplorer = new InMemoryCostExplorerGateway();
   readonly ec2 = new InMemoryEc2Gateway();
   readonly ses = new InMemorySesGateway();
+  readonly sns = new InMemorySnsGateway();
 
   /** Test helper: moves a started execution to a terminal status, since nothing in this fake
    * runs a real state machine to reach one on its own. */

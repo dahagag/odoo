@@ -245,3 +245,105 @@ describe('AwsSdkGateway stepFunctions', () => {
     );
   });
 });
+
+describe('AwsSdkGateway costExplorer', () => {
+  it('sends an ungrouped GetCostAndUsageCommand shaped from the input', async () => {
+    const send = vi.fn().mockResolvedValue({
+      ResultsByTime: [{
+        TimePeriod: { Start: '2025-01-01', End: '2025-01-02' },
+        Total: { UnblendedCost: { Amount: '12.50', Unit: 'USD' } },
+      }],
+    });
+    const gateway = new AwsSdkGateway(
+      { region: 'us-east-1', dynamoTableNames: {} },
+      { costExplorer: { send } as never },
+    );
+
+    const result = await gateway.costExplorer.getCostAndUsage({
+      start: '2025-01-01', end: '2025-01-08', granularity: 'DAILY',
+    });
+
+    expect(result.amounts).toEqual([{ start: '2025-01-01', end: '2025-01-02', unblendedCost: 12.5, unit: 'USD' }]);
+    const [command] = send.mock.calls[0];
+    expect(command.constructor.name).toBe('GetCostAndUsageCommand');
+    expect(command.input).toMatchObject({
+      TimePeriod: { Start: '2025-01-01', End: '2025-01-08' },
+      Granularity: 'DAILY',
+      GroupBy: undefined,
+    });
+  });
+
+  it('requests GroupBy=TAG and parses each group\'s "<key>$<value>" key into tagValue, including the untagged group', async () => {
+    const send = vi.fn().mockResolvedValue({
+      ResultsByTime: [{
+        TimePeriod: { Start: '2025-01-01', End: '2025-01-02' },
+        Groups: [
+          { Keys: ['TrialOrgId$abc-123'], Metrics: { UnblendedCost: { Amount: '5.00', Unit: 'USD' } } },
+          { Keys: ['TrialOrgId$'], Metrics: { UnblendedCost: { Amount: '2.00', Unit: 'USD' } } },
+        ],
+      }],
+    });
+    const gateway = new AwsSdkGateway(
+      { region: 'us-east-1', dynamoTableNames: {} },
+      { costExplorer: { send } as never },
+    );
+
+    const result = await gateway.costExplorer.getCostAndUsage({
+      start: '2025-01-01', end: '2025-01-08', granularity: 'DAILY', groupByTagKey: 'TrialOrgId',
+    });
+
+    expect(result.amounts).toEqual([
+      { start: '2025-01-01', end: '2025-01-02', unblendedCost: 5, unit: 'USD', tagValue: 'abc-123' },
+      { start: '2025-01-01', end: '2025-01-02', unblendedCost: 2, unit: 'USD', tagValue: '' },
+    ]);
+    const [command] = send.mock.calls[0];
+    expect(command.input.GroupBy).toEqual([{ Type: 'TAG', Key: 'TrialOrgId' }]);
+  });
+
+  it('follows NextPageToken pagination', async () => {
+    const send = vi.fn()
+      .mockResolvedValueOnce({
+        ResultsByTime: [{ TimePeriod: { Start: '2025-01-01', End: '2025-01-02' }, Total: { UnblendedCost: { Amount: '1', Unit: 'USD' } } }],
+        NextPageToken: 'page-2',
+      })
+      .mockResolvedValueOnce({
+        ResultsByTime: [{ TimePeriod: { Start: '2025-01-02', End: '2025-01-03' }, Total: { UnblendedCost: { Amount: '2', Unit: 'USD' } } }],
+      });
+    const gateway = new AwsSdkGateway(
+      { region: 'us-east-1', dynamoTableNames: {} },
+      { costExplorer: { send } as never },
+    );
+
+    const result = await gateway.costExplorer.getCostAndUsage({
+      start: '2025-01-01', end: '2025-01-08', granularity: 'DAILY',
+    });
+
+    expect(result.amounts).toHaveLength(2);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[1][0].input.NextPageToken).toBe('page-2');
+  });
+});
+
+describe('AwsSdkGateway sns', () => {
+  it('sends a PublishCommand shaped from the input', async () => {
+    const send = vi.fn().mockResolvedValue({});
+    const gateway = new AwsSdkGateway(
+      { region: 'us-east-1', dynamoTableNames: {} },
+      { sns: { send } as never },
+    );
+
+    await gateway.sns.publish({
+      topicArn: 'arn:aws:sns:us-east-1:000000000000:cost-alerts',
+      subject: 'AWS spend threshold crossed',
+      message: 'Total spend has crossed $100.',
+    });
+
+    const [command] = send.mock.calls[0];
+    expect(command.constructor.name).toBe('PublishCommand');
+    expect(command.input).toEqual({
+      TopicArn: 'arn:aws:sns:us-east-1:000000000000:cost-alerts',
+      Subject: 'AWS spend threshold crossed',
+      Message: 'Total spend has crossed $100.',
+    });
+  });
+});

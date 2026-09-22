@@ -335,6 +335,97 @@
           "orgIds"
         ]
       },
+      "CostSnapshotLine": {
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrgId"
+              },
+              {
+                "nullable": true,
+                "description": "null for the Unattributed bucket - see docs/adr/0030."
+              }
+            ]
+          },
+          "orgLabel": {
+            "type": "string"
+          },
+          "spend": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "orgId",
+          "orgLabel",
+          "spend"
+        ]
+      },
+      "CostSnapshot": {
+        "type": "object",
+        "properties": {
+          "snapshotDate": {
+            "type": "string",
+            "description": "ISO date this snapshot was refreshed for (this ticket's User Stories, #12: \"know the figures' as-of time\")."
+          },
+          "totalSpend": {
+            "type": "number"
+          },
+          "burnRatePerDay": {
+            "type": "number"
+          },
+          "creditAmount": {
+            "type": "number"
+          },
+          "daysRemainingOnCreditKnown": {
+            "type": "boolean",
+            "description": "false when burnRatePerDay is 0 - daysRemainingOnCredit is then meaningless, not a real projection."
+          },
+          "daysRemainingOnCredit": {
+            "type": "number"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CostSnapshotLine"
+            }
+          },
+          "forecastExhaustionDate": {
+            "type": "string",
+            "nullable": true,
+            "description": "The state-aware projection's forecast credit-exhaustion date, or null if it never exhausts within the simulation horizon."
+          },
+          "projectedDailyBurn": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "snapshotDate",
+          "totalSpend",
+          "burnRatePerDay",
+          "creditAmount",
+          "daysRemainingOnCreditKnown",
+          "daysRemainingOnCredit",
+          "lines",
+          "forecastExhaustionDate",
+          "projectedDailyBurn"
+        ]
+      },
+      "CostDashboardResponse": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/CostSnapshot"
+          }
+        },
+        "required": [
+          "available"
+        ]
+      },
       "Seat": {
         "type": "object",
         "properties": {
@@ -1458,6 +1549,117 @@
                 "required": false
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/cost/dashboard": {
+      "get": {
+        "description": "Reads the latest cost dashboard snapshot (this ticket, #198) - never refreshes on open (docs/adr/0030: the dashboard reads whatever the last daily refresh produced, with no AWS round-trip on open).",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "sigv4": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostDashboardResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing admin principal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/cost/refresh-snapshot": {
+      "post": {
+        "description": "Production entry point for the daily cost-dashboard refresh (this ticket, #198): reachable by an external scheduler on a recurring (daily) cadence, mirroring the sweep routes' own \"batch job behind an idempotent admin route\" shape. Also evaluates and publishes any newly crossed spend-threshold or exhaustion-horizon alert on the same call.",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "sigv4": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostSnapshot"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing admin principal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string",
+                  "description": "Seconds to wait before retrying - only set when the 409 is an Idempotency-Key still-processing conflict.",
+                  "example": "3"
+                },
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The AWS Cost Explorer call failed",
             "content": {
               "application/json": {
                 "schema": {

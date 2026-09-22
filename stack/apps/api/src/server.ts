@@ -12,6 +12,8 @@ import { idempotencyContext, requireIdempotencyKey, withIdempotency } from './id
 import type { IdempotencyStore } from './idempotency/store';
 import {
   AsleepStatusSchema,
+  CostDashboardResponseSchema,
+  CostSnapshotSchema,
   CreateOrgRequestSchema,
   ExtendOrgRequestSchema,
   InviteSeatRequestSchema,
@@ -26,6 +28,9 @@ import {
   VerifyMagicLinkResponseSchema,
 } from './openapi/registry';
 import { asleepStatus } from './org/asleep';
+import { evaluateAlerts, getAlertState, publishAlerts, putAlertState } from './cost/alerts';
+import { getLatestSnapshot, refreshSnapshot } from './cost/dashboard';
+import { CostExplorerFailedError } from './cost/errors';
 import {
   ConcurrentWriteError,
   CrossDomainInviteError,
@@ -83,6 +88,10 @@ function knownOrgErrorResponse(error: unknown, reply: FastifyReply): ReturnType<
   if (error instanceof OrgNotFoundError) {
     reply.code(404);
     return problem(404, 'No such org', error.message);
+  }
+  if (error instanceof CostExplorerFailedError) {
+    reply.code(502);
+    return problem(502, 'The AWS Cost Explorer call failed', error.message);
   }
   if (error instanceof DnsLabelInUseError) {
     reply.code(409);
@@ -369,6 +378,45 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   app.post('/v1/admin/sweeps/auto-destroy', { preHandler: requireAdminPrincipal }, async (request, reply) => respondWithIdempotentResult(
     deps, request, reply, 200, SweepResultSchema, () => sweepAutoDestroy(deps.awsGateway, deps.provisioner),
+  ));
+
+  // Cost dashboard (this ticket, #198): a plain read of the latest daily-refresh snapshot
+  // (docs/adr/0030 - never refreshed on open), and the daily refresh's own production entry
+  // point, mirroring the sweeps' "reachable by an external scheduler" shape.
+  app.get('/v1/admin/cost/dashboard', { preHandler: requireAdminPrincipal }, async (request, reply) => {
+    const snapshot = await getLatestSnapshot(deps.awsGateway);
+    return CostDashboardResponseSchema.parse(
+      snapshot ? { available: true, snapshot } : { available: false },
+    );
+  });
+
+  app.post('/v1/admin/cost/refresh-snapshot', { preHandler: requireAdminPrincipal }, async (request, reply) => respondWithIdempotentResult(
+    deps, request, reply, 200, CostSnapshotSchema, async () => {
+      const now = new Date();
+      const snapshot = await refreshSnapshot(deps.awsGateway, {
+        creditAmount: deps.env.AWS_COST_CREDIT_AMOUNT,
+        creditStartDate: new Date(deps.env.AWS_COST_CREDIT_START_DATE),
+        groupByTagKey: deps.env.AWS_COST_TAG_KEY,
+        projectionHorizonDays: deps.env.AWS_COST_ALERT_HORIZON_DAYS,
+      }, now);
+
+      // Alerts are evaluated on the same daily cadence as the snapshot (this ticket's
+      // Implementation Decisions) - a no-op when no topic is configured, exactly like every
+      // other AWS-wiring-configured switch in this file.
+      if (deps.env.COST_ALERT_SNS_TOPIC_ARN) {
+        const alertState = await getAlertState(deps.awsGateway);
+        const { alerts, nextState } = evaluateAlerts(alertState, snapshot, {
+          spendThresholds: deps.env.AWS_COST_ALERT_SPEND_THRESHOLDS,
+          horizonDays: deps.env.AWS_COST_ALERT_HORIZON_DAYS,
+        }, now);
+        if (alerts.length > 0) {
+          await publishAlerts(deps.awsGateway, deps.env.COST_ALERT_SNS_TOPIC_ARN, alerts);
+          await putAlertState(deps.awsGateway, nextState);
+        }
+      }
+
+      return snapshot;
+    },
   ));
 
   // ---- The org-facing surface: seats and invitations (#200) ------------------------------------

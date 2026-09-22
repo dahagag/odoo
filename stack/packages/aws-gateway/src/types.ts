@@ -179,6 +179,13 @@ export interface GetCostAndUsageInput {
   granularity: 'DAILY' | 'MONTHLY';
   filterTagKey?: string;
   filterTagValue?: string;
+  /** Groups the result by this cost-allocation tag key (this ticket, #198) - mutually exclusive
+   * with `filterTagKey`/`filterTagValue`, which narrow to one tag *value* instead of breaking
+   * every value out separately. When set, each `CostAmount` in the result carries the `tagValue`
+   * AWS billed it under; an empty string is AWS's own convention for spend carrying no value for
+   * this tag key at all (the gateway stays dumb about what that means - the cost dashboard, not
+   * this seam, decides an empty tagValue is "Unattributed"). */
+  groupByTagKey?: string;
 }
 
 export interface CostAmount {
@@ -186,6 +193,9 @@ export interface CostAmount {
   end: string;
   unblendedCost: number;
   unit: string;
+  /** Present only when `groupByTagKey` was requested - the raw tag value (possibly `''`) this
+   * amount was grouped under. */
+  tagValue?: string;
 }
 
 export interface GetCostAndUsageResult {
@@ -219,6 +229,21 @@ export interface SesGateway {
   sendEmail(input: SendEmailInput): Promise<void>;
 }
 
+// ---- SNS ---------------------------------------------------------------------------------------
+
+export interface PublishInput {
+  topicArn: string;
+  subject: string;
+  message: string;
+}
+
+/** Cost alerting's outbound channel (this ticket, #198, ADR-0030's amendment: "alerting is
+ * emitted to an SNS topic with email subscribed ... so another channel can be added later
+ * without changing the code that emits them"). */
+export interface SnsGateway {
+  publish(input: PublishInput): Promise<void>;
+}
+
 // ---- The seam ----------------------------------------------------------------------------------
 
 /** One interface covering every AWS call the stack makes (this ticket's Implementation
@@ -229,4 +254,5 @@ export interface AwsGateway {
   readonly costExplorer: CostExplorerGateway;
   readonly ec2: Ec2Gateway;
   readonly ses: SesGateway;
+  readonly sns: SnsGateway;
 }

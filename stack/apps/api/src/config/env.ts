@@ -50,6 +50,25 @@ const BaseEnvSchema = z.object({
    * domain's address) under the SES domain identity `infra/platform` provisions, or SES rejects
    * the send outright. */
   SES_FROM_ADDRESS: z.string().default('sign-in@example.invalid'),
+  /** Cost dashboard config (this ticket, #198, porting `hosting_admin.aws_cost_credit_amount`/
+   * `aws_cost_credit_start_date` ir.config_parameters as env vars - the stack has no
+   * runtime-admin-editable settings store, matching `TRIAL_DEFAULT_DURATION_DAYS`'s own
+   * env-driven precedent). */
+  AWS_COST_CREDIT_AMOUNT: z.coerce.number().positive().default(200),
+  AWS_COST_CREDIT_START_DATE: z.string().default('2025-01-01'),
+  /** The cost-allocation tag `refreshSnapshot` groups Cost Explorer's spend by - always
+   * `TrialOrgId` in production (docs/adr/0030), injectable for a differently-named tag. */
+  AWS_COST_TAG_KEY: z.string().default('TrialOrgId'),
+  /** Ascending dollar amounts (`alerts.ts`'s `evaluateAlerts`) - an alert fires once each is
+   * first crossed. */
+  AWS_COST_ALERT_SPEND_THRESHOLDS: z.string().default('100,150,190').transform((value) => value.split(',').map(Number)),
+  /** The state-aware projection's alerting horizon (this ticket's User Stories, #9: "an alert
+   * when the credit is forecast to exhaust within a configurable horizon"). */
+  AWS_COST_ALERT_HORIZON_DAYS: z.coerce.number().int().positive().default(14),
+  /** The SNS topic threshold/horizon alerts publish to (`infra/platform/sns.tf`) - absent (the
+   * default) keeps alert evaluation a no-op, exactly like every other AWS-wiring-configured
+   * switch in this file. */
+  COST_ALERT_SNS_TOPIC_ARN: z.string().optional(),
 });
 
 /** A production process must not be able to start "successfully" against dev/test defaults -
@@ -122,6 +141,16 @@ const EnvSchema = BaseEnvSchema.superRefine((env, ctx) => {
       code: z.ZodIssueCode.custom,
       path: ['STEP_FUNCTIONS_STATE_MACHINE_ARN'],
       message: 'STEP_FUNCTIONS_STATE_MACHINE_ARN must be set when NODE_ENV=production',
+    });
+  }
+  // Mirrors the STEP_FUNCTIONS_STATE_MACHINE_ARN guard above: an unset topic ARN silently makes
+  // every threshold/horizon crossing a no-op (this ticket's User Stories, #8/#9), with no runtime
+  // signal that alerting was never actually wired up.
+  if (!env.COST_ALERT_SNS_TOPIC_ARN) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['COST_ALERT_SNS_TOPIC_ARN'],
+      message: 'COST_ALERT_SNS_TOPIC_ARN must be set when NODE_ENV=production',
     });
   }
 });

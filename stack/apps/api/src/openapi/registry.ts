@@ -323,6 +323,74 @@ registry.registerPath({
   },
 });
 
+// ---- Cost dashboard (this ticket, #198) ---------------------------------------------------------
+
+export const CostSnapshotLineSchema = z
+  .object({
+    orgId: OrgIdSchema.nullable().openapi({ description: "null for the Unattributed bucket - see docs/adr/0030." }),
+    orgLabel: z.string(),
+    spend: z.number(),
+  })
+  .openapi('CostSnapshotLine');
+
+export const CostSnapshotSchema = z
+  .object({
+    snapshotDate: z.string().openapi({ description: 'ISO date this snapshot was refreshed for (this ticket\'s User Stories, #12: "know the figures\' as-of time").' }),
+    totalSpend: z.number(),
+    burnRatePerDay: z.number(),
+    creditAmount: z.number(),
+    daysRemainingOnCreditKnown: z.boolean().openapi({ description: 'false when burnRatePerDay is 0 - daysRemainingOnCredit is then meaningless, not a real projection.' }),
+    daysRemainingOnCredit: z.number(),
+    lines: z.array(CostSnapshotLineSchema),
+    forecastExhaustionDate: z.string().nullable().openapi({ description: 'The state-aware projection\'s forecast credit-exhaustion date, or null if it never exhausts within the simulation horizon.' }),
+    projectedDailyBurn: z.number(),
+  })
+  .openapi('CostSnapshot');
+
+/** Story 11: "a clear message when AWS cost data is unavailable, so that a stale figure is not
+ * mistaken for a current one" - `available: false` with no `snapshot` at all, rather than
+ * omitting the field or returning a zeroed-out shape a caller could mistake for real data. */
+export const CostDashboardResponseSchema = z
+  .object({
+    available: z.boolean(),
+    snapshot: CostSnapshotSchema.optional(),
+  })
+  .openapi('CostDashboardResponse');
+
+registry.registerPath({
+  method: 'get',
+  path: `/${API_VERSION}/admin/cost/dashboard`,
+  description:
+    'Reads the latest cost dashboard snapshot (this ticket, #198) - never refreshes on open ' +
+    '(docs/adr/0030: the dashboard reads whatever the last daily refresh produced, with no AWS ' +
+    'round-trip on open).',
+  tags: ['admin'],
+  security: [{ sigv4: [] }],
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: CostDashboardResponseSchema } } },
+    401: problemResponse('Missing admin principal'),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: `/${API_VERSION}/admin/cost/refresh-snapshot`,
+  description:
+    'Production entry point for the daily cost-dashboard refresh (this ticket, #198): reachable ' +
+    'by an external scheduler on a recurring (daily) cadence, mirroring the sweep routes\' own ' +
+    '"batch job behind an idempotent admin route" shape. Also evaluates and publishes any newly ' +
+    'crossed spend-threshold or exhaustion-horizon alert on the same call.',
+  tags: ['admin'],
+  security: [{ sigv4: [] }],
+  request: { headers: idempotencyKeyHeaderSchema },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: CostSnapshotSchema } } },
+    401: problemResponse('Missing admin principal'),
+    409: stillProcessingResponse('An Idempotency-Key conflict (reused for a different request, or still processing - see `Retry-After`)'),
+    502: problemResponse('The AWS Cost Explorer call failed'),
+  },
+});
+
 registry.registerPath({
   method: 'post',
   path: `/${API_VERSION}/admin/sweeps/auto-destroy`,
