@@ -182,7 +182,7 @@ Detailed glossaries are created lazily under `docs/contexts/<context>/CONTEXT.md
 
 **Addon anchors:** `hosting`, `hosting_admin`.
 
-**Business concepts:** Trial Org, Client Org, Promotion, Seat, Active, Suspended, Wake, Asleep Page, Auto-Destroy, Extension, Administration Stack, Staff App, Client App, Hosting Account, Org Region, Org Registration.
+**Business concepts:** Trial Org, Client Org, Promotion, Seat, Active, Suspended, Wake, Asleep Page, Auto-Destroy, Extension, Administration Stack, Staff App, Client App, Hosting Account, Org Region, Org Registration, Attribution Record, Break-Glass Access.
 
 **Produces:** A live, reachable evaluation or hosted environment for a given prospect or client domain; mirrored org state and cost visibility for the people who sell and operate it.
 
