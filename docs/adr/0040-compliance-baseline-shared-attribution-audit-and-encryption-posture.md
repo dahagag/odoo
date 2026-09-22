@@ -46,8 +46,9 @@ records. Shape:
 | `break_glass` | Boolean. See below — never a separate table or code path. |
 
 Read access — the audit trail #205's client-facing question ("is my access logged") answers, and
-#199's own "see this org's access history" user story — is a query over this one record filtered
-by `org_id`, returning nothing belonging to another org. There is no second, Odoo-side or
+#205's own maintainer story ("I want the access record queryable per org, so that I can produce
+one client's access history without exposing another's") — is a query over this one record
+filtered by `org_id`, returning nothing belonging to another org. There is no second, Odoo-side or
 stack-side, duplicate log to keep in sync.
 
 This mirrors ADR-0022/[ADR-0034](0034-administration-stack-owns-org-record-of-truth.md)'s existing
