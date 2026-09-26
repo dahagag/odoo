@@ -340,3 +340,21 @@ describe('InMemoryAwsGateway ses', () => {
     }]);
   });
 });
+
+describe('InMemoryAwsGateway sns', () => {
+  it('records every publish instead of reaching real SNS (this ticket, #198)', async () => {
+    const gateway = new InMemoryAwsGateway();
+
+    await gateway.sns.publish({
+      topicArn: 'arn:aws:sns:us-east-1:000000000000:cost-alerts',
+      subject: 'AWS spend threshold crossed',
+      message: 'Total spend has crossed $100.',
+    });
+
+    expect(gateway.sns.publishedMessages).toEqual([{
+      topicArn: 'arn:aws:sns:us-east-1:000000000000:cost-alerts',
+      subject: 'AWS spend threshold crossed',
+      message: 'Total spend has crossed $100.',
+    }]);
+  });
+});

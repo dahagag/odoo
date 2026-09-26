@@ -15,11 +15,13 @@ import type {
   GetCostAndUsageResult,
   GetExecutionHistoryResult,
   GetItemInput,
+  PublishInput,
   PutItemInput,
   QueryInput,
   QueryResult,
   SendEmailInput,
   SesGateway,
+  SnsGateway,
   StartExecutionInput,
   StartExecutionResult,
   StepFunctionsGateway,
@@ -425,21 +427,62 @@ class AwsSdkCostExplorerGateway implements CostExplorerGateway {
   async getCostAndUsage(input: GetCostAndUsageInput): Promise<GetCostAndUsageResult> {
     const { GetCostAndUsageCommand } = await import('@aws-sdk/client-cost-explorer');
     const client = await this.getClient();
-    const response = await client.send(new GetCostAndUsageCommand({
-      TimePeriod: { Start: input.start, End: input.end },
-      Granularity: input.granularity,
-      Metrics: ['UnblendedCost'],
-      Filter: input.filterTagKey
-        ? { Tags: { Key: input.filterTagKey, Values: [input.filterTagValue ?? ''] } }
-        : undefined,
-    }));
-    const amounts = (response.ResultsByTime ?? []).map((result) => ({
-      start: result.TimePeriod?.Start ?? input.start,
-      end: result.TimePeriod?.End ?? input.end,
-      unblendedCost: Number(result.Total?.UnblendedCost?.Amount ?? '0'),
-      unit: result.Total?.UnblendedCost?.Unit ?? 'USD',
-    }));
+    const amounts: GetCostAndUsageResult['amounts'] = [];
+    let nextPageToken: string | undefined;
+    do {
+      const response = await client.send(new GetCostAndUsageCommand({
+        TimePeriod: { Start: input.start, End: input.end },
+        Granularity: input.granularity,
+        Metrics: ['UnblendedCost'],
+        Filter: input.filterTagKey
+          ? { Tags: { Key: input.filterTagKey, Values: [input.filterTagValue ?? ''] } }
+          : undefined,
+        GroupBy: input.groupByTagKey ? [{ Type: 'TAG', Key: input.groupByTagKey }] : undefined,
+        NextPageToken: nextPageToken,
+      }));
+      for (const result of response.ResultsByTime ?? []) {
+        amounts.push(...AwsSdkCostExplorerGateway.amountsFromResult(result, input));
+      }
+      nextPageToken = response.NextPageToken;
+    } while (nextPageToken);
     return { amounts };
+  }
+
+  /** One `ResultsByTime` entry's amounts - one per `Groups` entry when `groupByTagKey` was
+   * requested (AWS's own `"<key>$<value>"` group-key format, an empty value after the `$` for
+   * spend carrying no value for that tag key at all), or the entry's own ungrouped `Total`
+   * otherwise. Mirrors `AwsCostExplorerClient._rows_from_result`
+   * (custom_addons/hosting_admin/models/cost_explorer.py, ported here) one language over. */
+  private static amountsFromResult(
+    result: {
+      TimePeriod?: { Start?: string; End?: string };
+      Total?: { UnblendedCost?: { Amount?: string; Unit?: string } };
+      Groups?: { Keys?: string[]; Metrics?: { UnblendedCost?: { Amount?: string; Unit?: string } } }[];
+    },
+    input: GetCostAndUsageInput,
+  ): GetCostAndUsageResult['amounts'] {
+    const start = result.TimePeriod?.Start ?? input.start;
+    const end = result.TimePeriod?.End ?? input.end;
+    if (!input.groupByTagKey) {
+      return [{
+        start,
+        end,
+        unblendedCost: Number(result.Total?.UnblendedCost?.Amount ?? '0'),
+        unit: result.Total?.UnblendedCost?.Unit ?? 'USD',
+      }];
+    }
+    return (result.Groups ?? []).map((group) => {
+      const key = group.Keys?.[0] ?? '';
+      const separatorIndex = key.indexOf('$');
+      const tagValue = separatorIndex === -1 ? '' : key.slice(separatorIndex + 1);
+      return {
+        start,
+        end,
+        unblendedCost: Number(group.Metrics?.UnblendedCost?.Amount ?? '0'),
+        unit: group.Metrics?.UnblendedCost?.Unit ?? 'USD',
+        tagValue,
+      };
+    });
   }
 }
 
@@ -509,6 +552,32 @@ class AwsSdkSesGateway implements SesGateway {
   }
 }
 
+class AwsSdkSnsGateway implements SnsGateway {
+  private client: import('@aws-sdk/client-sns').SNSClient | undefined;
+
+  constructor(private readonly config: AwsSdkGatewayConfig, client?: import('@aws-sdk/client-sns').SNSClient) {
+    this.client = client;
+  }
+
+  private async getClient() {
+    if (!this.client) {
+      const { SNSClient } = await import('@aws-sdk/client-sns');
+      this.client = new SNSClient({ region: this.config.region });
+    }
+    return this.client;
+  }
+
+  async publish(input: PublishInput): Promise<void> {
+    const { PublishCommand } = await import('@aws-sdk/client-sns');
+    const client = await this.getClient();
+    await client.send(new PublishCommand({
+      TopicArn: input.topicArn,
+      Subject: input.subject,
+      Message: input.message,
+    }));
+  }
+}
+
 /** Test-only injection point, one field per sub-gateway's own AWS SDK client type - lets a test
  * exercise `AwsSdkGateway`'s marshaling/error-mapping against a mock `send()` without either
  * touching live AWS or having to import the lazy dynamic-import machinery itself. */
@@ -518,6 +587,7 @@ export interface AwsSdkGatewayClients {
   costExplorer?: import('@aws-sdk/client-cost-explorer').CostExplorerClient;
   ec2?: import('@aws-sdk/client-ec2').EC2Client;
   ses?: import('@aws-sdk/client-ses').SESClient;
+  sns?: import('@aws-sdk/client-sns').SNSClient;
 }
 
 /** Real `AwsGateway`: reaches AWS through ADR-0019's narrow cross-account role. Every AWS SDK
@@ -530,6 +600,7 @@ export class AwsSdkGateway implements AwsGateway {
   readonly costExplorer: CostExplorerGateway;
   readonly ec2: Ec2Gateway;
   readonly ses: SesGateway;
+  readonly sns: SnsGateway;
 
   constructor(config: AwsSdkGatewayConfig, clients: AwsSdkGatewayClients = {}) {
     this.dynamoDb = new AwsSdkDynamoDbGateway(config, clients.dynamoDb);
@@ -537,5 +608,6 @@ export class AwsSdkGateway implements AwsGateway {
     this.costExplorer = new AwsSdkCostExplorerGateway(clients.costExplorer);
     this.ec2 = new AwsSdkEc2Gateway(config, clients.ec2);
     this.ses = new AwsSdkSesGateway(config, clients.ses);
+    this.sns = new AwsSdkSnsGateway(config, clients.sns);
   }
 }

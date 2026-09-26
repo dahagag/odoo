@@ -32,3 +32,8 @@ output "ses_dkim_tokens" {
   value       = aws_ses_domain_dkim.sender.dkim_tokens
   description = "DKIM tokens: for each token, add a CNAME from \"<token>._domainkey.<ses_sending_domain>\" to \"<token>.dkim.amazonses.com\" on the sending domain's real DNS zone."
 }
+
+output "cost_alerts_topic_arn" {
+  value       = aws_sns_topic.cost_alerts.arn
+  description = "SNS topic cost-dashboard threshold/horizon alerts publish to (this ticket, #198) — the value the administration-stack API's COST_ALERT_SNS_TOPIC_ARN env var takes once real AWS wiring is turned on (#196)."
+}
