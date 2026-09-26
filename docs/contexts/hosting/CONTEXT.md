@@ -76,3 +76,11 @@ _Avoid_: Release, build (this identifies what a specific Trial Org runs, not a s
 **Onboarding Guide**:
 The doc/video/screenshot content covering trial mechanics (seats, expiry/extension, invites, suspend/Wake) shown once on first login to any Trial Org and permanently linked from Org Registration afterward. Scoped to trial mechanics only — product/CRM education is the separate, pre-existing crm_methodology teach-doc content, not owned by Hosting Operations.
 _Avoid_: Teach doc (that's the mechanism/pipeline this content is built with, not this content itself); tutorial
+
+**Attribution Record**:
+The single, administration-stack-owned record of a state-changing staff action against an org — actor, action, org, timestamp, and whether it was Break-Glass Access. Written once per action regardless of which surface (Staff App or elsewhere) performed it, and the sole source for both the Staff App's per-org access history and the compliance access audit trail. See [ADR-0040](../../adr/0040-compliance-baseline-shared-attribution-audit-and-encryption-posture.md).
+_Avoid_: Audit log, access log (name the record, not a generic log; "audit trail" is the query over it, not the record itself)
+
+**Break-Glass Access**:
+Deliberately friction-bearing emergency staff access to an org outside the ordinary flow, recorded in the same Attribution Record as any other staff action rather than a separate or unaudited path. See [ADR-0040](../../adr/0040-compliance-baseline-shared-attribution-audit-and-encryption-posture.md).
+_Avoid_: Emergency override, backdoor (it is logged and deliberately costly, not hidden)
