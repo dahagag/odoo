@@ -42,7 +42,7 @@ const BURN_RATE_WINDOW_DAYS = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 function daysBetween(a: Date, b: Date): number {
-  return Math.round((b.getTime() - a.getTime()) / MS_PER_DAY);
+  return Math.floor((b.getTime() - a.getTime()) / MS_PER_DAY);
 }
 
 function addDays(date: Date, days: number): Date {
