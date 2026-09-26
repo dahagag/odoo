@@ -241,11 +241,21 @@ export async function refreshSnapshot(gateway: AwsGateway, config: RefreshSnapsh
     }
   }
 
-  const lines: CostSnapshotLine[] = [...figures.perOrgSpend.entries()].map(([orgId, spend]) => ({
-    orgId: orgId !== null && orgLabels.has(orgId) ? orgId : null,
-    orgLabel: orgId !== null ? (orgLabels.get(orgId) ?? 'Unattributed') : 'Unattributed',
-    spend,
-  }));
+  const linesByOrg = new Map<OrgKey, CostSnapshotLine>();
+  for (const [orgId, spend] of figures.perOrgSpend.entries()) {
+    const resolvedOrgId = orgId !== null && orgLabels.has(orgId) ? orgId : null;
+    const existing = linesByOrg.get(resolvedOrgId);
+    if (existing) {
+      existing.spend += spend;
+    } else {
+      linesByOrg.set(resolvedOrgId, {
+        orgId: resolvedOrgId,
+        orgLabel: resolvedOrgId === null ? 'Unattributed' : (orgLabels.get(resolvedOrgId) ?? 'Unattributed'),
+        spend,
+      });
+    }
+  }
+  const lines: CostSnapshotLine[] = [...linesByOrg.values()];
 
   const spendByType: SpendByType = { trial: 0, client: 0, unattributed: 0 };
   for (const [orgId, spend] of figures.perOrgSpend.entries()) {
