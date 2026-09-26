@@ -22,12 +22,24 @@ const DEFAULT_STATE: CostAlertState = { highestSpendThresholdCrossed: null, hori
 export async function getAlertState(gateway: AwsGateway): Promise<CostAlertState> {
   const item = await gateway.dynamoDb.getItem({ table: ORGS_TABLE, key: { pk: ALERT_STATE_PK } });
   if (!item) return { ...DEFAULT_STATE };
-  const { pk: _pk, ...rest } = item;
-  return rest as unknown as CostAlertState;
+  const { pk: _pk, highestSpendThresholdCrossed, ...rest } = item;
+  return {
+    ...rest,
+    highestSpendThresholdCrossed: typeof highestSpendThresholdCrossed === 'number'
+      ? highestSpendThresholdCrossed
+      : null,
+  } as CostAlertState;
 }
 
 export async function putAlertState(gateway: AwsGateway, state: CostAlertState): Promise<void> {
-  await gateway.dynamoDb.putItem({ table: ORGS_TABLE, item: { pk: ALERT_STATE_PK, ...state } });
+  const item: Record<string, unknown> = {
+    pk: ALERT_STATE_PK,
+    horizonAlertActive: state.horizonAlertActive,
+  };
+  if (state.highestSpendThresholdCrossed !== null) {
+    item.highestSpendThresholdCrossed = state.highestSpendThresholdCrossed;
+  }
+  await gateway.dynamoDb.putItem({ table: ORGS_TABLE, item });
 }
 
 export type AlertEvent =

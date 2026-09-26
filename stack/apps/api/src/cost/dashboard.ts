@@ -143,14 +143,13 @@ const SNAPSHOT_PK = 'cost-snapshot';
 function toItem(snapshot: CostSnapshot): Record<string, unknown> {
   return {
     pk: SNAPSHOT_PK,
-    ...snapshot,
-    lines: JSON.stringify(snapshot.lines),
+    payload: JSON.stringify(snapshot),
   };
 }
 
 function fromItem(item: Record<string, unknown>): CostSnapshot {
-  const { pk: _pk, lines, ...rest } = item;
-  return { ...rest, lines: JSON.parse(lines as string) } as CostSnapshot;
+  const { payload } = item;
+  return JSON.parse(payload as string) as CostSnapshot;
 }
 
 export async function getLatestSnapshot(gateway: AwsGateway): Promise<CostSnapshot | undefined> {
