@@ -411,8 +411,8 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         }, now);
         if (alerts.length > 0) {
           await publishAlerts(deps.awsGateway, deps.env.COST_ALERT_SNS_TOPIC_ARN, alerts);
-          await putAlertState(deps.awsGateway, nextState);
         }
+        await putAlertState(deps.awsGateway, nextState);
       }
 
       return snapshot;
