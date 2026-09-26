@@ -55,13 +55,22 @@ const BaseEnvSchema = z.object({
    * runtime-admin-editable settings store, matching `TRIAL_DEFAULT_DURATION_DAYS`'s own
    * env-driven precedent). */
   AWS_COST_CREDIT_AMOUNT: z.coerce.number().positive().default(200),
-  AWS_COST_CREDIT_START_DATE: z.string().default('2025-01-01'),
+  AWS_COST_CREDIT_START_DATE: z.string().refine((value) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  }, 'must be a valid YYYY-MM-DD date').default('2025-01-01'),
   /** The cost-allocation tag `refreshSnapshot` groups Cost Explorer's spend by - always
    * `TrialOrgId` in production (docs/adr/0030), injectable for a differently-named tag. */
   AWS_COST_TAG_KEY: z.string().default('TrialOrgId'),
   /** Ascending dollar amounts (`alerts.ts`'s `evaluateAlerts`) - an alert fires once each is
    * first crossed. */
-  AWS_COST_ALERT_SPEND_THRESHOLDS: z.string().default('100,150,190').transform((value) => value.split(',').map(Number)),
+  AWS_COST_ALERT_SPEND_THRESHOLDS: z.string().default('100,150,190')
+    .transform((value) => value.split(',').map(Number))
+    .refine(
+      (thresholds) => thresholds.length > 0 && thresholds.every((n) => Number.isFinite(n) && n > 0),
+      'must be a comma-separated list of positive numbers',
+    ),
   /** The state-aware projection's alerting horizon (this ticket's User Stories, #9: "an alert
    * when the credit is forecast to exhaust within a configurable horizon"). */
   AWS_COST_ALERT_HORIZON_DAYS: z.coerce.number().int().positive().default(14),
