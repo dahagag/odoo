@@ -21,8 +21,10 @@ names this exact plan: "the self-healing boot that reinitialises a missing datab
 workaround and becomes a requirement: it is the shape staging deliberately adopts on every deploy
 (fresh demo data per deploy, #203)." Staging's own entrypoint reuses that reasoning rather than
 inventing a third mechanism, adding only the drop-and-recreate step ahead of the existing
-self-heal check, and installing with `--with-demo=all` rather than the bare `--with-demo` the
-Render entrypoint uses.
+self-heal check, then installing with the same bare `--with-demo` flag both
+`docker/odoo-render-entrypoint.sh` and `docker/odoo-dev-entrypoint.sh` already use — Odoo 19
+defines `--with-demo` as a boolean-only flag (`odoo/tools/config.py`'s `action='store_true'`), so
+there is no `=all` variant to opt into.
 
 **Accepted trade-off:** a failed seed leaves staging without a database. The environment is
 disposable by definition, so a redeploy is the recovery, not a rollback.
@@ -48,11 +50,17 @@ considered and set aside for this ticket.
 
 ## Early-adopter Odoo group and data scope
 
-A new dedicated group implied by `base.group_portal` (e.g. `hosting.group_early_adopter`) — not
-`base.group_user` (no addon's ACL in this repo, including `hosting`'s own read grant on
+A new dedicated group that **implies** `base.group_portal` (e.g. `hosting.group_early_adopter`)
+— not `base.group_user` (no addon's ACL in this repo, including `hosting`'s own read grant on
 `hosting.org.registration`, was designed with a login reachable from outside the company in
 mind), and not stock `base.group_portal` directly (a thin wrapper keeps this ticket's own grants
 from silently widening if some other addon later broadens what portal users can see generally).
+The direction matters: Odoo's `implied_ids` grants a group's members whatever the *implied*
+groups grant, not the reverse — a group *implied by* `base.group_portal` would mean every portal
+user on the instance, not just named early adopters, automatically inherits this group's write
+access, which is exactly the authorization bypass this design needs to avoid. A dedicated group
+that implies `base.group_portal` has the right shape instead: its own members gain portal's
+baseline behavior too, but portal membership alone grants nothing back onto them.
 
 - **One shared demo dataset**, not per-adopter isolated data. This system's real multi-tenancy
   model is instance-per-org (`infra/modules/trial_org`, one Terraform instantiation and state

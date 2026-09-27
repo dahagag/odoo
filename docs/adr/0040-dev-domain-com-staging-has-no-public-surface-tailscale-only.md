@@ -39,18 +39,23 @@ building its first public-ingress design from scratch.
 Odoo — real precedent for the mechanism (`ADR-0017`'s superseding note leans on this same fact to
 argue CI itself doesn't need in-network access, since "what genuinely needs in-network access —
 reaching Odoo itself — is now over Tailscale"), just not yet built anywhere in this repo's
-Terraform. Two AWS-native alternatives were priced against it for this ticket, using AWS's own
-published rates (aws.amazon.com/vpn/pricing, aws.amazon.com/private-ca/pricing) and Tailscale's
-published plan pricing (tailscale.com/pricing), both checked 2026-09-27 — revisit these figures
-if this decision is questioned later, since both vendors' pricing can change:
+Terraform. Two AWS-native alternatives were priced against it for this ticket. The full worked
+comparison, with every assumption stated explicitly (region, subnet-association count, assumed
+connection-hours, and the ACM Private CA alternative), is recorded in
+[`docs/research/aws-client-vpn-vs-tailscale-staging-access-cost.md`](../research/aws-client-vpn-vs-tailscale-staging-access-cost.md) —
+this section summarizes its conclusions; re-fetch both vendors' pricing pages before treating the
+numbers below as current if this decision is questioned later.
 
 - **AWS Client VPN**, certificate-only (mutual TLS, no SAML/IdP — this org has none). Its cost is
   dominated by a fixed per-subnet-association-hour fee that runs continuously regardless of
-  usage: roughly $155/month for one shared endpoint with a self-managed CA, up to ~$1,655/month
-  for three endpoints (one per access tier) each with its own ACM Private CA (~$400/month/CA).
-  Pure certificate auth also carries no group claims, so distinguishing engineering from
-  stakeholders from early-adopters at the network layer would need multiple endpoints, not
-  authorization rules on one.
+  usage, assuming ~13 users at ~17 connection-hours/user/month and 2 subnet associations per
+  endpoint (one per AZ, for HA): ≈$157/month for one shared endpoint with a self-managed CA, or
+  ≈$449/month for three endpoints (one per access tier) — a topology delta of ≈$292/month driven
+  entirely by four extra always-on subnet associations, not by usage. Using ACM Private CA instead
+  of a self-managed CA (one CA per endpoint) adds ≈$411/month (one endpoint) or ≈$1,212/month
+  (three endpoints) on top of those figures. Pure certificate auth also carries no group claims,
+  so distinguishing engineering from stakeholders from early-adopters at the network layer would
+  need multiple endpoints, not authorization rules on one.
 - **AWS SSO (IAM Identity Center) + SSM Session Manager port-forwarding**, reusing the identity
   system [ADR-0038](0038-migrate-container-registry-from-ghcr-to-ecr.md) already adopted for
   developer ECR pulls. Free of new recurring cost for engineering staff, but does not extend to
@@ -58,11 +63,13 @@ if this decision is questioned later, since both vendors' pricing can change:
   guest support is built for occasional cross-account access, not a named-client product-
   evaluation login.
 
-**Tailscale Standard** is a flat $8/user/month and covers up to 3 ACL groups — exactly the three
-tiers this design needs — cheaper than every AWS-native option compared, at the small headcounts
-a "sized small, proving ground" environment expects (e.g. 13 total users across all tiers is
-~$104/month, versus AWS Client VPN's fixed association cost that would exceed that regardless of
-headcount). One shared endpoint's per-user pricing model also avoids the "one endpoint vs. three"
+**Tailscale Standard** is a flat $8/user/month and supports up to 10 ACL groups (Personal, the
+free tier, caps at 3 groups and 6 users — enough groups but too few users; Premium raises the
+ACL-group ceiling to 300 at $18/user/month, unneeded headroom for this design's three groups) —
+cheaper than every AWS-native option compared, at the small headcounts a "sized small, proving
+ground" environment expects (e.g. 13 total users across all tiers is ~$104/month on Standard,
+versus AWS Client VPN's fixed association cost that would exceed that regardless of headcount).
+One shared endpoint's flat per-user pricing model also avoids the "one endpoint vs. three"
 trade-off that dominates Client VPN's bill: a single tailnet with three ACL groups is both the
 cheapest and the least infrastructure to operate.
 
@@ -73,8 +80,8 @@ cheapest and the least infrastructure to operate.
 - **`group:stakeholders`** — narrower: Odoo UI only, no admin/ops surfaces, paired with a new
   restricted Odoo group (not full `base.group_user`).
 - **`group:early-adopters`** — narrowest, scoped to the Odoo application itself, paired with a
-  new Odoo group implied by `base.group_portal` (see ADR-0041 for the Odoo-side group and
-  record-rule design).
+  new Odoo group that implies `base.group_portal` (see ADR-0041 for the Odoo-side group and
+  record-rule design, and why the implication direction matters).
 
 Network-level ACL group membership and the matching Odoo-side group are enforced independently —
 being on the tailnet gets a user to the instance, but what they can do once there is still gated
