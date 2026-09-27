@@ -35,10 +35,14 @@ building its first public-ingress design from scratch.
 
 ## Why Tailscale, not an AWS-native VPN
 
-[ADR-0017](0017-self-hosted-ci-runner-in-platform-account.md) already commits the self-hosted CI
-runner to reaching Odoo "over Tailscale" once it exists — real precedent for the mechanism, just
-not yet built anywhere in this repo's Terraform. Two AWS-native alternatives were priced against
-it for this ticket, using AWS's own published rates:
+[ADR-0037](0037-odoo-has-no-public-ingress.md) already commits to Tailscale as how staff reach
+Odoo — real precedent for the mechanism (`ADR-0017`'s superseding note leans on this same fact to
+argue CI itself doesn't need in-network access, since "what genuinely needs in-network access —
+reaching Odoo itself — is now over Tailscale"), just not yet built anywhere in this repo's
+Terraform. Two AWS-native alternatives were priced against it for this ticket, using AWS's own
+published rates (aws.amazon.com/vpn/pricing, aws.amazon.com/private-ca/pricing) and Tailscale's
+published plan pricing (tailscale.com/pricing), both checked 2026-09-27 — revisit these figures
+if this decision is questioned later, since both vendors' pricing can change:
 
 - **AWS Client VPN**, certificate-only (mutual TLS, no SAML/IdP — this org has none). Its cost is
   dominated by a fixed per-subnet-association-hour fee that runs continuously regardless of
@@ -90,3 +94,15 @@ production equivalent to share this design with.
 - If production ever builds its own Tailscale wiring (ADR-0037's still-unbuilt intent), it starts
   from a flat single-group model; this ADR's tiering does not need to be reconciled with it
   unless a future ticket explicitly extends tiering to production too.
+
+## Why this doesn't touch `docs/contexts/hosting/CONTEXT.md`
+
+`docs/contexts/hosting/CONTEXT.md`'s own boundary is Trial/Client Org infrastructure "outside the
+primary agentic-erp deployment" (`CONTEXT-MAP.md`'s Hosting Operations entry). `dev.domain.com`
+*is* that primary deployment (staging of it), which #203's own Out of Scope already separates
+from Hosting Operations ("Client orgs on staging... belong to the Hosting Account, and staging
+must not reach it"). The access-tier vocabulary this ADR introduces (engineering/stakeholders/
+early-adopters, the Tailscale ACL groups, the new Odoo groups) is deploy/access-control language
+for agentic-erp's own instance, not a Hosting Operations business concept, so it stays here and
+in [ADR-0041](0041-staging-fresh-database-per-deploy-and-seeded-access-tiers.md) rather than
+joining that glossary.
