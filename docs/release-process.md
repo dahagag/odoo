@@ -21,6 +21,32 @@ not yet a production-shaped two-environment split. A future ticket that actually
 isolated production environment needs a second `infra/platform` instance (its own state key, its
 own ECS cluster/service) — nothing here assumes one exists.
 
+## dev.domain.com: a separate staging environment for Odoo itself
+
+Everything above is about `infra/platform`'s administration-stack API. `dev.domain.com`
+([#203](https://github.com/dahagag/odoo/issues/203)) is a different thing: agentic-erp's own
+Odoo, redeployed from a dropped-and-reseeded database on every `dev/19.0` merge, in its own
+Terraform root module in the Platform Account. Don't conflate the two "staging" environments —
+one proves the administration-stack deploy pipeline, the other proves the (separate, still being
+built) Odoo deploy pipeline ahead of production cutover (#204).
+
+`dev.domain.com` has **no public listener at all** — engineering staff, internal stakeholders,
+and named early-adopter clients all reach it over Tailscale, in one tailnet with three ACL groups
+paired to matching Odoo-side access groups. This was a deliberate change from the ticket's
+original design (a public, WAF-protected surface for early adopters), made after AWS Client VPN's
+real pricing showed it costing more than Tailscale at this environment's expected headcounts,
+regardless of topology. See
+[ADR-0040](adr/0040-dev-domain-com-staging-has-no-public-surface-tailscale-only.md) for the full
+reasoning and cost comparison, and
+[ADR-0041](adr/0041-staging-fresh-database-per-deploy-and-seeded-access-tiers.md) for the
+fresh-database mechanism and the seeded-account access model.
+
+Because there is no public listener, `dev.domain.com`'s network posture does **not** diverge from
+production's own private-Odoo stance ([ADR-0037](adr/0037-odoo-has-no-public-ingress.md)) the way
+the original ticket anticipated — a known gap this document would otherwise need to flag no
+longer applies. If a future ticket reintroduces any public surface on staging, that asymmetry
+note belongs here.
+
 ## Cutting a release
 
 1. Decide the version bump from what changed since the last tag, per ADR-0004's semantics:
