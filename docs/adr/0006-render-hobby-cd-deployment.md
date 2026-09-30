@@ -47,9 +47,15 @@ We accepted two real costs of the free tier to keep this a zero-recurring-cost P
   database cannot be assumed to persist indefinitely. Render's **Pre-Deploy Command** feature
   would normally run migrations/seeding as a distinct pipeline step, but it's paid-tier only.
   Instead, the Odoo container's own start command checks on every boot whether the database
-  is initialized and, if not, runs `-i crm_methodology --with-demo=all` before starting the
+  is initialized and, if not, runs `-i crm_methodology --with-demo` before starting the
   server — so a silent DB expiry heals itself on the next deploy or manual restart, with no
-  separate recreation step.
+  separate recreation step. (**Correction:** this originally read `--with-demo=all`; Odoo 19's
+  `--with-demo` is boolean-only, `action='store_true'` in `odoo/tools/config.py` — no `=all`
+  variant ever existed. Caught while resolving CodeRabbit's review of the same error, freshly
+  reintroduced in [ADR-0040](0040-dev-domain-com-staging-has-no-public-surface-tailscale-only.md)
+  and [ADR-0041](0041-staging-fresh-database-per-deploy-and-seeded-access-tiers.md), on
+  [PR #343](https://github.com/dahagag/odoo/pull/343). `docker/odoo-render-entrypoint.sh`'s
+  actual invocation always used the bare flag; only this description was wrong.)
 - Free web services spin down after 15 minutes idle (~1 minute cold-start delay on the next
   request). We accepted this rather than adding a keep-alive pinger: warming the tab before a
   client call is simpler than maintaining an always-on workaround for a POC.
