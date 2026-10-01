@@ -31,14 +31,26 @@ class TestStagingDeployVerification(TransactionCase):
             "crm_methodology must be in state 'installed' for staging to be considered seeded",
         )
 
-    def test_staging_seed_users_present_with_expected_groups_and_no_password(self):
-        """ADR-0041 Testing section: 'after a seed, the expected logins exist with the expected
-        groups, and no account is created with a committed or default password.' These are the
-        staging seed accounts from
+    def test_staging_seed_users_present_with_expected_groups(self):
+        """#203 Testing Decisions / #342: the post-deploy check verifies "the expected modules
+        are installed, and demo data is present" - login existence and group membership, not
+        password state. These are the staging seed accounts from
         custom_addons/crm_methodology/data/crm_methodology_staging_seed_users.xml (#339) -
         unconditional 'data' (not 'demo'), so they exist whenever crm_methodology is installed,
         matching the entrypoint's unconditional '-i crm_methodology' self-heal (no --with-demo
-        needed for these specific records)."""
+        needed for these specific records).
+
+        Deliberately does NOT assert on password state (Security Architecture Review on PR #346):
+        this test class is tagged 'dev_e2e_smoke_test_post_deploy' and runs in two different
+        moments - regular CI against a fresh database (seed step never ran, passwords genuinely
+        absent) and the real post-deploy smoke check against live staging (run by
+        smoke-check-staging-odoo over ECS Exec, after docker/odoo-staging-entrypoint.sh's seed
+        step has already set real passwords from SSM). A single "password must be absent"
+        assertion can't be correct in both contexts at once - on every real, successful deploy it
+        would fail precisely because seeding worked. ADR-0041's "no account is created with a
+        committed or default password" is the seed *data's* own invariant instead, already
+        asserted at the correct layer (install-time, before any SSM-sourced password can exist)
+        by custom_addons/crm_methodology/tests/test_crm_methodology_staging_access.py."""
         users = self.env['res.users'].sudo()
         early_adopter_group = self.env.ref('crm_methodology.group_staging_early_adopter')
         stakeholder_group = self.env.ref('crm_methodology.group_staging_stakeholder')
@@ -49,16 +61,6 @@ class TestStagingDeployVerification(TransactionCase):
             'stakeholder-ops': stakeholder_group,
         }
 
-        # res.users.password is a compute field that always returns '' in Odoo 19, including
-        # under sudo() - asserting on it directly would pass unconditionally regardless of what's
-        # actually stored. Read the stored hash straight from res_users instead, matching
-        # custom_addons/crm_methodology/tests/test_crm_methodology_staging_access.py's approach.
-        self.env.cr.execute(
-            "SELECT login, password FROM res_users WHERE login = ANY(%s)",
-            (list(expected_logins),),
-        )
-        password_hashes = dict(self.env.cr.fetchall())
-
         for login, expected_group in expected_logins.items():
             user = users.search([('login', '=', login)], limit=1)
             self.assertTrue(user, f"expected seeded staging login {login!r} not found")
@@ -66,10 +68,4 @@ class TestStagingDeployVerification(TransactionCase):
                 expected_group,
                 user.group_ids,
                 f"{login!r} must carry the {expected_group.name!r} group",
-            )
-            self.assertFalse(
-                password_hashes.get(login),
-                f"{login!r} must have no stored password hash until the staging entrypoint's "
-                "SSM-sourced post-install step (#338) sets one - a non-empty password here "
-                "would mean a committed or default credential.",
             )

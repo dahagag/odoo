@@ -723,6 +723,30 @@ data "aws_iam_policy_document" "platform_staging_odoo_deploy" {
     resources = [local.staging_odoo_service_arn]
   }
 
+  # .github/actions/smoke-check-staging-odoo (#342) assumes this role directly and calls
+  # `aws ecs describe-tasks`/`list-tasks`/`execute-command` against the running task over the
+  # ECS/SSM control plane — staging has no other network path in (ADR-0040). Without this, the
+  # post-deploy smoke check AccessDenieds before it ever reaches the container (Security
+  # Architecture Review, PR #346). Scoped via the ecs:cluster condition key, not a task-ARN
+  # resource pattern: task IDs are dynamic (assigned at RunTask, only discoverable via ListTasks
+  # itself — a chicken-and-egg problem for pre-enumerating them), and AWS's own published
+  # least-privilege examples for ECS Exec scope exactly these three actions this way.
+  statement {
+    sid    = "SmokeCheckStagingOdooTask"
+    effect = "Allow"
+    actions = [
+      "ecs:DescribeTasks",
+      "ecs:ListTasks",
+      "ecs:ExecuteCommand",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "ArnEquals"
+      variable = "ecs:cluster"
+      values   = [local.staging_odoo_ecs_cluster_arn]
+    }
+  }
+
   statement {
     sid    = "ManageStagingOdooTaskRoles"
     effect = "Allow"

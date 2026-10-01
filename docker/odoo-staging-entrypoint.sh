@@ -131,6 +131,17 @@ fi
 # account is a data-file change plus an SSM parameter, never a Terraform or entrypoint change.
 # Passwords are never written to disk; they're only ever held in-process, matching how
 # ODOO_ADMIN_PASSWORD/POSTGRES_PASSWORD already flow through this same entrypoint.
+#
+# Also neutralizes Odoo's own stock demo credentials (Security Architecture Review, PR #346):
+# odoo/addons/base/data/res_users_data.xml unconditionally creates login "admin"/password
+# "admin" (not demo-gated), and --with-demo additionally creates login "demo"/password "demo"
+# (res_users_demo.xml) — both well-known defaults, both otherwise reachable by anyone on the
+# tailnet (ADR-0040 puts every access tier, including early-adopters, on the same network path),
+# and both re-created fresh on every deploy since the database is dropped and recreated each
+# time (unlike a one-time install). ODOO_ADMIN_PASSWORD only sets odoo.conf's admin_passwd (the
+# database-manager master password) — a different thing from the "admin" res.users login's own
+# password, which nothing else here ever touches. This is exactly the bypass #339's own tiered
+# access model (early-adopter/stakeholder groups, never base.group_user) exists to prevent.
 seed_account_passwords() {
     accounts_json=$(
         aws ssm get-parameters-by-path \
@@ -143,6 +154,7 @@ seed_account_passwords() {
     )
 
     SEED_ACCOUNTS_JSON="$accounts_json" SEED_ACCOUNT_PASSWORD_SSM_PARAMETER_PATH="$SEED_ACCOUNT_PASSWORD_SSM_PARAMETER_PATH" \
+        ODOO_ADMIN_PASSWORD="$ODOO_ADMIN_PASSWORD" \
         python3 /workspace/odoo-bin shell --config="$runtime_config" --database="$ODOO_DB" --no-http <<'PY'
 import json
 import os
@@ -152,16 +164,15 @@ import sys
 accounts = json.loads(os.environ["SEED_ACCOUNTS_JSON"])
 path_prefix = os.environ["SEED_ACCOUNT_PASSWORD_SSM_PARAMETER_PATH"].rstrip("/")
 
+control_chars = re.compile(r"[\x00-\x1f\x7f]")
+missing_logins = []
+updated = 0
+
 if not accounts:
     print(
         f"No seed-account parameters found under {path_prefix} — skipping account seeding.",
         file=sys.stderr,
     )
-    sys.exit(0)
-
-control_chars = re.compile(r"[\x00-\x1f\x7f]")
-missing_logins = []
-updated = 0
 
 for entry in accounts:
     name = entry["Name"]
@@ -186,8 +197,24 @@ if missing_logins:
         + " — seed data (crm_methodology) and SSM parameters have drifted apart."
     )
 
+# Neutralize Odoo's own stock demo credentials - reuse the already-provisioned admin secret
+# for "admin" (one fewer secret to provision) and deactivate "demo" entirely (nobody needs a
+# stock demo salesperson login on dev.domain.com). An empty seed-accounts path must never skip
+# this (caught live: an earlier draft's early sys.exit(0) on an empty accounts list skipped this
+# entirely) - fixed by removing that early return, so this is unreachable only via the same
+# sys.exit paths above (a malformed password or a missing seed login), which abort the whole
+# entrypoint under set -eu before Odoo ever starts serving, so stock credentials are never left
+# reachable live either way.
+Users = env["res.users"].sudo()
+admin_user = Users.search([("login", "=", "admin")], limit=1)
+if admin_user:
+    admin_user.write({"password": os.environ["ODOO_ADMIN_PASSWORD"]})
+demo_user = Users.search([("login", "=", "demo")], limit=1)
+if demo_user:
+    demo_user.write({"active": False})
+
 env.cr.commit()
-print(f"Seeded {updated} account password(s).", file=sys.stderr)
+print(f"Seeded {updated} account password(s); reset admin/demo stock credentials.", file=sys.stderr)
 PY
 }
 

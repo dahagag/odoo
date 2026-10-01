@@ -163,6 +163,19 @@ run "verify_platform_staging_odoo_deploy_trust_and_permissions" {
     error_message = "ManageStagingOdooLogGroup must cover exactly infra/staging-odoo's three log groups (postgres/odoo/tailscale, one per task container) - not administration_stack's single log group."
   }
 
+  # .github/actions/smoke-check-staging-odoo (#342) assumes this role directly to run ECS Exec
+  # against the running task (Security Architecture Review, PR #346).
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.platform_staging_odoo_deploy.json).Statement :
+      statement.Sid == "SmokeCheckStagingOdooTask"
+      && toset(flatten([statement.Action])) == toset(["ecs:DescribeTasks", "ecs:ListTasks", "ecs:ExecuteCommand"])
+      && flatten([statement.Resource]) == ["*"]
+      && try(statement.Condition.ArnEquals["ecs:cluster"], null) == "arn:aws:ecs:us-east-1:333333333333:cluster/staging-odoo"
+    ])
+    error_message = "SmokeCheckStagingOdooTask must grant exactly ecs:DescribeTasks/ListTasks/ExecuteCommand, scoped via the ecs:cluster condition key to exactly infra/staging-odoo's own cluster - not a bare resource=\"*\" with no condition."
+  }
+
   # This role carries none of staging_odoo_deploy's own Hosting-Account-side statements — the S3
   # state-backend grant, the ECR retag grant, or an sts:AssumeRole back onto itself — same split
   # platform_administration_stack_deploy's own test proves for staging_deploy.
