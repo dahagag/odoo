@@ -255,6 +255,7 @@ user_id = fields.Many2one('res.users', 'User', default=lambda self: self.env.use
 | `context` | Context for operations |
 | `default` | Default value |
 | `index` | Add database index |
+| `check_company` | Restrict to records of a compatible company; enforced on create/write when the model sets `_check_company_auto = True` |
 
 ```python
 partner_id = fields.Many2one(
@@ -263,7 +264,7 @@ partner_id = fields.Many2one(
     required=True,
     ondelete='cascade',
     domain=[('customer_rank', '>', 0)],
-    default=lambda self: self.env.partner,
+    default=lambda self: self.env.user.partner_id,
 )
 ```
 

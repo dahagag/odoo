@@ -87,7 +87,7 @@ When defining actions from XML data files:
 | Attribute | Description |
 |-----------|-------------|
 | `view_mode` | Comma-separated list of view types (e.g., `list,form`) |
-| `view_ids` | Many2many to view objects |
+| `view_ids` | One2many to view objects (`ir.actions.act_window.view`, via `act_window_id`) |
 | `view_id` | Specific view to add to views list |
 
 ### Using ir.actions.act_window.view
@@ -189,7 +189,7 @@ Available variables in server actions:
 | `report_type` | string | `qweb-pdf` or `qweb-html` |
 | `report_name` | string | External ID of the qweb template |
 | `print_report_name` | string | Python expression for report name |
-| `groups_id` | Many2many | Groups allowed to view/use the report |
+| `group_ids` | Many2many | Groups allowed to view/use the report |
 | `multi` | boolean | If True, not displayed on form view |
 | `paperformat_id` | Many2one | Paper format to use |
 | `attachment_use` | boolean | Generate once, then reprint from stored report |

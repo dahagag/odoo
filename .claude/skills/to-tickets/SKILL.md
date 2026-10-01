@@ -39,11 +39,6 @@ Give each ticket its **blocking edges**: the other tickets that must complete be
 
 **Wide refactors are the exception to vertical slicing.** A **wide refactor** is one mechanical change (rename a column, retype a shared symbol) whose **blast radius** fans across the whole codebase, so a single edit breaks thousands of call sites at once and no vertical slice can land green. Don't force it into a tracer bullet; sequence it as **expand–contract**. First expand: add the new form beside the old so nothing breaks. Then migrate the call sites over in batches sized by blast radius (per package, per directory), each batch its own ticket blocked by the expand, keeping CI green batch to batch because the old form still exists. Finally contract: delete the old form once no caller remains, in a ticket blocked by every migrate batch. When even the batches can't stay green alone, keep the sequence but let them share an integration branch that all block a final integrate-and-verify ticket; green is promised only there.
 
-For a ticket introducing a new screen, flow, or interactive widget, or reshaping the
-layout/interaction of an already-reviewed screen, add one line to its body:
-`Consider a design-board pass before implementing (see docs/agents/design-review.md).` Don't judge
-major/minor yourself — `/implement` has more context at build time to make that call well.
-
 ### 4. Quiz the user
 
 Present the proposed breakdown as a numbered list. For each ticket, show:
@@ -70,19 +65,6 @@ Publish the approved tickets. **How** depends on the tracker `/setup-matt-pocock
 Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.
 
 Do NOT close or modify any parent issue.
-
-### 6. Deliver the first ticket immediately
-
-On a real issue tracker, the first sub-issue in the tree is always "commit the ADR(s)/docs from
-the grilling session behind this spec" (see `docs/agents/issue-tracker.md`), and it has no
-blocker. Don't just publish it and stop: hand it to `/implement` in the same pass — this is the
-initial concrete step of actually landing the tree, not merely planning it. `/implement` covers
-review, commit, opening the PR (stacked-PR convention), and the separate-agent acceptance-criteria
-check; landing this first ticket unblocks every other sub-issue's PR base. Ask for explicit
-confirmation before pushing/opening the PR if the environment requires it for a push.
-
-Every other ticket in the tree gets the same treatment as its frontier turn comes up: hand it to
-`/implement` rather than stopping at "ticket published."
 
 <local-ticket-template>
 

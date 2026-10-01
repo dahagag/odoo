@@ -235,28 +235,28 @@ order = form.save()
 
 Odoo uses Hoot for JS unit testing. See the frontend testing documentation.
 
-Test files go in `static/tests/`:
+Test files go in `static/tests/` and are named `*.test.js`:
 
 ```
 your_module/
 └── static/
     └── tests/
-        └── my_test.js
+        └── my_test.test.js
 ```
 
 ```javascript
-import { start } from '@mail/utils/test_utils';
+import { describe, expect, test } from "@odoo/hoot";
+import { defineModels, fields, models } from "@web/../tests/web_test_helpers";
 
-QUnit.module('My Module', {
-    beforeEach() {
-        this.data = {
-            records: {
-                'my.model': [{id: 1, name: 'Test'}],
-            },
-        };
-    },
-}, function () {
-    QUnit.test('my test', async function (assert) {
+class MyModel extends models.Model {
+    name = fields.Char();
+}
+
+defineModels([MyModel]);
+
+describe("My Module", () => {
+    test("my test", async () => {
+        expect(true).toBe(true);
         // Test code here
     });
 });
@@ -487,6 +487,11 @@ odoo-bin -i my_module --test-enable
 # Update and test
 odoo-bin -u my_module --test-enable
 ```
+
+Odoo 19 creates new databases **without** demo data unless `--with-demo` is passed, so a
+fresh `-d test_db -i my_module --test-enable` run has no demo records and no `demo` /
+`portal` users. Create fixtures in `setUpClass` (e.g. `new_test_user()`) instead of
+referencing demo XML IDs.
 
 ---
 
