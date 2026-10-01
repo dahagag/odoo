@@ -53,6 +53,8 @@ jobs:
       infra_relevant: ${{ steps.check.outputs.infra_relevant }}
       infra_cicd_registry_relevant: ${{ steps.check.outputs.infra_cicd_registry_relevant }}
       infra_platform_relevant: ${{ steps.check.outputs.infra_platform_relevant }}
+      infra_staging_odoo_relevant: ${{ steps.check.outputs.infra_staging_odoo_relevant }}
+      staging_odoo_image_relevant: ${{ steps.check.outputs.staging_odoo_image_relevant }}
       lint_relevant: ${{ steps.check.outputs.lint_relevant }}
       stack_relevant: ${{ steps.check.outputs.stack_relevant }}
       release_version_relevant: ${{ steps.check.outputs.release_version_relevant }}
@@ -128,6 +130,32 @@ jobs:
               - 'infra/platform/**'
               - '.github/workflows/ci.yml'
               - '.github/actions/infra-tofu/**'
+            # Issue #341: deploy-odoo-staging/infra-plan-staging-odoo below only ever touch
+            # infra/staging-odoo — narrower than infra_relevant, same reasoning as
+            # infra_platform_relevant above (a PR touching only infra/foundation or
+            # infra/modules/trial_org shouldn't assume this module's AWS credentials).
+            infra_staging_odoo_relevant:
+              - 'infra/staging-odoo/**'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/infra-tofu/**'
+            # Issue #341: the staging Odoo image build/push job (build-staging-odoo-image) —
+            # mirrors prod_image_relevant's shape (the image bakes in the whole application tree),
+            # swapping docker/odoo-prod.Dockerfile/docker/odoo-prod.conf for their staging
+            # counterparts and adding the staging entrypoint + shared entrypoint lib it installs.
+            staging_odoo_image_relevant:
+              - '.env.example'
+              - 'odoo-bin'
+              - 'odoo/**'
+              - 'addons/**'
+              - 'custom_addons/**'
+              - 'docker/odoo-staging.Dockerfile'
+              - 'docker/odoo-staging-entrypoint.sh'
+              - 'docker/odoo-entrypoint-lib.sh'
+              - 'docker/odoo.conf'
+              - 'docker/pip-install-requirements.sh'
+              - 'requirements.txt'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/**'
             lint_relevant:
               - 'custom_addons/**'
               - 'ruff.toml'
@@ -364,6 +392,69 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  build-staging-odoo-image:
+    name: Build and publish staging Odoo image
+    needs: changes
+    # Issue #341/#338: docker/odoo-staging.Dockerfile — the missing piece #338's implementer
+    # flagged (an entrypoint with nothing building it into an image). Same fork-exclusion guard
+    # as build-image/build-prod-image/build-stack-image above.
+    if: needs.changes.outputs.staging_odoo_image_relevant == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read defaults shared with local dev (.env.example)
+        id: defaults
+        run: echo "odoo_image=$(sed -n -E 's/^ODOO_IMAGE=(.*)$/\1/p' .env.example)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: ./.github/actions/ecr-login
+        id: ecr-login
+        with:
+          role-arn: ${{ vars.ECR_PUSH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          registry-account-id: ${{ vars.PLATFORM_ACCOUNT_ID }}
+      - name: Compute the image tag from its content inputs
+        # Same reasoning as build-prod-image: this image bakes in the whole application tree
+        # (odoo-bin, odoo/, addons/, custom_addons/), not the small build-input set build-image
+        # hashes — git's own tree/blob object ids at HEAD stand in for hashFiles() here too, same
+        # as build-prod-image. This is not the tag deploy-odoo-staging deploys under (that's the
+        # release version, issue #341, mirroring issue #216's administration-stack-api shape); it
+        # retags this same, already-pushed image afterward, so the bytes a staging deploy ships
+        # are exactly what this job built.
+        id: tag
+        run: |
+          content_id=$(
+            for path in .env.example odoo-bin odoo addons custom_addons requirements.txt \
+              docker/odoo-staging.Dockerfile docker/odoo-staging-entrypoint.sh \
+              docker/odoo-entrypoint-lib.sh docker/odoo.conf docker/pip-install-requirements.sh; do
+              git rev-parse "HEAD:$path"
+            done | sha256sum | cut -d' ' -f1
+          )
+          echo "image=${{ steps.ecr-login.outputs.registry }}/agentic-erp/odoo-staging:$content_id" >> "$GITHUB_OUTPUT"
+      - name: Check whether this image tag is already published
+        id: existing
+        env:
+          STAGING_ODOO_IMAGE: ${{ steps.tag.outputs.image }}
+        run: |
+          if docker buildx imagetools inspect "$STAGING_ODOO_IMAGE" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/build-push-action@v6
+        if: steps.existing.outputs.exists != 'true'
+        with:
+          context: .
+          file: docker/odoo-staging.Dockerfile
+          build-args: |
+            ODOO_IMAGE=${{ steps.defaults.outputs.odoo_image }}
+          push: true
+          tags: ${{ steps.tag.outputs.image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   lint:
     name: Lint
     needs: changes
@@ -490,10 +581,10 @@ jobs:
       - name: tofu fmt -check
         if: needs.changes.outputs.infra_relevant == 'true'
         run: tofu fmt -check -recursive infra/
-      - name: tofu validate (bootstrap, foundation, cicd, registry, platform, trial_org, and its validate fixture)
+      - name: tofu validate (bootstrap, foundation, cicd, registry, platform, staging-odoo, trial_org, and its validate fixture)
         if: needs.changes.outputs.infra_relevant == 'true'
         run: |
-          for dir in infra/bootstrap infra/foundation infra/cicd infra/registry infra/platform infra/modules/trial_org infra/modules/trial_org/examples/validate; do
+          for dir in infra/bootstrap infra/foundation infra/cicd infra/registry infra/platform infra/staging-odoo infra/modules/trial_org infra/modules/trial_org/examples/validate; do
             echo "::group::tofu validate $dir"
             (cd "$dir" && tofu init -backend=false -input=false && tofu validate)
             echo "::endgroup::"
@@ -520,6 +611,12 @@ jobs:
         if: needs.changes.outputs.infra_relevant == 'true'
         run: |
           cd infra/platform
+          tofu init -backend=false -input=false
+          tofu test
+      - name: tofu test (staging-odoo — issue #341/#203 no-public-ingress, no-Hosting-Account-IAM, and scoped-SSM/KMS-grant boundaries, no live AWS account needed)
+        if: needs.changes.outputs.infra_relevant == 'true'
+        run: |
+          cd infra/staging-odoo
           tofu init -backend=false -input=false
           tofu test
       - uses: actions/setup-python@v5
@@ -705,6 +802,55 @@ jobs:
           # actually read infra/platform's Platform Account resources for a real plan diff.
           platform_assume_role_arn: ${{ vars.PLATFORM_CI_PLAN_ROLE_ARN }}
 
+  infra-plan-staging-odoo:
+    name: Infra plan (infra/staging-odoo)
+    # Issue #341: mirrors infra-plan-platform's identical shape for its own root module/state key.
+    # See infra-plan's identical reasoning above for depending on infra-checks first.
+    needs: [changes, infra-checks]
+    if: github.event_name == 'pull_request' && needs.changes.outputs.infra_staging_odoo_relevant == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/resolve-release-tag
+        # This plan's own preview of the image tag a deploy would use, not a requirement that one
+        # already exists in ECR (a `tofu plan` never validates that the image tag it renders
+        # actually exists).
+        id: tag
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.5
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # Same shared, read-only infra_plan role as infra-plan-platform above — this module's
+          # real write access lives on its own dedicated deploy role instead (issue #341, see
+          # deploy-odoo-staging below).
+          role-to-assume: ${{ vars.INFRA_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: ./.github/actions/infra-tofu
+        with:
+          dir: infra/staging-odoo
+          command: plan
+          bucket: ${{ vars.TOFU_STATE_BUCKET }}
+          region: ${{ vars.AWS_REGION }}
+          dynamodb_table: ${{ vars.TOFU_STATE_LOCK_TABLE }}
+          # Required by infra-tofu's schema regardless of dir (see infra-plan-platform's
+          # identical, otherwise-unused wiring above) — not consumed by the infra/staging-odoo
+          # case arm itself.
+          platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
+          tofu_state_bucket_arn: ${{ vars.TOFU_STATE_BUCKET_ARN }}
+          tofu_state_lock_table_arn: ${{ vars.TOFU_STATE_LOCK_TABLE_ARN }}
+          hosting_account_ecs_task_execution_role_arn: ${{ vars.HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN }}
+          odoo_repository_url: ${{ vars.STAGING_ODOO_REPOSITORY_URL }}
+          odoo_image_tag: ${{ steps.tag.outputs.tag }}
+          staging_odoo_secrets_kms_key_arn: ${{ vars.STAGING_ODOO_SECRETS_KMS_KEY_ARN }}
+          # Issue #271/#272 style chaining: infra_plan (just assumed above) chains into this
+          # module's own CI-plan role to actually read infra/staging-odoo's Platform Account
+          # resources for a real plan diff (parallel to PLATFORM_CI_PLAN_ROLE_ARN above).
+          platform_assume_role_arn: ${{ vars.PLATFORM_STAGING_ODOO_CI_PLAN_ROLE_ARN }}
+
   deploy-administration-stack-staging:
     name: Deploy administration-stack API (staging)
     # Issue #217 (CodeRabbit review): the workflow-level concurrency group above
@@ -857,6 +1003,143 @@ jobs:
         run: |
           {
             echo "## Staging deploy skipped (issue #218 release-order guard)"
+            echo "This run's commit (\`$GITHUB_SHA\`) is not ahead of the commit a newer deploy already published — skipped retag/apply rather than overwrite it with stale content."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-odoo-staging:
+    name: Deploy staging Odoo (dev.domain.com)
+    # Issue #341: a separate deployable unit from deploy-administration-stack-staging above — its
+    # own Terraform root module (infra/staging-odoo, own state key, #337), own ECR repository
+    # (agentic-erp/odoo-staging), own SSM deployed-commit watermark
+    # (/staging-odoo/deployed-commit, infra/staging-odoo/ssm.tf's
+    # staging_odoo_deployed_commit_parameter_name default) — distinct from the administration
+    # stack's. deploy-administration-stack-staging/-production share one concurrency group
+    # because both apply the *same* infra/platform state from two different refs (issue #217);
+    # infra/staging-odoo is an entirely separate state, so there is nothing for this job to
+    # serialize against those two for, and it gets its own group instead.
+    concurrency:
+      group: deploy-odoo-staging
+      cancel-in-progress: false
+    # Same infra-checks gate as deploy-administration-stack-staging above, same reasoning.
+    needs: [changes, infra-checks]
+    # dev/19.0 push + workflow_dispatch rollback (issue #218's precedent), identical shape to
+    # deploy-administration-stack-staging's own `if:` above — this repo derives one release
+    # version across every deployable unit (scripts/release_version), so the same
+    # workflow_dispatch `environment`/`release_tag` inputs this workflow already declares
+    # (top of file) drive this job's rollback path too, without a second, unit-specific pair of
+    # dispatch inputs.
+    if: (github.event_name == 'push' && github.ref_name == 'dev/19.0') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/resolve-release-tag
+        id: resolve_tag
+        if: github.event_name == 'push'
+      - uses: ./.github/actions/resolve-deploy-tag
+        id: tag
+        with:
+          resolved_tag: ${{ steps.resolve_tag.outputs.tag }}
+          dispatch_tag: ${{ github.event.inputs.release_tag }}
+      - name: Compute the content-hash tag build-staging-odoo-image published this commit's image under
+        # Only meaningful for the push path — a workflow_dispatch rollback re-applies a tag that
+        # already exists in ECR (the retag step below never runs for it) and needs no
+        # content-hash lookup. Must match build-staging-odoo-image's own tag computation exactly.
+        if: github.event_name == 'push'
+        id: content_tag
+        run: |
+          content_id=$(
+            for path in .env.example odoo-bin odoo addons custom_addons requirements.txt \
+              docker/odoo-staging.Dockerfile docker/odoo-staging-entrypoint.sh \
+              docker/odoo-entrypoint-lib.sh docker/odoo.conf docker/pip-install-requirements.sh; do
+              git rev-parse "HEAD:$path"
+            done | sha256sum | cut -d' ' -f1
+          )
+          echo "tag=$content_id" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.STAGING_ODOO_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: ./.github/actions/verify-release-tag-published
+        # workflow_dispatch only — same reasoning as deploy-administration-stack-staging's
+        # identical step above, scoped to this unit's own ECR repository.
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          release_tag: ${{ steps.tag.outputs.tag }}
+          platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
+          repository_name: agentic-erp/odoo-staging
+      - uses: ./.github/actions/check-release-order
+        # Issue #218's release-order guard, reused as-is — this unit's own deploy role and own
+        # SSM watermark parameter name (distinct from the administration stack's), not a
+        # duplicated copy of this action's logic.
+        id: guard
+        if: github.event_name == 'push'
+        with:
+          platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_STAGING_ODOO_DEPLOY_ROLE_ARN }}
+          aws_region: ${{ vars.AWS_REGION }}
+          ssm_parameter_name: /staging-odoo/deployed-commit
+          commit_sha: ${{ github.sha }}
+      - uses: ./.github/actions/record-deployed-commit
+        # Recorded before retag/apply, not after — same reasoning as
+        # deploy-administration-stack-staging's identical step above.
+        if: github.event_name == 'push' && steps.guard.outputs.stale != 'true'
+        with:
+          platform_administration_stack_deploy_role_arn: ${{ vars.PLATFORM_STAGING_ODOO_DEPLOY_ROLE_ARN }}
+          aws_region: ${{ vars.AWS_REGION }}
+          ssm_parameter_name: /staging-odoo/deployed-commit
+          commit_sha: ${{ github.sha }}
+      - uses: ./.github/actions/retag-administration-stack-image
+        # No rebuild: the bytes this deploys are exactly what build-staging-odoo-image (PR-time,
+        # ecr_push role) already pushed under its content-hash tag — this only adds a second tag
+        # to the same image manifest, scoped to this unit's own ECR repository (repository_name).
+        if: github.event_name == 'push' && steps.guard.outputs.stale != 'true'
+        with:
+          content_hash_tag: ${{ steps.content_tag.outputs.tag }}
+          release_tag: ${{ steps.tag.outputs.tag }}
+          platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
+          repository_name: agentic-erp/odoo-staging
+      - uses: opentofu/setup-opentofu@v1
+        if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
+        with:
+          tofu_version: 1.8.5
+      - uses: ./.github/actions/infra-tofu
+        if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
+        with:
+          dir: infra/staging-odoo
+          command: apply
+          bucket: ${{ vars.TOFU_STATE_BUCKET }}
+          region: ${{ vars.AWS_REGION }}
+          dynamodb_table: ${{ vars.TOFU_STATE_LOCK_TABLE }}
+          # Required by infra-tofu's schema regardless of dir (see deploy-administration-stack-
+          # staging's identical, otherwise-unused wiring above) — not consumed by the
+          # infra/staging-odoo case arm itself.
+          platform_account_id: ${{ vars.PLATFORM_ACCOUNT_ID }}
+          tofu_state_bucket_arn: ${{ vars.TOFU_STATE_BUCKET_ARN }}
+          tofu_state_lock_table_arn: ${{ vars.TOFU_STATE_LOCK_TABLE_ARN }}
+          hosting_account_ecs_task_execution_role_arn: ${{ vars.HOSTING_ACCOUNT_ECS_TASK_EXECUTION_ROLE_ARN }}
+          odoo_repository_url: ${{ vars.STAGING_ODOO_REPOSITORY_URL }}
+          odoo_image_tag: ${{ steps.tag.outputs.tag }}
+          staging_odoo_secrets_kms_key_arn: ${{ vars.STAGING_ODOO_SECRETS_KMS_KEY_ARN }}
+          # Issue #271/#272 style chaining: staging_deploy-equivalent (just assumed above) chains
+          # into this unit's own dedicated Platform Account deploy role to actually manage
+          # infra/staging-odoo's resources.
+          platform_assume_role_arn: ${{ vars.PLATFORM_STAGING_ODOO_DEPLOY_ROLE_ARN }}
+      - name: Record which release is now running in staging Odoo
+        if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          {
+            echo "## Deployed to dev.domain.com's staging Odoo"
+            echo "Release \`$RELEASE_TAG\` is now running in staging Odoo's ECS service (\`aws ecs describe-services --cluster staging-odoo --services staging-odoo --include TAGS\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Record that this run was skipped as stale
+        if: github.event_name == 'push' && steps.guard.outputs.stale == 'true'
+        run: |
+          {
+            echo "## Staging Odoo deploy skipped (issue #218 release-order guard)"
             echo "This run's commit (\`$GITHUB_SHA\`) is not ahead of the commit a newer deploy already published — skipped retag/apply rather than overwrite it with stale content."
           } >> "$GITHUB_STEP_SUMMARY"
 
