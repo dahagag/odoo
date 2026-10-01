@@ -21,7 +21,7 @@ No other language codes are shipped here - add one by hand the same way (a new `
 following the header/entry shape below) if a broader rollout is needed later.
 
 Only "Trial" in the systray's "Trial: ..." wrapper falls under
-`docs/contexts/hosting/CONTEXT.md`'s glossary treatment of specific product/technical terms
+`docs/contexts/hosting/GLOSSARY.md`'s glossary treatment of specific product/technical terms
 kept in English (Trial Org, Auto-Destroy, Extension, the `hosting_admin` module name) - it's
 kept untranslated in every language, the same way `crm_methodology`'s translations keep
 "Trial Org" itself in English. Everything else, including the older 7 strings ("Org

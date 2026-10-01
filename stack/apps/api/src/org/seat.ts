@@ -104,7 +104,7 @@ export function assertDomainMatches(org: OrgRecord, email: string): void {
  * this ticket exists for cannot rely on a separate read-then-write, since two concurrent calls
  * could each read a `seatsUsed` that still has room and both commit past the cap. The condition's
  * threshold (`org.seatsTotal - 1`) is derived from the org record this call already read: safe
- * because `seatsTotal` is immutable once an org is issued (`docs/contexts/hosting/CONTEXT.md`'s
+ * because `seatsTotal` is immutable once an org is issued (`docs/contexts/hosting/GLOSSARY.md`'s
  * Seat entry: "set per-trial at issuance") - the access-patterns doc's caveat about this being
  * "the lifecycle port's job" is exactly this.
  */

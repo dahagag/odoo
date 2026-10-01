@@ -20,7 +20,7 @@ def _org_registration_from_json(payload):
     mapping shared by the real HTTP response and ``StubOrgRegistrationClient``'s own fabricated
     record, so the two can never drift apart in what a caller receives.
 
-    ``expiryDate`` is absent for a Client Org (docs/contexts/hosting/CONTEXT.md: "a Client Org
+    ``expiryDate`` is absent for a Client Org (docs/contexts/hosting/GLOSSARY.md: "a Client Org
     ... has no expiry window") - that maps to ``False``, this addon's own convention for "no
     expiry to show" (mirrors ``_org_from_json`` in hosting_admin's client, which this module
     deliberately does not import - ADR-0018's no-dependency rule)."""
@@ -36,7 +36,7 @@ def _org_registration_from_json(payload):
         # The stack returns an ISO-8601 datetime with a trailing 'Z' (z.string().datetime(),
         # stack/apps/api/src/openapi/registry.ts) - Python's fromisoformat only accepts
         # '+00:00' before 3.11, so the 'Z' is normalized first. Absent entirely for a Client
-        # Org (docs/contexts/hosting/CONTEXT.md), which maps to False, not a parsed date.
+        # Org (docs/contexts/hosting/GLOSSARY.md), which maps to False, not a parsed date.
         'expiry_date': (
             datetime.fromisoformat(expiry_date.replace('Z', '+00:00')).date()
             if expiry_date else False

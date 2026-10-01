@@ -102,10 +102,10 @@ production equivalent to share this design with.
   from a flat single-group model; this ADR's tiering does not need to be reconciled with it
   unless a future ticket explicitly extends tiering to production too.
 
-## Why this doesn't touch `docs/contexts/hosting/CONTEXT.md`
+## Why this doesn't touch `docs/contexts/hosting/GLOSSARY.md`
 
-`docs/contexts/hosting/CONTEXT.md`'s own boundary is Trial/Client Org infrastructure "outside the
-primary agentic-erp deployment" (`CONTEXT-MAP.md`'s Hosting Operations entry). `dev.domain.com`
+`docs/contexts/hosting/GLOSSARY.md`'s own boundary is Trial/Client Org infrastructure "outside the
+primary agentic-erp deployment" (`GLOSSARY-MAP.md`'s Hosting Operations entry). `dev.domain.com`
 *is* that primary deployment (staging of it), which #203's own Out of Scope already separates
 from Hosting Operations ("Client orgs on staging... belong to the Hosting Account, and staging
 must not reach it"). The access-tier vocabulary this ADR introduces (engineering/stakeholders/

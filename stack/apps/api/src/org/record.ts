@@ -29,7 +29,7 @@ export const ORGS_TABLE = 'orgs';
 export const IDLE_TIMEOUT_MINUTES = 30;
 
 /** The snapshot retention window Auto-Destroy always records a marker for (docs/contexts/
- * hosting/CONTEXT.md's Auto-Destroy entry: "A short-lived (7-day) database snapshot is retained
+ * hosting/GLOSSARY.md's Auto-Destroy entry: "A short-lived (7-day) database snapshot is retained
  * afterward in case of revival") - mirrors `SNAPSHOT_RETENTION_DAYS`
  * (`custom_addons/hosting_admin/models/provisioner.py`) one language over. Lives here (not
  * `awsProvisioner.ts`, which already imports from this module) so both `applyTransition`'s own
@@ -122,7 +122,7 @@ export interface OrgRecord {
    * `wake`) so a freshly-issued or just-woken org gets a full idle window before the next sweep
    * run, rather than being immediately eligible - mirrors `hosting.trial.org.last_activity_at`. */
   lastActivityAt?: string;
-  /** Auto-Destroy always records a snapshot-retention marker (docs/contexts/hosting/CONTEXT.md's
+  /** Auto-Destroy always records a snapshot-retention marker (docs/contexts/hosting/GLOSSARY.md's
    * Auto-Destroy entry), regardless of what triggered it - the auto-destroy sweep (#282) or a
    * manual `destroy` call alike. Mirrors `hosting.trial.org.snapshot_retention_until`. */
   snapshotRetentionUntil?: string;
@@ -181,7 +181,7 @@ export interface CreateOrgInput {
 
 export interface CreateOrgConfig {
   defaultRegion: string;
-  /** CONTEXT.md: a Trial Org "runs for a fixed window (default 14 days)". Never consulted for
+  /** GLOSSARY.md: a Trial Org "runs for a fixed window (default 14 days)". Never consulted for
    * a Client Org, which never carries an `expiryDate` at all. */
   trialDurationDays: number;
 }
@@ -456,7 +456,7 @@ export async function applyTransition(gateway: AwsGateway, provisioner: Provisio
 
   // Issue and Wake both start (or restart) the idle-timeout clock; Destroy always records a
   // snapshot-retention marker, whatever triggered it - the auto-destroy sweep (#282) or a manual
-  // `destroy` call alike (docs/contexts/hosting/CONTEXT.md's Auto-Destroy entry). Mirrors
+  // `destroy` call alike (docs/contexts/hosting/GLOSSARY.md's Auto-Destroy entry). Mirrors
   // `_apply_transition`'s own `values[...]` branches (`custom_addons/hosting_admin/models/
   // trial_org.py`).
   const extra: Record<string, string> = {};

@@ -4,9 +4,9 @@ Deliverable of [#283](https://github.com/dahagag/odoo/issues/283), part of the
 [epic](https://github.com/dahagag/odoo/issues/196) that ported the Trial Org / Seat lifecycle
 from the Odoo addon `custom_addons/hosting_admin` (Postgres-backed) to the administration stack
 under `stack/` (DynamoDB-backed, [ADR-0034](../adr/0034-administration-stack-owns-org-record-of-truth.md)).
-Vocabulary follows [`docs/contexts/hosting/CONTEXT.md`](../contexts/hosting/CONTEXT.md); this note
+Vocabulary follows [`docs/contexts/hosting/GLOSSARY.md`](../contexts/hosting/GLOSSARY.md); this note
 lives in `docs/research/` rather than alongside that glossary because it is implementation- and
-code-line-heavy (per `docs/agents/domain.md`'s "keep CONTEXT.md implementation-free" rule), not a
+code-line-heavy (per `docs/agents/domain.md`'s "keep GLOSSARY.md implementation-free" rule), not a
 business-meaning glossary entry.
 
 This is what [#197](https://github.com/dahagag/odoo/issues/197) (shrinking `hosting_admin`) is

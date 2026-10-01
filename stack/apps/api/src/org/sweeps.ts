@@ -35,7 +35,7 @@ function isAlreadyHandled(error: unknown): boolean {
  * does").
  *
  * Applies uniformly to any org type - unlike the auto-destroy sweep, nothing in #282's Acceptance
- * Criteria (or docs/contexts/hosting/CONTEXT.md's Active/Suspended entry) scopes idle-suspend to
+ * Criteria (or docs/contexts/hosting/GLOSSARY.md's Active/Suspended entry) scopes idle-suspend to
  * a Trial Org alone.
  */
 export async function sweepIdleSuspend(

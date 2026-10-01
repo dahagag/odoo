@@ -2,7 +2,7 @@
 
 Research date: 2026-09-03. Scope: reference material for choosing IaC/provisioning
 tooling for the Hosting Operations capability (see
-[`docs/contexts/hosting/CONTEXT.md`](../contexts/hosting/CONTEXT.md),
+[`docs/contexts/hosting/GLOSSARY.md`](../contexts/hosting/GLOSSARY.md),
 [ADR-0013](../adr/0013-aws-organizations-for-hosting-foundation.md), and
 [ADR-0014](../adr/0014-per-org-ec2-with-suspend-wake-for-trials.md)). At the time
 this research ran, the working assumption was that Odoo (running on Render,

@@ -27,7 +27,7 @@ issue #200 is where that gap comes due rather than being inherited silently.
 Trial Orgs can be started two ways: a **Targeted Invite** to a specific known email, or an
 **Open Invite Link** shared when the sales rep knows the prospect's domain but not yet who
 specifically will join. In both cases the domain is fixed by the rep at issuance — this is not a
-change to how domain-lock already worked (`Trial Org`, `docs/contexts/hosting/CONTEXT.md`); an
+change to how domain-lock already worked (`Trial Org`, `docs/contexts/hosting/GLOSSARY.md`); an
 Open Invite Link doesn't defer *that* decision, it just defers which specific person confirms it.
 
 We considered letting the first person to complete login through an Open Invite Link freely

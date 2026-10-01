@@ -13,7 +13,7 @@ on a Trial Org's own instance, which instead installs the thin `hosting` addon.
 
 See docs/adr/0018 for the original admin/org-facing addon split, docs/adr/0034 for why the Trial
 Org record moved out of Odoo, docs/adr/0036 for the REST/OpenAPI contract this addon's client
-implements, and docs/contexts/hosting/CONTEXT.md for vocabulary (Trial Org, Seat, Active/
+implements, and docs/contexts/hosting/GLOSSARY.md for vocabulary (Trial Org, Seat, Active/
 Suspended, Wake, Auto-Destroy, Deployment Version).
     """,
     'author': "agentic-erp",

@@ -24,7 +24,7 @@ export const IDEMPOTENCY_KEY_HEADER = 'Idempotency-Key';
 export const OrgTypeSchema = z.enum(['trial', 'client']).openapi('OrgType', {
   description:
     'Trial Org: the ephemeral evaluation offering. Client Org: a stable hosted org for a ' +
-    'paying client. See docs/contexts/hosting/CONTEXT.md.',
+    'paying client. See docs/contexts/hosting/GLOSSARY.md.',
 });
 export type OrgType = z.infer<typeof OrgTypeSchema>;
 
@@ -48,7 +48,7 @@ export type OrgId = z.infer<typeof OrgIdSchema>;
 export const OrgActionSchema = z.enum(['issue', 'suspend', 'wake', 'destroy']).openapi('OrgAction');
 export type OrgAction = z.infer<typeof OrgActionSchema>;
 
-/** The two invitation paths (ADR-0026, `docs/contexts/hosting/CONTEXT.md`'s Seat/Open Invite
+/** The two invitation paths (ADR-0026, `docs/contexts/hosting/GLOSSARY.md`'s Seat/Open Invite
  * Link entries): `targeted` for a specific known email, `open` for a shareable link guarded
  * only by domain match. Matches `hosting.trial.org.invite_type`
  * (custom_addons/hosting_admin/models/trial_org.py's `INVITE_TYPES`) one language over. */
@@ -83,7 +83,7 @@ export function slugifyDnsLabel(name: string): string {
 
 /** `hosting.trial.org.seat_cap`'s system-wide ceiling (`SYSTEM_WIDE_SEAT_CAP`,
  * `custom_addons/hosting_admin/models/trial_org.py`): "The count is set per-trial at issuance
- * (system-wide max 25)" (docs/contexts/hosting/CONTEXT.md's Seat entry). A single org's own
+ * (system-wide max 25)" (docs/contexts/hosting/GLOSSARY.md's Seat entry). A single org's own
  * `seatsTotal` may be anywhere from 1 up to this ceiling; it is not a cross-org total. */
 export const SYSTEM_WIDE_SEAT_CAP = 25;
 

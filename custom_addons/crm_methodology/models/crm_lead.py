@@ -10,14 +10,14 @@ from odoo.tools.misc import babel_locale_parse, format_date, get_lang
 
 from odoo.addons.hosting_admin.models.trial_org import INVITE_TYPES
 
-# docs/contexts/hosting/CONTEXT.md's Extension entry doesn't mandate a specific increment, only
+# docs/contexts/hosting/GLOSSARY.md's Extension entry doesn't mandate a specific increment, only
 # that the action "pushes out a Trial Org's expiry date". 14 days is a reasonable, editable
 # starting point on the wizard - deliberately its own constant, independent of whatever initial
 # trial duration the stack itself configures (docs/adr/0034), so the two can diverge without
 # looking like a bug.
 TRIAL_DEFAULT_EXTENSION_DAYS = 14
 
-# docs/contexts/hosting/CONTEXT.md's Auto-Destroy entry: "A short-lived (7-day) database
+# docs/contexts/hosting/GLOSSARY.md's Auto-Destroy entry: "A short-lived (7-day) database
 # snapshot is retained afterward in case of revival." Mirrors the stack's own
 # SNAPSHOT_RETENTION_DAYS (stack/apps/api/src/org/record.ts, docs/adr/0034) - a fixed, documented
 # policy figure this constant only drives informational display text from, not a value read back
@@ -81,7 +81,7 @@ class CrmLead(models.Model):
         help="The Trial Org's expiry date, formatted per the viewing user's own language, with "
              "the countdown to Auto-Destroy and the post-Auto-Destroy data retention window "
              "alongside it. The retention figure reflects the policy documented in "
-             "docs/contexts/hosting/CONTEXT.md's Auto-Destroy entry - hosting_admin does not "
+             "docs/contexts/hosting/GLOSSARY.md's Auto-Destroy entry - hosting_admin does not "
              "yet automate that snapshot/retention itself, so this is informational, not a "
              "tracked system guarantee.",
     )
@@ -348,7 +348,7 @@ class CrmLead(models.Model):
         return trial_org
 
     def action_extend_trial(self, additional_days=TRIAL_DEFAULT_EXTENSION_DAYS):
-        """Push out the linked Trial Org's expiry date (docs/contexts/hosting/CONTEXT.md's
+        """Push out the linked Trial Org's expiry date (docs/contexts/hosting/GLOSSARY.md's
         Extension), restricted to the Opportunity's owning salesperson or a sales manager. The
         stack itself is what actually performs the write and resolves any concurrent extension
         (#312) - this method's only remaining job is the authorisation gate ADR-0034 keeps in
