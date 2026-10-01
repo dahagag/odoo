@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- dev.domain.com staging access tiers (#339, docs/adr/0040, docs/adr/0041). Deploy/
+         access-control vocabulary for agentic-erp's own staging instance, not a Hosting
+         Operations business concept (ADR-0040's closing section) - kept as its own module
+         category rather than folded into "Sales Methodology" or hosting_admin's category, even
+         though the records live in this addon (crm_methodology is the module
+         docker/odoo-staging-entrypoint.sh always installs, so this is where seeded account data
+         actually gets loaded on every staging boot). -->
+    <record id="module_category_staging_access" model="ir.module.category">
+        <field name="name">Staging Access</field>
+    </record>
+
+    <record id="privilege_staging_early_adopter" model="res.groups.privilege">
+        <field name="name">Staging Early Adopter</field>
+        <field name="category_id" ref="module_category_staging_access"/>
+    </record>
+
+    <!-- Named early-adopter clients on dev.domain.com staging only. Implies base.group_portal -
+         NOT the reverse. implied_ids propagates FROM a group a user directly belongs to TO the
+         groups it implies, never backwards: a group *implied by* base.group_portal would mean
+         every portal user on this instance automatically inherits this group's write access on
+         opportunities, a real authorization-bypass shape (CWE-863), not just a wording nit -
+         caught by CodeRabbit on PR #343 when an earlier draft of docs/adr/0041 had the direction
+         reversed. Deliberately not base.group_user either (no addon's ACL in this repo was
+         designed with a login reachable from outside the company in mind), and not
+         base.group_portal granted directly (a thin wrapper keeps this group's own ACL/record-rule
+         grants from silently widening if some other addon later broadens what portal users can
+         see generally). -->
+    <record id="group_staging_early_adopter" model="res.groups">
+        <field name="name">Early Adopter</field>
+        <field name="privilege_id" ref="privilege_staging_early_adopter"/>
+        <field name="implied_ids" eval="[(4, ref('base.group_portal'))]"/>
+        <field name="comment">Named early-adopter clients on dev.domain.com staging (docs/adr/0040, docs/adr/0041). Write (create/edit, never delete) access to opportunities linked to their own contact record, scoped by the stock portal "linked-to-me" record rule so one adopter never sees another's test data. One shared demo dataset underneath - no per-adopter data isolation beyond that rule.</field>
+    </record>
+
+    <record id="privilege_staging_stakeholder" model="res.groups.privilege">
+        <field name="name">Staging Stakeholder</field>
+        <field name="category_id" ref="module_category_staging_access"/>
+    </record>
+
+    <!-- Internal stakeholders on dev.domain.com staging only - employees, but not engineering
+         staff, so full base.group_user access is too broad and the early-adopter portal group
+         models an external identity, not an internal one (docs/adr/0041). Implies this module's
+         own read-only Viewer privilege rather than duplicating its ACL rows: same "Odoo UI
+         viewing, cannot create/edit/delete anything" shape, under its own dedicated group/name so
+         the staging Tailscale ACL group (`group:stakeholders`) has exactly one Odoo-side group to
+         pair with. -->
+    <record id="group_staging_stakeholder" model="res.groups">
+        <field name="name">Stakeholder</field>
+        <field name="privilege_id" ref="privilege_staging_stakeholder"/>
+        <field name="implied_ids" eval="[(4, ref('crm_methodology_group_viewer'))]"/>
+        <field name="comment">Internal stakeholders viewing dev.domain.com staging (docs/adr/0040, docs/adr/0041). Same read-only visibility as this module's own Viewer group; cannot create, edit, or delete anything.</field>
+    </record>
+
+</odoo>
