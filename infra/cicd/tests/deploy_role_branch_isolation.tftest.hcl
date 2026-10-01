@@ -42,6 +42,8 @@ variables {
   platform_registry_deploy_role_arn             = "arn:aws:iam::333333333333:role/platform-registry-deploy"
   platform_administration_stack_deploy_role_arn = "arn:aws:iam::333333333333:role/platform-administration-stack-deploy"
   platform_ci_plan_role_arn                     = "arn:aws:iam::333333333333:role/platform-ci-plan"
+  platform_staging_odoo_deploy_role_arn         = "arn:aws:iam::333333333333:role/platform-staging-odoo-deploy"
+  platform_staging_odoo_ci_plan_role_arn        = "arn:aws:iam::333333333333:role/platform-staging-odoo-ci-plan"
 }
 
 override_data {

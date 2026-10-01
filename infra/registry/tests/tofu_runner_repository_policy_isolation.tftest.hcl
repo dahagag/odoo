@@ -26,6 +26,7 @@ variables {
   production_deploy_role_arn                  = "arn:aws:iam::222222222222:role/github-actions-production-deploy"
   infra_plan_role_arn                         = "arn:aws:iam::222222222222:role/github-actions-infra-plan"
   ecr_push_role_arn                           = "arn:aws:iam::222222222222:role/github-actions-ecr-push"
+  staging_odoo_deploy_role_arn                = "arn:aws:iam::222222222222:role/github-actions-staging-odoo-deploy"
 }
 
 # Issue #271/#272: this module's provider now declares data.aws_caller_identity.current (used to

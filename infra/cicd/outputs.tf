@@ -22,3 +22,8 @@ output "infra_plan_role_arn" {
   value       = aws_iam_role.infra_plan.arn
   description = "Role ARN a pull_request run assumes for a read-only `tofu plan` against infra/cicd and infra/registry (issue #215) — shared across both branches' PRs, since job_workflow_ref carries no branch information to isolate by (see oidc.tf's infra_plan comment)."
 }
+
+output "staging_odoo_deploy_role_arn" {
+  value       = aws_iam_role.staging_odoo_deploy.arn
+  description = "Role ARN a workflow run on var.staging_branch assumes to deploy infra/staging-odoo (issue #341/#349) — ci.yml's STAGING_ODOO_DEPLOY_ROLE_ARN repository variable, and infra/registry's platform_staging_odoo_deploy_trust/odoo_staging_push inputs."
+}
