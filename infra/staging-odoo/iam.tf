@@ -106,3 +106,35 @@ resource "aws_iam_role_policy" "ecs_task_seed_secrets" {
   role   = aws_iam_role.ecs_task.id
   policy = data.aws_iam_policy_document.ecs_task_seed_secrets.json
 }
+
+# ---------------------------------------------------------------------------
+# ECS Exec channel (#342): the task role itself (not the execution role) must grant the
+# ssmmessages actions AWS's ECS Exec agent uses to open its control/data channel back to the
+# caller of `aws ecs execute-command` - this is the documented, resource-unscoped (ssmmessages
+# has no resource-level permissions) grant AWS's own ECS Exec setup requires, not a broader
+# SSM Session Manager grant against arbitrary instances/documents. It exists so the
+# deploy-odoo-staging CI job can run dev_e2e_smoke_test's post-deploy assertions inside the
+# already-running container over the ECS/SSM control plane, since ADR-0040 leaves no network
+# path (no ALB, no public DNS, CI runner not on the tailnet) for an ordinary HTTP-based smoke
+# check to reach this task at all.
+# ---------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "ecs_task_exec" {
+  statement {
+    sid    = "AllowEcsExecChannel"
+    effect = "Allow"
+    actions = [
+      "ssmmessages:CreateControlChannel",
+      "ssmmessages:CreateDataChannel",
+      "ssmmessages:OpenControlChannel",
+      "ssmmessages:OpenDataChannel",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "ecs_task_exec" {
+  name   = "${var.environment}-task-exec"
+  role   = aws_iam_role.ecs_task.id
+  policy = data.aws_iam_policy_document.ecs_task_exec.json
+}

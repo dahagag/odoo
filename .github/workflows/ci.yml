@@ -613,7 +613,7 @@ jobs:
           cd infra/platform
           tofu init -backend=false -input=false
           tofu test
-      - name: tofu test (staging-odoo — issue #341/#203 no-public-ingress, no-Hosting-Account-IAM, and scoped-SSM/KMS-grant boundaries, no live AWS account needed)
+      - name: tofu test (staging-odoo — issue #341/#342/#203 no-public-ingress, no-Hosting-Account-IAM, scoped-SSM/KMS-grant, and ECS-Exec-channel boundaries, no live AWS account needed)
         if: needs.changes.outputs.infra_relevant == 'true'
         run: |
           cd infra/staging-odoo
@@ -1126,6 +1126,18 @@ jobs:
           # into this unit's own dedicated Platform Account deploy role to actually manage
           # infra/staging-odoo's resources.
           platform_assume_role_arn: ${{ vars.PLATFORM_STAGING_ODOO_DEPLOY_ROLE_ARN }}
+      - uses: ./.github/actions/smoke-check-staging-odoo
+        # Issue #342/#203's own Testing Decisions: "a smoke check the pipeline runs after
+        # deploy: the instance answers, the expected modules are installed, and demo data is
+        # present." Required (no continue-on-error) — a deploy whose smoke check fails fails
+        # this job, the same "a failed step stops the workflow rather than leaving a
+        # half-deployed environment" reasoning the infra-checks gate above already applies to
+        # retag/apply. Same gating as the apply step above: only meaningful once a tofu apply
+        # has actually run (push-path-stale skips it, same as apply).
+        if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
+        with:
+          platform_staging_odoo_deploy_role_arn: ${{ vars.PLATFORM_STAGING_ODOO_DEPLOY_ROLE_ARN }}
+          aws_region: ${{ vars.AWS_REGION }}
       - name: Record which release is now running in staging Odoo
         if: github.event_name == 'workflow_dispatch' || steps.guard.outputs.stale != 'true'
         env:
