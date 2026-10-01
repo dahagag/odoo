@@ -93,6 +93,17 @@ run "verify_task_role_seed_secrets_scoped" {
     condition     = aws_iam_role_policy.ecs_task_seed_secrets.role == aws_iam_role.ecs_task.id
     error_message = "The seed-secrets grant must attach to staging Odoo's own ECS task role, not the execution role."
   }
+
+  # docker/odoo-staging-entrypoint.sh's seed step calls the plural, recursive
+  # ssm:GetParametersByPath (not just the singular ssm:GetParameter above) to enumerate every
+  # seed-account password under the path prefix - distinct IAM actions, both required.
+  assert {
+    condition = (
+      jsondecode(aws_iam_role_policy.ecs_task_seed_secrets.policy).Statement[2].Action == "ssm:GetParametersByPath"
+      && jsondecode(aws_iam_role_policy.ecs_task_seed_secrets.policy).Statement[2].Resource == "arn:aws:ssm:us-east-1:111111111111:parameter/staging-odoo/seed-accounts/*"
+    )
+    error_message = "The ecs_task role must also be granted ssm:GetParametersByPath, scoped to exactly the seed-accounts path prefix - the entrypoint's seed step calls this plural action, not just ssm:GetParameter."
+  }
 }
 
 run "verify_execution_role_container_secrets_scoped" {

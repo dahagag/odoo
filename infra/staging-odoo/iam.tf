@@ -99,6 +99,19 @@ data "aws_iam_policy_document" "ecs_task_seed_secrets" {
     actions   = ["kms:Decrypt"]
     resources = [var.staging_odoo_secrets_kms_key_arn]
   }
+
+  # docker/odoo-staging-entrypoint.sh's seed step calls `aws ssm get-parameters-by-path`
+  # (plural, recursive) to enumerate every seed-account password under the path prefix —
+  # a distinct IAM action from the singular ssm:GetParameter grant above, which only covers
+  # fetching one already-known parameter name.
+  statement {
+    sid     = "ListSeedAccountSecretsByPath"
+    effect  = "Allow"
+    actions = ["ssm:GetParametersByPath"]
+    resources = [
+      "arn:aws:ssm:${var.aws_region}:${local.account_id}:parameter${var.seed_account_password_ssm_parameter_path}/*",
+    ]
+  }
 }
 
 resource "aws_iam_role_policy" "ecs_task_seed_secrets" {
