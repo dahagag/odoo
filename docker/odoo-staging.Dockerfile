@@ -8,10 +8,16 @@ COPY --chmod=0755 docker/pip-install-requirements.sh /tmp/pip-install-requiremen
 
 # requirements.txt only installs boto3 (a Python library); the entrypoint's drop-and-recreate
 # and seed steps call the `aws` CLI binary itself (aws ssm get-parameter/get-parameters-by-path),
-# which boto3 doesn't provide.
+# which boto3 doesn't provide. Ubuntu Noble (this image's base) dropped the `awscli` apt package
+# (no installation candidate) — installed via AWS's own v2 installer instead, which is a
+# self-contained bundle and avoids any botocore version conflict with the pinned boto3 above.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends awscli \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends unzip \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(dpkg --print-architecture | sed 's/amd64/x86_64/;s/arm64/aarch64/').zip" -o /tmp/awscliv2.zip \
+    && unzip -q /tmp/awscliv2.zip -d /tmp \
+    && /tmp/aws/install \
+    && rm -rf /tmp/awscliv2.zip /tmp/aws
 
 RUN /tmp/pip-install-requirements.sh \
     && rm -rf /root/.cache /tmp/odoo-requirements.txt /tmp/pip-install-requirements.sh
