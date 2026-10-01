@@ -83,7 +83,7 @@ registry.registerPath({
   path: `/${API_VERSION}/org/{orgId}/registration`,
   summary: "Read an org's own Org Registration",
   description:
-    'docs/contexts/hosting/CONTEXT.md: "the read-only summary of an org\'s own standing". The ' +
+    'docs/contexts/hosting/GLOSSARY.md: "the read-only summary of an org\'s own standing". The ' +
     'org token must scope to {orgId} itself (docs/adr/0036) - any other {orgId} is 403.',
   tags: ['org'],
   security: [{ orgToken: [] }],

@@ -63,7 +63,7 @@ mechanics below, which apply the same way here), not merely a sibling linked by 
 Blocking edges between the sub-issues still use native issue dependencies per the stacking
 convention above.
 
-**The first sub-issue in the tree is always**: commit the ADR(s) and `CONTEXT.md`/`CONTEXT-MAP.md`
+**The first sub-issue in the tree is always**: commit the ADR(s) and `GLOSSARY.md`/`GLOSSARY-MAP.md`
 updates produced by the `/grill-with-docs` session that led to the spec (if that session didn't
 already commit them itself).
 

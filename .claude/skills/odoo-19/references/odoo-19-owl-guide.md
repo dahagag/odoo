@@ -40,6 +40,7 @@ import { Component } from "@odoo/owl";
 export class MyComponent extends Component {
   static template = "my_module.MyComponent";
   static props = {
+    title: { type: String, optional: true },
     value: { type: String, optional: true },
   };
 
@@ -236,7 +237,10 @@ increment() {
 ```javascript
 setup() {
     this.state = useState({count: 0});
-    this.double = computed(() => this.state.count * 2);
+}
+
+get double() {
+    return this.state.count * 2;
 }
 ```
 
@@ -299,7 +303,8 @@ this.message = _t("Hello %(name)s", { name: "John" });
 ### Translate in Template
 
 ```xml
-<span t-out="translate('Hello World')"/>
+<!-- Static text in OWL templates is extracted and translated; there is no translate() helper -->
+<span>Hello World</span>
 ```
 
 ---

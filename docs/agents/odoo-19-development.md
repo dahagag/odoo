@@ -35,7 +35,7 @@ Runtime behavior and established addon style outrank a style-only rewrite.
 
 ## Explore before generating
 
-1. Read `CONTEXT-MAP.md`, relevant context glossaries, and applicable ADRs. List every owning context and integration edge touched by the feature. When the feature touches existing `custom_addons/`, `docs/`, or `infra/` content, `ctx_search` the `fork-diff:*` sources first, per "Source of truth" above.
+1. Read `GLOSSARY-MAP.md`, relevant context glossaries, and applicable ADRs. List every owning context and integration edge touched by the feature. When the feature touches existing `custom_addons/`, `docs/`, or `infra/` content, `ctx_search` the `fork-diff:*` sources first, per "Source of truth" above.
 2. Read the target addon's complete `__manifest__.py` and recursively account for relevant dependencies.
 3. Trace the affected models and every extension of them. Include fields, computes, constraints, indexes, lifecycle actions, CRUD overrides, and business methods.
 4. Trace security groups and privileges, ACLs, record rules, field restrictions, multi-company rules, and any `sudo()` boundary.

@@ -10,7 +10,7 @@ Triage uses the five default canonical labels: `needs-triage`, `needs-info`, `re
 
 ### Domain docs
 
-Domain documentation uses the multi-context layout rooted at `CONTEXT-MAP.md`. Before naming or changing business concepts, read the relevant context entries and `docs/agents/domain.md`.
+Domain documentation uses the multi-context layout rooted at `GLOSSARY-MAP.md`. Before naming or changing business concepts, read the relevant context entries and `docs/agents/domain.md`.
 
 ### Odoo 19 development
 

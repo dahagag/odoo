@@ -18,7 +18,7 @@ CONFIG_PARAM_ORG_TOKEN = 'hosting.org_token'
 
 
 class HostingOrgRegistration(models.Model):
-    # This org's own view of its Trial Org standing (docs/contexts/hosting/CONTEXT.md's Org
+    # This org's own view of its Trial Org standing (docs/contexts/hosting/GLOSSARY.md's Org
     # Registration entry): name, prospect domain, seats used/total, and expiry date. Lives on
     # the Trial Org's own instance. As of issue #201, this is a read-only mirror of the
     # administration stack's own record (docs/adr/0034), refreshed by _sync_from_stack() below -
@@ -36,7 +36,7 @@ class HostingOrgRegistration(models.Model):
     expiry_date = fields.Date(
         string="Expiry Date",
         help="Absent for a Client Org, which has no Auto-Destroy expiry to count down to "
-             "(docs/contexts/hosting/CONTEXT.md).",
+             "(docs/contexts/hosting/GLOSSARY.md).",
     )
     fetched_at = fields.Datetime(
         string="Last Synced", readonly=True, copy=False,

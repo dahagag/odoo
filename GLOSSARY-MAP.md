@@ -2,7 +2,7 @@
 
 This map separates the major business contexts represented by Odoo 19 Community. An addon is an implementation unit, not automatically a business boundary: connector addons integrate contexts, while shared technical records do not transfer ownership of every concept that references them.
 
-Detailed glossaries are created lazily under `docs/contexts/<context>/CONTEXT.md` when a custom feature resolves context-specific language.
+Detailed glossaries are created lazily under `docs/contexts/<context>/GLOSSARY.md` when a custom feature resolves context-specific language.
 
 ## Contexts
 
@@ -188,7 +188,7 @@ Detailed glossaries are created lazily under `docs/contexts/<context>/CONTEXT.md
 
 **Consumes:** Opportunity, prospect-domain, and won-deal data from CRM; sales-methodology qualification state for gating Extension.
 
-Detailed glossary: [`docs/contexts/hosting/CONTEXT.md`](docs/contexts/hosting/CONTEXT.md)
+Detailed glossary: [`docs/contexts/hosting/GLOSSARY.md`](docs/contexts/hosting/GLOSSARY.md)
 
 ## Relationships
 

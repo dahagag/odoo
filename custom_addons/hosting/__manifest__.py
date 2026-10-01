@@ -8,7 +8,7 @@ prospect domain, seats used/total, and expiry date - with no admin capability, n
 credentials, and no cross-org data. Deliberately thin: read-only, no dependency on
 `hosting_admin` or any AWS/OpenTofu code.
 
-See docs/adr/0018 for the admin/org-facing addon split and docs/contexts/hosting/CONTEXT.md
+See docs/adr/0018 for the admin/org-facing addon split and docs/contexts/hosting/GLOSSARY.md
 for vocabulary (Trial Org, Seat, Org Registration).
     """,
     'author': "agentic-erp",

@@ -19,7 +19,7 @@ class TestExpiryCountdownSystrayTour(HttpCase):
 
     def test_systray_shows_no_countdown_for_a_client_org(self):
         # A Client Org's registration has no expiry_date at all (docs/contexts/hosting/
-        # CONTEXT.md: "no expiry window") - issue #201's User Story #6 requires the countdown
+        # GLOSSARY.md: "no expiry window") - issue #201's User Story #6 requires the countdown
         # to be absent, not rendered broken.
         self.env['hosting.org.registration'].create({
             'name': "Acme Client Org",

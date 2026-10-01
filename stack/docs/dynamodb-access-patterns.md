@@ -34,7 +34,7 @@ writes no org records itself (Out of Scope: "Trial Org and Client Org lifecycle 
    `gsi2pk = expiry-sweep` (a single fixed partition, since the sweep always scans "everything
    with an expiry date") with `gsi2sk = <expiryDate ISO string>` as the sort key, so the sweep
    queries `gsi2sk <= now` instead of a full-table scan. A Client Org is never written into this
-   GSI (`docs/contexts/hosting/CONTEXT.md`'s Auto-Destroy entry: "never applicable to a Client
+   GSI (`docs/contexts/hosting/GLOSSARY.md`'s Auto-Destroy entry: "never applicable to a Client
    Org").
 4. **List orgs by Opportunity.** `Query` a third GSI keyed by `gsi3pk = opportunity#<opportunityId>`
    - `hosting_admin`'s side of the mirror (ADR-0034) looks up an org by the Opportunity it was
@@ -62,7 +62,7 @@ writes no org records itself (Out of Scope: "Trial Org and Client Org lifecycle 
    Concretely: **`seatsTotal` must be treated as immutable once an org is issued** unless and
    until #196 changes the seat-creation path to read the item's current `seatsTotal` and derive
    the threshold from it in the same transaction (rather than from a value computed earlier).
-   `docs/contexts/hosting/CONTEXT.md`'s Seat entry already describes it as "set per-trial at
+   `docs/contexts/hosting/GLOSSARY.md`'s Seat entry already describes it as "set per-trial at
    issuance," not something a later action edits - so today's contract already matches this
    constraint; it is recorded here so a change that makes `seatsTotal` mutable knows it must
    revisit this write path too.

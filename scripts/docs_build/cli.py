@@ -3,7 +3,7 @@
 Invoked as `./scripts/dev.ps1 docs-build:doc <file>` / `bash scripts/dev.sh
 docs-build:doc <file>`. Reads one teach-doc entry file, renders it (and the
 closure of every local `.md` file it links to, transitively — an ADR, a
-CONTEXT.md, a research doc, another teach doc) through
+GLOSSARY.md, a research doc, another teach doc) through
 scripts.docs_build.markdown_transform, and writes each as self-contained HTML
 under that entry's addon output dir (see docs/adr/0007 for why the addon's
 own static/ dir is the publishing path). Internal links are rewritten to
@@ -293,7 +293,7 @@ def _assign_output_paths(closure: dict[Path, _Document], output_dir: Path) -> di
     """Map each closure member to its output file, rejecting basename collisions.
 
     Output filenames are flat (see docs/adr/0007) — two different source
-    documents that happen to share a filename stem (e.g. two `CONTEXT.md`
+    documents that happen to share a filename stem (e.g. two `GLOSSARY.md`
     files under different `docs/contexts/*/` directories) would otherwise
     silently overwrite each other.
     """

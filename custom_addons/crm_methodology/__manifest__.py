@@ -8,7 +8,7 @@ enforcement at the Quotation-Created and Marked-Won checkpoints) and which
 discovery Playbook Questions surface when a matching activity is completed.
 
 See docs/research/b2b-sales-methodologies-odoo.md and
-docs/contexts/crm/CONTEXT.md in the repository for the research and
+docs/contexts/crm/GLOSSARY.md in the repository for the research and
 vocabulary behind this module, and docs/adr/0005 for why Requirements
 reference Properties by key instead of owning field definitions.
     """,

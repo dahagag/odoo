@@ -2,7 +2,7 @@
 
 Auto-Destroy always leaves a short-lived EBS snapshot of the Trial Org's root volume before
 RunTofu's `tofu destroy` runs, so a deal that closes shortly after expiry can still recover its
-demo data (docs/contexts/hosting/CONTEXT.md's Auto-Destroy entry,
+demo data (docs/contexts/hosting/GLOSSARY.md's Auto-Destroy entry,
 hosting.trial.org.snapshot_retention_until). Invoked as its own Task state
 (state_machine.asl.json.tftpl's SnapshotBeforeDestroy), before RunTofu.
 

@@ -32,7 +32,7 @@
           "trial",
           "client"
         ],
-        "description": "Trial Org: the ephemeral evaluation offering. Client Org: a stable hosted org for a paying client. See docs/contexts/hosting/CONTEXT.md."
+        "description": "Trial Org: the ephemeral evaluation offering. Client Org: a stable hosted org for a paying client. See docs/contexts/hosting/GLOSSARY.md."
       },
       "OrgState": {
         "type": "string",
@@ -621,7 +621,7 @@
     "/v1/org/{orgId}/registration": {
       "get": {
         "summary": "Read an org's own Org Registration",
-        "description": "docs/contexts/hosting/CONTEXT.md: \"the read-only summary of an org's own standing\". The org token must scope to {orgId} itself (docs/adr/0036) - any other {orgId} is 403.",
+        "description": "docs/contexts/hosting/GLOSSARY.md: \"the read-only summary of an org's own standing\". The org token must scope to {orgId} itself (docs/adr/0036) - any other {orgId} is 403.",
         "tags": [
           "org"
         ],

@@ -1,7 +1,7 @@
 # Administration Stack
 
 The system of record for every Trial Org and Client Org (`docs/adr/0034`,
-`docs/contexts/hosting/CONTEXT.md`'s **Administration Stack** entry). This directory holds this
+`docs/contexts/hosting/GLOSSARY.md`'s **Administration Stack** entry). This directory holds this
 ticket's skeleton: the monorepo, the API contract, and the AWS boundary seam. No Trial Org/Client
 Org lifecycle logic lives here yet - that's `hosting_admin`'s current job until it ports over in
 [#196](https://github.com/dahagag/odoo/issues/196).

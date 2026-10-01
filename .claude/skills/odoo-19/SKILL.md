@@ -55,6 +55,12 @@ Master index for all Odoo 19 development guides. Read the appropriate guide from
 
 ## Coding Conventions
 
+Before writing code, run the `odoo-workflow` skill if it is installed (trace the real
+source, Context Brief with `file:line`, definition of done); install it alongside this pack.
+
+Read `references/api-highlights.md` before writing code and apply its Quick review
+checks: the ❌ items are what not to use in Odoo 19.
+
 Apply the convention section in the guide you open. Odoo 19 runtime behavior,
 then existing stable-addon style, takes precedence; keep diffs focused.
 
@@ -93,9 +99,9 @@ skills/odoo-19.0/
 
 All guides are based on analysis of Odoo 19 source code:
 
-- `odoo/models.py` - ORM implementation
-- `odoo/fields.py` - Field types
-- `odoo/api.py` - Decorators
+- `odoo/orm/models.py` - ORM implementation
+- `odoo/orm/fields.py` - Field types
+- `odoo/orm/decorators.py` - Decorators
 - `odoo/http.py` - HTTP layer
 - `odoo/exceptions.py` - Exception types
 - `odoo/tools/translate.py` - Translation system

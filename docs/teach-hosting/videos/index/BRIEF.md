@@ -20,7 +20,7 @@ narrated companion to the doc's four sections, for a trial user who wants the
 the doc covers, in the same order: Seats, Org Registration (expiry &
 extension), Invites (Open vs. Targeted), and Suspended/Active/Wake. It does
 not touch the CRM product itself — that's crm_methodology's separate
-teach-doc content, out of scope here (docs/contexts/hosting/CONTEXT.md's
+teach-doc content, out of scope here (docs/contexts/hosting/GLOSSARY.md's
 Onboarding Guide entry).
 
 Tone: calm, orientation-not-sales — the same register the first-login prompt

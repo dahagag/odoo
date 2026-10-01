@@ -1,6 +1,6 @@
 <!-- layout: main -->
 <!-- video: off -->
-<!-- dependencies: methodologies.md ../contexts/crm/CONTEXT.md ../adr/0005-methodology-requirements-reference-properties-by-key.md ../research/b2b-sales-methodologies-odoo.md -->
+<!-- dependencies: methodologies.md ../contexts/crm/GLOSSARY.md ../adr/0005-methodology-requirements-reference-properties-by-key.md ../research/b2b-sales-methodologies-odoo.md -->
 # Sales Methodology, Explained
 
 What the custom `crm.methodology` addon does, why it exists, and exactly how it differs from stock Odoo 19 CRM — for Sales, R&D, and the consultants who have to explain it to a client.
@@ -125,7 +125,7 @@ So consultants don't over-promise to clients, today the addon does **not**:
 ## Further reading
 
 - [The Eight B2B Sales Methodologies — deep-dive teaching page](methodologies.md)
-- [CRM context glossary — docs/contexts/crm/CONTEXT.md (repo)](https://github.com/dahagag/odoo/blob/dev/19.0/docs/contexts/crm/CONTEXT.md)
+- [CRM context glossary — docs/contexts/crm/GLOSSARY.md (repo)](https://github.com/dahagag/odoo/blob/dev/19.0/docs/contexts/crm/GLOSSARY.md)
 - [ADR 0005 — Requirements reference Properties by key (repo)](https://github.com/dahagag/odoo/blob/dev/19.0/docs/adr/0005-methodology-requirements-reference-properties-by-key.md)
 - [B2B sales methodologies research — 8 methodologies, OOTB Community/Enterprise, 6 platforms (repo)](https://github.com/dahagag/odoo/blob/dev/19.0/docs/research/b2b-sales-methodologies-odoo.md)
 - [Addon source — custom_addons/crm_methodology/ (repo)](https://github.com/dahagag/odoo/tree/dev/19.0/custom_addons/crm_methodology)

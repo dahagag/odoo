@@ -6,6 +6,11 @@
   and ACLs in `ir.model.access.csv`; load groups and rules before ACLs.
 - Name ACL IDs `access_<model>_<role>` and rule IDs `<model>_<role>_rule`.
   Keep record-rule domains narrow and never rely on a UI restriction as access control.
+- Bind any recordset obtained through `sudo()` to a name ending in `_sudo`
+  (`partner_sudo = self.partner_id.sudo()`,
+  `orders_sudo = self.env['sale.order'].sudo().search(domain)`). A one-shot call
+  (`record.sudo().write(vals)`) needs no variable. Never return a `_sudo` recordset
+  from a public method or keep it on `self`.
 
 Guide for Odoo 19 security: access rights, record rules, field permissions, and security pitfalls.
 
@@ -140,12 +145,16 @@ Record rules are **default-allow**: if access rights grant access and no rule ap
 
 ### Domain Force Variables
 
-| Variable      | Description                                     |
-| ------------- | ----------------------------------------------- |
-| `time`        | Python's `time` module                          |
-| `user`        | Current user (singleton recordset)              |
-| `company_id`  | Current user's selected company (single id)     |
-| `company_ids` | All companies the user has access (list of ids) |
+| Variable      | Description                                                            |
+| ------------- | ---------------------------------------------------------------------- |
+| `user`        | Current user (singleton recordset, empty context)                      |
+| `company_id`  | Current company (single id, `self.env.company.id`)                     |
+| `company_ids` | Companies active in the company switcher (`self.env.companies.ids`)    |
+
+These three names are the whole context of `ir.rule._eval_context()` in `base` (the
+`website` module adds `website`): `time` (present in 18), `datetime`, `uid` and
+`context` are not available. Use `company_ids`, not `user.company_ids` (every
+company the user may access, ignoring the switcher).
 
 ### Example: Multi-Company Rule
 
@@ -155,6 +164,19 @@ Record rules are **default-allow**: if access rights grant access and no rule ap
     <field name="model_id" ref="model_my_model"/>
     <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
 </record>
+```
+
+The rule only filters what a user sees. To stop a record from linking to another
+company's records, set `_check_company_auto = True` on the model and
+`check_company=True` on company-scoped relations (core pattern, e.g. `sale.order`):
+
+```python
+class MyModel(models.Model):
+    _name = 'my.model'
+    _check_company_auto = True  # create()/write() call _check_company()
+
+    company_id = fields.Many2one('res.company', required=True, default=lambda self: self.env.company)
+    partner_id = fields.Many2one('res.partner', check_company=True)  # also adds a company domain in the UI
 ```
 
 ### Example: User-Only Records
@@ -367,17 +389,25 @@ domain = literal_eval(self.filter_domain)
 
 ### Accessing Object Attributes
 
-Use `__getitem__` instead of `getattr()` for dynamic field access.
+Use `__getitem__` instead of `getattr()` for dynamic field access. `record[state_field]`
+blocks arbitrary method access, but it still returns the value of *any* field on the
+model. If `state_field` comes from an untrusted caller, also validate it against a
+fixed allowlist and avoid `sudo()` unless the caller's access to that specific field
+is already established.
 
 ```python
-# BAD: unsafe, can access any attribute
+# BAD: unsafe, can access any attribute (including methods) and any field
 def _get_state_value(self, res_id, state_field):
     record = self.sudo().browse(res_id)
     return getattr(record, state_field, False)
 
-# GOOD: safer
+# GOOD: blocks method access, restricts fields to an allowlist, no unconditional sudo()
+ALLOWED_STATE_FIELDS = {'state', 'stage_id'}
+
 def _get_state_value(self, res_id, state_field):
-    record = self.sudo().browse(res_id)
+    if state_field not in ALLOWED_STATE_FIELDS:
+        raise ValueError(f"Field {state_field!r} is not allowed")
+    record = self.browse(res_id)
     return record[state_field]
 ```
 

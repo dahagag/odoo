@@ -22,7 +22,7 @@ The "Translated" tier is LLM-drafted, not reviewed by a native speaker of each l
 treat it the way you would any community-contributed `.po` file and get a native-speaker
 review before treating the wording as final, especially for the longer field-help tooltips.
 A few terms are deliberately kept in English across every language, matching
-`docs/contexts/hosting/CONTEXT.md`'s glossary treatment of them as specific product/technical
+`docs/contexts/hosting/GLOSSARY.md`'s glossary treatment of them as specific product/technical
 terms rather than ordinary prose: **Trial Org**, **Auto-Destroy**, **Extension**, and the
 `hosting_admin` module name.
 

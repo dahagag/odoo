@@ -5,7 +5,7 @@ from odoo.exceptions import AccessError
 from odoo.tests import TransactionCase, tagged
 from odoo.tests.common import new_test_user
 
-# The exact set of fields the Org Registration list view (docs/contexts/hosting/CONTEXT.md:
+# The exact set of fields the Org Registration list view (docs/contexts/hosting/GLOSSARY.md:
 # "name, domain, seats used/total, expiry date") is allowed to expose - nothing more, nothing
 # less.
 EXPECTED_LIST_FIELDS = {'name', 'prospect_domain', 'seats_used', 'seat_cap', 'expiry_date'}
