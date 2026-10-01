@@ -91,6 +91,8 @@ data "aws_iam_policy_document" "platform_registry_deploy" {
       aws_iam_role.platform_registry_deploy.arn,
       aws_iam_role.platform_administration_stack_deploy.arn,
       aws_iam_role.platform_ci_plan.arn,
+      aws_iam_role.platform_staging_odoo_deploy.arn,
+      aws_iam_role.platform_staging_odoo_ci_plan.arn,
     ]
   }
 }
@@ -530,7 +532,7 @@ data "aws_iam_policy_document" "platform_ci_plan" {
   }
 
   # infra_plan also plans infra/registry itself (via this same role) — a `tofu plan` refreshes
-  # every resource in state regardless of what's being written, including this module's own three
+  # every resource in state regardless of what's being written, including this module's own five
   # cross-account IAM roles, mirroring infra/cicd's own ReadCicdOidcAndRoles/ReadOtherManagedRoles
   # pattern for the identical reason.
   statement {
@@ -547,6 +549,8 @@ data "aws_iam_policy_document" "platform_ci_plan" {
       aws_iam_role.platform_registry_deploy.arn,
       aws_iam_role.platform_administration_stack_deploy.arn,
       aws_iam_role.platform_ci_plan.arn,
+      aws_iam_role.platform_staging_odoo_deploy.arn,
+      aws_iam_role.platform_staging_odoo_ci_plan.arn,
     ]
   }
 }
@@ -555,4 +559,396 @@ resource "aws_iam_role_policy" "platform_ci_plan" {
   name   = "platform-ci-plan"
   role   = aws_iam_role.platform_ci_plan.id
   policy = data.aws_iam_policy_document.platform_ci_plan.json
+}
+
+# ---------------------------------------------------------------------------
+# platform-staging-odoo-deploy: staging_odoo_deploy alone (issue #349/#341) — unlike
+# platform_administration_stack_deploy above, trusted by exactly one Hosting Account principal,
+# not two. infra/staging-odoo is its own deployable unit with no production counterpart (#203's
+# own Out of Scope: "Production cutover"), so there is no second deploy role to share this trust
+# with the way staging_deploy/production_deploy share platform_administration_stack_deploy_trust.
+# ---------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "platform_staging_odoo_deploy_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [var.staging_odoo_deploy_role_arn]
+    }
+  }
+}
+
+resource "aws_iam_role" "platform_staging_odoo_deploy" {
+  name               = "platform-staging-odoo-deploy"
+  assume_role_policy = data.aws_iam_policy_document.platform_staging_odoo_deploy_trust.json
+}
+
+# Same shape as platform_administration_stack_deploy's EC2/ECS/IAM/Logs/SSM statements above,
+# scoped to infra/staging-odoo's own resources instead. TofuStateBackendStagingOdoo and the ECR
+# retag grant stay on staging_odoo_deploy itself (infra/cicd/oidc.tf) — the state bucket lives in
+# the Hosting Account, and ECR retag access is a data-plane grant handled by a repository policy
+# (ecr.tf's odoo_staging_push), not this role-chaining mechanism — same split
+# platform_administration_stack_deploy's own comment documents.
+data "aws_iam_policy_document" "platform_staging_odoo_deploy" {
+  statement {
+    sid    = "ManageStagingOdooNetworking"
+    effect = "Allow"
+    actions = [
+      "ec2:DescribeVpcs",
+      "ec2:CreateVpc",
+      "ec2:DescribeVpcAttribute",
+      "ec2:DescribeSubnets",
+      "ec2:CreateSubnet",
+      "ec2:DescribeInternetGateways",
+      "ec2:CreateInternetGateway",
+      "ec2:DescribeNatGateways",
+      "ec2:CreateNatGateway",
+      "ec2:DescribeAddresses",
+      "ec2:AllocateAddress",
+      "ec2:DescribeAddressesAttribute",
+      "ec2:DescribeRouteTables",
+      "ec2:CreateRouteTable",
+      "ec2:DescribeSecurityGroups",
+      "ec2:CreateSecurityGroup",
+      "ec2:DescribeTags",
+    ]
+    resources = ["*"]
+  }
+
+  # See infra/cicd's old TagAdministrationStackNetworkingOnCreate comment (issue #216),
+  # platform_administration_stack_deploy's identical statement above — why ec2:CreateTags is
+  # conditioned on ec2:CreateAction rather than folded into the statement above.
+  statement {
+    sid    = "TagStagingOdooNetworkingOnCreate"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateTags",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:CreateAction"
+      values = [
+        "CreateVpc",
+        "CreateSubnet",
+        "CreateInternetGateway",
+        "CreateNatGateway",
+        "AllocateAddress",
+        "CreateRouteTable",
+        "CreateSecurityGroup",
+      ]
+    }
+  }
+
+  statement {
+    sid    = "ManageStagingOdooNetworkingScoped"
+    effect = "Allow"
+    actions = [
+      "ec2:DeleteVpc",
+      "ec2:ModifyVpcAttribute",
+      "ec2:DeleteSubnet",
+      "ec2:ModifySubnetAttribute",
+      "ec2:AttachInternetGateway",
+      "ec2:DetachInternetGateway",
+      "ec2:DeleteInternetGateway",
+      "ec2:DeleteNatGateway",
+      "ec2:ReleaseAddress",
+      "ec2:AssociateRouteTable",
+      "ec2:DisassociateRouteTable",
+      "ec2:DeleteRouteTable",
+      "ec2:CreateRoute",
+      "ec2:DeleteRoute",
+      "ec2:DeleteSecurityGroup",
+      "ec2:AuthorizeSecurityGroupEgress",
+      "ec2:RevokeSecurityGroupEgress",
+      "ec2:AuthorizeSecurityGroupIngress",
+      "ec2:RevokeSecurityGroupIngress",
+      "ec2:DeleteTags",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/TofuModule"
+      values   = ["staging-odoo"]
+    }
+  }
+
+  statement {
+    sid    = "ManageStagingOdooEcs"
+    effect = "Allow"
+    actions = [
+      "ecs:DescribeClusters",
+      "ecs:CreateCluster",
+      "ecs:DeleteCluster",
+      "ecs:PutClusterCapacityProviders",
+      "ecs:TagResource",
+    ]
+    resources = [local.staging_odoo_ecs_cluster_arn]
+  }
+
+  statement {
+    sid    = "RegisterStagingOdooTaskDefinition"
+    effect = "Allow"
+    actions = [
+      "ecs:RegisterTaskDefinition",
+      "ecs:DeregisterTaskDefinition",
+      "ecs:TagResource",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "ReadStagingOdooTaskDefinition"
+    effect = "Allow"
+    actions = [
+      "ecs:DescribeTaskDefinition",
+      "ecs:ListTagsForResource",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "DeployStagingOdooService"
+    effect = "Allow"
+    actions = [
+      "ecs:CreateService",
+      "ecs:UpdateService",
+      "ecs:DeleteService",
+      "ecs:DescribeServices",
+      "ecs:TagResource",
+    ]
+    resources = [local.staging_odoo_service_arn]
+  }
+
+  # .github/actions/smoke-check-staging-odoo (#342) assumes this role directly and calls
+  # `aws ecs describe-tasks`/`list-tasks`/`execute-command` against the running task over the
+  # ECS/SSM control plane — staging has no other network path in (ADR-0040). Without this, the
+  # post-deploy smoke check AccessDenieds before it ever reaches the container (Security
+  # Architecture Review, PR #346). Scoped via the ecs:cluster condition key, not a task-ARN
+  # resource pattern: task IDs are dynamic (assigned at RunTask, only discoverable via ListTasks
+  # itself — a chicken-and-egg problem for pre-enumerating them), and AWS's own published
+  # least-privilege examples for ECS Exec scope exactly these three actions this way.
+  statement {
+    sid    = "SmokeCheckStagingOdooTask"
+    effect = "Allow"
+    actions = [
+      "ecs:DescribeTasks",
+      "ecs:ListTasks",
+      "ecs:ExecuteCommand",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "ArnEquals"
+      variable = "ecs:cluster"
+      values   = [local.staging_odoo_ecs_cluster_arn]
+    }
+  }
+
+  statement {
+    sid    = "ManageStagingOdooTaskRoles"
+    effect = "Allow"
+    actions = [
+      "iam:GetRole",
+      "iam:CreateRole",
+      "iam:UpdateRole",
+      "iam:DeleteRole",
+      "iam:TagRole",
+      "iam:PutRolePolicy",
+      "iam:GetRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:AttachRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+    ]
+    resources = [local.staging_odoo_task_role_arn_pattern]
+  }
+
+  statement {
+    sid       = "PassStagingOdooTaskRoles"
+    effect    = "Allow"
+    actions   = ["iam:PassRole"]
+    resources = [local.staging_odoo_task_role_arn_pattern]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ecs-tasks.amazonaws.com"]
+    }
+  }
+
+  statement {
+    sid    = "ManageStagingOdooLogGroup"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:DeleteLogGroup",
+      "logs:PutRetentionPolicy",
+      "logs:TagResource",
+      "logs:ListTagsForResource",
+    ]
+    resources = flatten([
+      for arn in local.staging_odoo_log_group_arns : [arn, "${arn}:*"]
+    ])
+  }
+
+  statement {
+    sid       = "DescribeStagingOdooLogGroups"
+    effect    = "Allow"
+    actions   = ["logs:DescribeLogGroups"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "ManageStagingOdooDeployedCommitParameter"
+    effect = "Allow"
+    actions = [
+      "ssm:GetParameter",
+      "ssm:PutParameter",
+      "ssm:AddTagsToResource",
+      "ssm:RemoveTagsFromResource",
+      "ssm:ListTagsForResource",
+    ]
+    resources = [local.staging_odoo_deployed_commit_parameter_arn]
+  }
+
+  statement {
+    sid       = "DescribeStagingOdooParameters"
+    effect    = "Allow"
+    actions   = ["ssm:DescribeParameters"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "platform_staging_odoo_deploy" {
+  name   = "platform-staging-odoo-deploy"
+  role   = aws_iam_role.platform_staging_odoo_deploy.id
+  policy = data.aws_iam_policy_document.platform_staging_odoo_deploy.json
+}
+
+# ---------------------------------------------------------------------------
+# platform-staging-odoo-ci-plan: infra_plan only (issue #349) — trusted by the existing shared
+# infra_plan role (same principal platform_ci_plan's own trust policy already allows), but a
+# dedicated role rather than folded into platform_ci_plan itself, matching issue #341's already-
+# shipped ci.yml wiring (infra-plan-staging-odoo's own PLATFORM_STAGING_ODOO_CI_PLAN_ROLE_ARN
+# input, distinct from PLATFORM_CI_PLAN_ROLE_ARN).
+# ---------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "platform_staging_odoo_ci_plan_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [var.infra_plan_role_arn]
+    }
+  }
+}
+
+resource "aws_iam_role" "platform_staging_odoo_ci_plan" {
+  name               = "platform-staging-odoo-ci-plan"
+  assume_role_policy = data.aws_iam_policy_document.platform_staging_odoo_ci_plan_trust.json
+}
+
+# The read-side mirror of platform_staging_odoo_deploy's statements above, same shape as
+# platform_ci_plan's own read-side mirror of platform_administration_stack_deploy.
+data "aws_iam_policy_document" "platform_staging_odoo_ci_plan" {
+  statement {
+    sid    = "ReadStagingOdooNetworking"
+    effect = "Allow"
+    actions = [
+      "ec2:DescribeVpcs",
+      "ec2:DescribeVpcAttribute",
+      "ec2:DescribeSubnets",
+      "ec2:DescribeInternetGateways",
+      "ec2:DescribeNatGateways",
+      "ec2:DescribeAddresses",
+      "ec2:DescribeAddressesAttribute",
+      "ec2:DescribeRouteTables",
+      "ec2:DescribeSecurityGroups",
+      "ec2:DescribeTags",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "ReadStagingOdooEcs"
+    effect = "Allow"
+    actions = [
+      "ecs:DescribeClusters",
+      "ecs:DescribeServices",
+    ]
+    resources = [
+      local.staging_odoo_ecs_cluster_arn,
+      local.staging_odoo_service_arn,
+    ]
+  }
+
+  statement {
+    sid    = "ReadStagingOdooTaskDefinition"
+    effect = "Allow"
+    actions = [
+      "ecs:DescribeTaskDefinition",
+      "ecs:ListTagsForResource",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "ReadStagingOdooTaskRoles"
+    effect = "Allow"
+    actions = [
+      "iam:GetRole",
+      "iam:GetRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+    ]
+    resources = [local.staging_odoo_task_role_arn_pattern]
+  }
+
+  statement {
+    sid       = "ReadStagingOdooLogGroup"
+    effect    = "Allow"
+    actions   = ["logs:DescribeLogGroups"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "ReadStagingOdooLogGroupTags"
+    effect = "Allow"
+    actions = [
+      "logs:ListTagsForResource",
+    ]
+    resources = flatten([
+      for arn in local.staging_odoo_log_group_arns : [arn, "${arn}:*"]
+    ])
+  }
+
+  statement {
+    sid    = "ReadStagingOdooDeployedCommitParameter"
+    effect = "Allow"
+    actions = [
+      "ssm:GetParameter",
+      "ssm:ListTagsForResource",
+    ]
+    resources = [local.staging_odoo_deployed_commit_parameter_arn]
+  }
+
+  statement {
+    sid       = "ReadStagingOdooParameters"
+    effect    = "Allow"
+    actions   = ["ssm:DescribeParameters"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "platform_staging_odoo_ci_plan" {
+  name   = "platform-staging-odoo-ci-plan"
+  role   = aws_iam_role.platform_staging_odoo_ci_plan.id
+  policy = data.aws_iam_policy_document.platform_staging_odoo_ci_plan.json
 }

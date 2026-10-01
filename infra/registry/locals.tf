@@ -10,9 +10,10 @@ locals {
   odoo_prod_repository_name                = "agentic-erp/odoo-prod"
   tofu_runner_repository_name              = "agentic-erp/tofu-runner"
   administration_stack_api_repository_name = "agentic-erp/administration-stack-api"
+  odoo_staging_repository_name             = "agentic-erp/odoo-staging"
 
   # Issue #271/#272: platform_registry_deploy's own ECR-management permissions (moved here from
-  # infra/cicd's infra_management_statements) are scoped to these four repositories' own ARNs —
+  # infra/cicd's infra_management_statements) are scoped to these five repositories' own ARNs —
   # read directly off the resources this module already creates, not a reconstructed ARN pattern,
   # since this module is the one thing that can never drift from its own resources' real ARNs.
   ecr_repository_arns = [
@@ -20,6 +21,7 @@ locals {
     aws_ecr_repository.odoo_prod.arn,
     aws_ecr_repository.tofu_runner.arn,
     aws_ecr_repository.administration_stack_api.arn,
+    aws_ecr_repository.odoo_staging.arn,
   ]
 
   # infra/platform's own resource shapes (issue #272), built from this account's own identity
@@ -43,4 +45,26 @@ locals {
   # module's IAM grant has to know the parameter's name ahead of infra/platform actually creating
   # it, not read it back via remote state.
   administration_stack_deployed_commit_parameter_arn = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${var.administration_stack_deployed_commit_parameter_name}"
+
+  # infra/staging-odoo's own resource shapes (issue #349) — same "fixed-name-pattern, not remote
+  # state" convention as the administration_stack_* locals above, for platform_staging_odoo_deploy/
+  # platform_staging_odoo_ci_plan's permission documents.
+  staging_odoo_ecs_cluster_arn = "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:cluster/${var.staging_odoo_ecs_cluster_name}"
+  staging_odoo_task_family_arn = "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/${var.staging_odoo_task_family}:*"
+  staging_odoo_service_arn     = "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:service/${var.staging_odoo_ecs_cluster_name}/${var.staging_odoo_ecs_service_name}"
+
+  # infra/staging-odoo/ecs.tf creates three log groups (one per task container), not one —
+  # unlike administration_stack's single log group, so this is a list.
+  staging_odoo_log_group_arns = [
+    for container_name in ["postgres", "odoo", "tailscale"] :
+    "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${var.staging_odoo_ecs_cluster_name}/${container_name}"
+  ]
+
+  # infra/staging-odoo/iam.tf names its two roles "${var.environment}-execution"/"${var.environment}-task"
+  # ("staging-odoo-execution"/"staging-odoo-task") — both share the "staging-odoo-" prefix, unlike
+  # administration_stack's single "-administration-stack-api-*" suffix pattern, so one wildcard
+  # pattern covers both roles here.
+  staging_odoo_task_role_arn_pattern = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.staging_odoo_ecs_cluster_name}-*"
+
+  staging_odoo_deployed_commit_parameter_arn = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${var.staging_odoo_deployed_commit_parameter_name}"
 }

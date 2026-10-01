@@ -1,1 +1,1 @@
-from . import test_browser_tour_smoke
+from . import test_browser_tour_smoke, test_staging_deploy_verification

@@ -43,6 +43,8 @@ variables {
   platform_registry_deploy_role_arn             = "arn:aws:iam::333333333333:role/platform-registry-deploy"
   platform_administration_stack_deploy_role_arn = "arn:aws:iam::333333333333:role/platform-administration-stack-deploy"
   platform_ci_plan_role_arn                     = "arn:aws:iam::333333333333:role/platform-ci-plan"
+  platform_staging_odoo_deploy_role_arn         = "arn:aws:iam::333333333333:role/platform-staging-odoo-deploy"
+  platform_staging_odoo_ci_plan_role_arn        = "arn:aws:iam::333333333333:role/platform-staging-odoo-ci-plan"
 }
 
 override_data {
@@ -113,9 +115,10 @@ run "verify_ecr_push_repo_scoping" {
         "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/odoo-prod",
         "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/tofu-runner",
         "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/administration-stack-api",
+        "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/odoo-staging",
       ])
     ])
-    error_message = "ecr_push's EcrPush statement must be scoped to exactly the four ADR-0038 repository ARNs, in the configured platform_account_id — no more, no fewer, and no resource=\"*\"."
+    error_message = "ecr_push's EcrPush statement must be scoped to exactly the five ADR-0038 repository ARNs (issue #349 adds odoo-staging), in the configured platform_account_id — no more, no fewer, and no resource=\"*\"."
   }
 
   assert {

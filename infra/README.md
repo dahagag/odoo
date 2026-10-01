@@ -189,6 +189,21 @@ only its trust policy does, applies the same way here) for `.github/workflows/ci
 `AWS_REGION` already exists from #212/#252's wiring and is reused as-is for the backend's `region`
 too (`infra/bootstrap` and `infra/cicd` live in the same account/region).
 
+Issue #341 adds `infra/staging-odoo` as its own deployable unit (#337), independent of
+`infra/platform`'s administration-stack API. It needs its own set of repository variables,
+parallel to the ones above but scoped to this module's own ECR repository, state, and deploy role
+(none of these were part of #337's own Terraform apply — they describe resources/roles that still
+need provisioning outside this repo, the same chicken-and-egg bootstrap step every other
+cross-account role in this table went through):
+
+| Variable | Source |
+| --- | --- |
+| `STAGING_ODOO_REPOSITORY_URL` | the `agentic-erp/odoo-staging` ECR repository's URL (not yet created by any root module in this repo — see #341's own implementation notes) |
+| `STAGING_ODOO_SECRETS_KMS_KEY_ARN` | the one KMS key every staging-Odoo SSM SecureString parameter is encrypted under (ADR-0041) — `infra/staging-odoo`'s `staging_odoo_secrets_kms_key_arn` input |
+| `STAGING_ODOO_DEPLOY_ROLE_ARN` | the Hosting Account role `deploy-odoo-staging` assumes first, parallel to `STAGING_DEPLOY_ROLE_ARN` |
+| `PLATFORM_STAGING_ODOO_DEPLOY_ROLE_ARN` | the Platform Account role that role chains into to actually manage `infra/staging-odoo`'s resources (issue #271/#272 pattern), parallel to `PLATFORM_ADMINISTRATION_STACK_DEPLOY_ROLE_ARN` — also used as `check-release-order`/`record-deployed-commit`'s assumed role for this unit's own `/staging-odoo/deployed-commit` SSM watermark |
+| `PLATFORM_STAGING_ODOO_CI_PLAN_ROLE_ARN` | the Platform Account role `infra-plan-staging-odoo` chains `INFRA_PLAN_ROLE_ARN` into for a read-only plan diff, parallel to `PLATFORM_CI_PLAN_ROLE_ARN` |
+
 After `foundation`'s first apply, the operator must also **delegate `var.root_domain` to the
 zone's name servers** (the `route53_name_servers` output) at the domain's registrar or parent
 zone. Until that one-time delegation is done, the zone `foundation` creates is not publicly

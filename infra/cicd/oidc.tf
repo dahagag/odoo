@@ -194,6 +194,7 @@ data "aws_iam_policy_document" "manage_own_role_staging_deploy" {
       aws_iam_role.production_deploy.arn,
       aws_iam_role.ecr_push.arn,
       aws_iam_role.infra_plan.arn,
+      aws_iam_role.staging_odoo_deploy.arn,
     ]
   }
 }
@@ -368,6 +369,7 @@ data "aws_iam_policy_document" "manage_own_role_production_deploy" {
       aws_iam_role.staging_deploy.arn,
       aws_iam_role.ecr_push.arn,
       aws_iam_role.infra_plan.arn,
+      aws_iam_role.staging_odoo_deploy.arn,
     ]
   }
 }
@@ -626,10 +628,163 @@ data "aws_iam_policy_document" "infra_plan" {
     resources = [local.administration_stack_platform_state_object_arn]
   }
 
+  # Issue #349: infra/staging-odoo is its own deployable unit with its own state key and its own
+  # dedicated Platform Account CI-plan role (platform-staging-odoo-ci-plan) — not folded into
+  # platform-ci-plan above, matching issue #341's already-shipped ci.yml wiring
+  # (PLATFORM_STAGING_ODOO_CI_PLAN_ROLE_ARN, distinct from PLATFORM_CI_PLAN_ROLE_ARN).
+  statement {
+    sid       = "AssumePlatformStagingOdooCiPlanRole"
+    effect    = "Allow"
+    actions   = ["sts:AssumeRole"]
+    resources = [var.platform_staging_odoo_ci_plan_role_arn]
+  }
+
+  statement {
+    sid       = "TofuStateBackendReadStagingOdoo"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = [local.staging_odoo_state_object_arn]
+  }
+
 }
 
 resource "aws_iam_role_policy" "infra_plan" {
   name   = "github-actions-infra-plan"
   role   = aws_iam_role.infra_plan.id
   policy = data.aws_iam_policy_document.infra_plan.json
+}
+
+# ---------------------------------------------------------------------------
+# staging_odoo_deploy (issue #341/#349): a fifth, separate role dedicated to deploy-odoo-staging
+# (dev/19.0 push, ci.yml) — not a reuse of staging_deploy. infra/staging-odoo is its own
+# deployable unit (own Terraform root module, own state key, own ECR repository, own SSM
+# watermark — #337/#341's own comments), so it gets its own narrow role rather than widening
+# staging_deploy's already-broad reach (infra/cicd, infra/registry, infra/platform) to a fourth
+# target. Same trust shape as staging_deploy_trust above (scoped to var.staging_branch's push
+# ref) — a workflow_dispatch rollback run on dev/19.0 carries the identical `sub` claim, so no
+# separate condition is needed for deploy-odoo-staging's rollback path.
+# ---------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "staging_odoo_deploy_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github_actions.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = [local.github_oidc_audience]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.github_repository_immutable_subject}:ref:refs/heads/${var.staging_branch}"]
+    }
+  }
+}
+
+resource "aws_iam_role" "staging_odoo_deploy" {
+  name               = "github-actions-staging-odoo-deploy"
+  assume_role_policy = data.aws_iam_policy_document.staging_odoo_deploy_trust.json
+}
+
+# No manage_own_role statement (unlike staging_deploy/production_deploy): this role never applies
+# infra/cicd itself (deploy-odoo-staging's infra-tofu step only ever runs dir: infra/staging-odoo),
+# so it needs no self-referential iam:PutRolePolicy grant. Its own creation (and any future change
+# to its own definition) is a manual, human-operator apply of infra/cicd, exactly like ecr_push's
+# and infra_plan's own definitions already are (CodeRabbit review on PR #346: confirmed neither
+# gets a write grant from staging_deploy/production_deploy anywhere, matching infra/README.md's
+# documented "new sibling role = human bootstrap" convention) — staging_deploy/production_deploy's
+# own manage_own_role_*'s ReadOtherManagedRoles statements each carry only read access to it, not
+# write, so this module's state can still be refreshed after this role exists.
+data "aws_iam_policy_document" "staging_odoo_deploy" {
+  statement {
+    sid    = "TofuStateBackendStagingOdoo"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = [local.staging_odoo_state_object_arn]
+  }
+
+  # S3 object-level access above doesn't cover the backend's own bucket-level ListBucket call
+  # (OpenTofu's own docs; same split infra_management_statements' TofuStateBackendListBucket
+  # documents) — needed here too since this role doesn't reuse that shared document.
+  statement {
+    sid       = "TofuStateBackendListBucketStagingOdoo"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = [var.tofu_state_bucket_arn]
+  }
+
+  # deploy-odoo-staging's infra-tofu apply step passes dynamodb_table, so this role needs state
+  # locking too — same actions as infra_management_statements' shared TofuStateLock statement.
+  statement {
+    sid    = "TofuStateLockStagingOdoo"
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:DescribeTable",
+    ]
+    resources = [var.tofu_state_lock_table_arn]
+  }
+
+  # Same shape as administration_stack_deploy's AssumePlatformAdministrationStackDeployRole above:
+  # EC2/ECS/IAM/Logs/SSM actions have no cross-account resource-based policy mechanism, so the
+  # only way this Hosting Account role can act on infra/staging-odoo's Platform Account resources
+  # is sts:AssumeRole into platform-staging-odoo-deploy, which carries those statements verbatim
+  # (infra/registry/cross_account_iam.tf).
+  statement {
+    sid       = "AssumePlatformStagingOdooDeployRole"
+    effect    = "Allow"
+    actions   = ["sts:AssumeRole"]
+    resources = [var.platform_staging_odoo_deploy_role_arn]
+  }
+
+  # Retags the image ecr_push already pushed at PR time (content-hash tag) with the current
+  # release version — this role never pushes new image content (ecr_push, PR-time only, keeps
+  # that job), same split as administration_stack_deploy's RetagAdministrationStackImage.
+  statement {
+    sid    = "RetagStagingOdooImage"
+    effect = "Allow"
+    actions = [
+      "ecr:BatchGetImage",
+      "ecr:PutImage",
+    ]
+    resources = [local.staging_odoo_repository_arn]
+  }
+
+  # ecr:GetAuthorizationToken is not a resource-level action (see ecr_push's own identical
+  # statement above) — needed here too, since the retag step above authenticates as this role.
+  statement {
+    sid       = "EcrAuthForRetag"
+    effect    = "Allow"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+
+  # Not a security boundary on its own (see staging_deploy's identical CallerIdentity statement
+  # above) — kept as a named, visible statement for the same reason.
+  statement {
+    sid       = "CallerIdentity"
+    effect    = "Allow"
+    actions   = ["sts:GetCallerIdentity"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "staging_odoo_deploy" {
+  name   = "github-actions-staging-odoo-deploy"
+  role   = aws_iam_role.staging_odoo_deploy.id
+  policy = data.aws_iam_policy_document.staging_odoo_deploy.json
 }

@@ -20,8 +20,11 @@ reference Properties by key instead of owning field definitions.
 
     'data': [
         'security/crm_methodology_groups.xml',
+        'security/crm_methodology_staging_groups.xml',
+        'security/crm_methodology_staging_ir_rules.xml',
         'security/ir.model.access.csv',
         'data/crm_methodology_data.xml',
+        'data/crm_methodology_staging_seed_users.xml',
         'views/crm_methodology_views.xml',
         'views/crm_methodology_trial_wizard_views.xml',
         'views/crm_lead_views.xml',

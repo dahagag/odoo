@@ -1,0 +1,129 @@
+name: Post-deploy smoke check for staging Odoo
+description: >-
+  #203's own Testing Decisions / #342: "a smoke check the pipeline runs after deploy: the
+  instance answers, the expected modules are installed, and demo data is present." ADR-0040
+  gives dev.domain.com staging no public surface at all (no ALB, no WAFv2, no public Route53
+  record) and the GitHub-hosted runner this workflow runs on is not itself on the tailnet, so
+  there is no ordinary HTTP network path from CI to the running task. ECS Exec
+  (`aws ecs execute-command`) reaches inside the already-running odoo container over the
+  ECS/SSM control plane instead of a network path into the private subnet — the standard
+  AWS-native way to run a command in a Fargate task with no inbound ingress at all. It runs
+  dev_e2e_smoke_test's `dev_e2e_smoke_test_post_deploy`-tagged tests (TransactionCase, no
+  Chrome/websocket-client dependency — docker/odoo-staging.Dockerfile ships neither) against the
+  exact database the staging entrypoint just seeded, after a plain HTTP check against the
+  container's own loopback proves the server itself answers requests.
+
+  Requires infra/staging-odoo's `enable_execute_command = true` (the ECS service) and the task
+  role's ssmmessages channel grant (iam.tf's ecs_task_exec policy) — both added alongside this
+  action. `aws ecs execute-command` never propagates the remote command's own exit code to the
+  CLI's own exit code (it is built for interactive debugging, not scripting), so the remote
+  command instead prints an explicit `SMOKE_CHECK_EXIT:<code>` sentinel and this action greps the
+  captured session transcript for `SMOKE_CHECK_EXIT:0` to decide pass/fail.
+inputs:
+  platform_staging_odoo_deploy_role_arn:
+    description: >-
+      infra/staging-odoo's own Platform Account deploy role ARN (PLATFORM_STAGING_ODOO_DEPLOY_ROLE_ARN)
+      — the staging-odoo ECS cluster/service/task live in the Platform Account, same role
+      infra-tofu's own provider chains into for this module (issue #271/#272 pattern), assumed
+      directly here the same way ./.github/actions/check-release-order does for its own SSM read.
+    required: true
+  aws_region:
+    description: infra/cicd's aws_region input.
+    required: true
+  ecs_cluster_name:
+    description: infra/staging-odoo's ecs_cluster_name (default "staging-odoo").
+    required: false
+    default: "staging-odoo"
+  ecs_service_name:
+    description: infra/staging-odoo's environment/service name (default "staging-odoo").
+    required: false
+    default: "staging-odoo"
+runs:
+  using: composite
+  steps:
+    - name: Install the Session Manager plugin (required by `aws ecs execute-command`)
+      shell: bash
+      run: |
+        set -euo pipefail
+        curl -sS "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o /tmp/session-manager-plugin.deb
+        sudo dpkg -i /tmp/session-manager-plugin.deb
+    - name: Run the post-deploy smoke check over ECS Exec
+      shell: bash
+      env:
+        ROLE_ARN: ${{ inputs.platform_staging_odoo_deploy_role_arn }}
+        AWS_REGION: ${{ inputs.aws_region }}
+        CLUSTER: ${{ inputs.ecs_cluster_name }}
+        SERVICE: ${{ inputs.ecs_service_name }}
+      run: |
+        set -euo pipefail
+
+        # Temporary Platform Account credentials, kept local to this step's own process
+        # environment (never GITHUB_ENV) — same reasoning as check-release-order/
+        # record-deployed-commit's identical pattern: later steps in the calling job must keep
+        # seeing whatever credentials were already active.
+        creds=$(aws sts assume-role \
+          --role-arn "$ROLE_ARN" \
+          --role-session-name "staging-odoo-smoke-check" \
+          --output json)
+        export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_DEFAULT_REGION
+        AWS_ACCESS_KEY_ID=$(jq -r '.Credentials.AccessKeyId' <<<"$creds")
+        AWS_SECRET_ACCESS_KEY=$(jq -r '.Credentials.SecretAccessKey' <<<"$creds")
+        AWS_SESSION_TOKEN=$(jq -r '.Credentials.SessionToken' <<<"$creds")
+        AWS_DEFAULT_REGION="$AWS_REGION"
+
+        task_arn=$(aws ecs list-tasks --cluster "$CLUSTER" --service-name "$SERVICE" --desired-status RUNNING --query 'taskArns[0]' --output text)
+        if [[ -z "$task_arn" || "$task_arn" == "None" ]]; then
+          echo "No RUNNING task found for service '$SERVICE' in cluster '$CLUSTER' — the deploy did not produce a running task to smoke-check." >&2
+          exit 1
+        fi
+        echo "Smoke-checking task $task_arn"
+
+        # The ECS Exec agent takes a few seconds to attach after a task reaches RUNNING —
+        # poll its managedAgents status on the odoo container specifically rather than racing
+        # execute-command against an agent that isn't ready yet.
+        for _ in $(seq 1 30); do
+          agent_status=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$task_arn" \
+            --query "tasks[0].containers[?name=='odoo'].managedAgents[?name=='ExecuteCommandAgent'].lastStatus | [0][0]" \
+            --output text)
+          [[ "$agent_status" == "RUNNING" ]] && break
+          sleep 2
+        done
+        if [[ "$agent_status" != "RUNNING" ]]; then
+          echo "ECS Exec agent on the odoo container never reached RUNNING (last status: $agent_status) — cannot smoke-check this task." >&2
+          exit 1
+        fi
+
+        remote_command='sh -c '"'"'
+          if ! curl -sf -o /dev/null http://127.0.0.1:8069/web/login; then
+            echo "INSTANCE_ANSWERS:FAIL"
+            echo "SMOKE_CHECK_EXIT:1"
+            exit 1
+          fi
+          echo "INSTANCE_ANSWERS:OK"
+          python3 /workspace/odoo-bin -d "$ODOO_DB" --test-enable "--test-tags=dev_e2e_smoke_test_post_deploy" --stop-after-init --config=/tmp/odoo-runtime.conf --log-level=test
+          code=$?
+          echo "SMOKE_CHECK_EXIT:$code"
+          exit $code
+        '"'"''
+
+        transcript=$(mktemp)
+        aws ecs execute-command \
+          --cluster "$CLUSTER" \
+          --task "$task_arn" \
+          --container odoo \
+          --interactive \
+          --command "$remote_command" | tee "$transcript"
+
+        if ! grep -q 'INSTANCE_ANSWERS:OK' "$transcript"; then
+          echo "Staging Odoo did not answer http://127.0.0.1:8069/web/login inside its own container." >&2
+          exit 1
+        fi
+        if grep -q '0 post-tests' "$transcript"; then
+          echo "No dev_e2e_smoke_test_post_deploy-tagged tests ran — the smoke-test addon likely isn't installed, so this check can't actually verify anything." >&2
+          exit 1
+        fi
+        if ! grep -q 'SMOKE_CHECK_EXIT:0' "$transcript"; then
+          echo "dev_e2e_smoke_test's post-deploy checks (expected modules installed, demo data present) failed — see the transcript above." >&2
+          exit 1
+        fi
+        echo "Staging Odoo smoke check passed: instance answers, crm_methodology is installed, seed accounts are present."
