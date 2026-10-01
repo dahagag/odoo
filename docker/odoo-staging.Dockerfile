@@ -6,6 +6,13 @@ USER root
 COPY requirements.txt /tmp/odoo-requirements.txt
 COPY --chmod=0755 docker/pip-install-requirements.sh /tmp/pip-install-requirements.sh
 
+# requirements.txt only installs boto3 (a Python library); the entrypoint's drop-and-recreate
+# and seed steps call the `aws` CLI binary itself (aws ssm get-parameter/get-parameters-by-path),
+# which boto3 doesn't provide.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends awscli \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN /tmp/pip-install-requirements.sh \
     && rm -rf /root/.cache /tmp/odoo-requirements.txt /tmp/pip-install-requirements.sh
 

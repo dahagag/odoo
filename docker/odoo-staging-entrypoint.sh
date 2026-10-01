@@ -24,7 +24,12 @@ POSTGRES_HOST="${POSTGRES_HOST:-127.0.0.1}"
 export POSTGRES_HOST
 POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 export POSTGRES_PORT
-ODOO_INIT_MODULE=crm_methodology
+# dev_e2e_smoke_test depends on crm_methodology (custom_addons/dev_e2e_smoke_test/__manifest__.py),
+# so installing it still pulls crm_methodology in as a dependency. Installing crm_methodology
+# alone, with dev_e2e_smoke_test absent, left #342's post-deploy smoke check unable to find any
+# dev_e2e_smoke_test_post_deploy-tagged tests to run — Odoo then reports 0 post-tests and exits
+# 0, so a broken deploy could pass the one check meant to catch it.
+ODOO_INIT_MODULE=dev_e2e_smoke_test
 export ODOO_INIT_MODULE
 
 # shellcheck source=odoo-entrypoint-lib.sh

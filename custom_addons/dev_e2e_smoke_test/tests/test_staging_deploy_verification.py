@@ -49,6 +49,16 @@ class TestStagingDeployVerification(TransactionCase):
             'stakeholder-ops': stakeholder_group,
         }
 
+        # res.users.password is a compute field that always returns '' in Odoo 19, including
+        # under sudo() - asserting on it directly would pass unconditionally regardless of what's
+        # actually stored. Read the stored hash straight from res_users instead, matching
+        # custom_addons/crm_methodology/tests/test_crm_methodology_staging_access.py's approach.
+        self.env.cr.execute(
+            "SELECT login, password FROM res_users WHERE login = ANY(%s)",
+            (list(expected_logins),),
+        )
+        password_hashes = dict(self.env.cr.fetchall())
+
         for login, expected_group in expected_logins.items():
             user = users.search([('login', '=', login)], limit=1)
             self.assertTrue(user, f"expected seeded staging login {login!r} not found")
@@ -58,8 +68,8 @@ class TestStagingDeployVerification(TransactionCase):
                 f"{login!r} must carry the {expected_group.name!r} group",
             )
             self.assertFalse(
-                user.password,
-                f"{login!r} must have no stored password until the staging entrypoint's "
+                password_hashes.get(login),
+                f"{login!r} must have no stored password hash until the staging entrypoint's "
                 "SSM-sourced post-install step (#338) sets one - a non-empty password here "
                 "would mean a committed or default credential.",
             )

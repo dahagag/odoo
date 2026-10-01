@@ -118,6 +118,10 @@ runs:
           echo "Staging Odoo did not answer http://127.0.0.1:8069/web/login inside its own container." >&2
           exit 1
         fi
+        if grep -q '0 post-tests' "$transcript"; then
+          echo "No dev_e2e_smoke_test_post_deploy-tagged tests ran — the smoke-test addon likely isn't installed, so this check can't actually verify anything." >&2
+          exit 1
+        fi
         if ! grep -q 'SMOKE_CHECK_EXIT:0' "$transcript"; then
           echo "dev_e2e_smoke_test's post-deploy checks (expected modules installed, demo data present) failed — see the transcript above." >&2
           exit 1
