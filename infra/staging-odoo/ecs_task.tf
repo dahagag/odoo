@@ -118,6 +118,16 @@ resource "aws_ecs_service" "staging_odoo" {
   desired_count   = var.odoo_desired_count
   launch_type     = "FARGATE"
 
+  # #342's post-deploy smoke check: ADR-0040 means there is no ALB, no public Route53 record,
+  # and the GitHub-hosted CI runner is not on the tailnet, so there is no network path from the
+  # deploy workflow to this task over HTTP the way a normal deploy's smoke check would reach it.
+  # ECS Exec (`aws ecs execute-command`) runs entirely over the ECS/SSM control plane the
+  # deploy role already calls through (ecs:*, sts:AssumeRole into this account) rather than a
+  # network path into the private subnet, so it works under ADR-0040's "no public surface, no
+  # exception" constraint without opening any inbound ingress. See iam.tf's ecs_task_exec policy
+  # for the matching ssmmessages grant this requires on the task role.
+  enable_execute_command = true
+
   # Same reasoning as infra/platform/ecs_task.tf's identical settings (issue #216): a task
   # definition revision that can't reach steady state (bad image, missing env, OOM) rolls back
   # instead of leaving staging half-deployed and silently broken.

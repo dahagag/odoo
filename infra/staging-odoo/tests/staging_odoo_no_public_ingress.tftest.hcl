@@ -176,4 +176,12 @@ run "verify_service_runs_in_private_subnets_with_no_public_ip" {
     ])
     error_message = "The Tailscale sidecar must resolve its auth key from an SSM-backed ECS secret, never a plaintext environment variable."
   }
+
+  # #342: with no ALB/public DNS and the CI runner off the tailnet (ADR-0040), ECS Exec
+  # (`aws ecs execute-command`) is the only path the deploy-odoo-staging post-deploy smoke
+  # check has into the running container - it must stay enabled.
+  assert {
+    condition     = aws_ecs_service.staging_odoo.enable_execute_command == true
+    error_message = "Staging Odoo's ECS service must have enable_execute_command = true so the post-deploy smoke check (#342) can reach the running task over ECS Exec - there is no other network path under ADR-0040's no-public-surface design."
+  }
 }
