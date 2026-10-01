@@ -1111,3 +1111,144 @@ jobs:
         run: docker compose pull odoo
       - name: Run tests for ${{ matrix.module }}
         run: bash scripts/dev.sh test "${{ matrix.module }}"
+
+  test-staging-entrypoint-db-reset:
+    name: Test (staging entrypoint drop-and-recreate)
+    needs: [changes, build-image]
+    # Issue #340/#203: exercises docker/odoo-staging-entrypoint.sh's drop-and-recreate boot
+    # path (ADR-0041's Testing section) against a throwaway Postgres — container-based, not
+    # `terraform test` (which only ever exercises Terraform-managed resources, never a shell
+    # entrypoint's runtime behavior). Same fork-exclusion guard as `test` above: this job
+    # pulls the dev image via ecr-login, whose IAM trust policy can't distinguish a fork PR
+    # from this repo's own.
+    if: needs.changes.outputs.image_relevant == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure environment
+        run: |
+          cp .env.example .env
+          echo "HOST_UID=$(id -u)" >> .env
+          echo "HOST_GID=$(id -g)" >> .env
+          echo "ODOO_DEV_IMAGE=${{ needs.build-image.outputs.image }}" >> .env
+      - uses: ./.github/actions/ecr-login
+        with:
+          role-arn: ${{ vars.ECR_PUSH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          registry-account-id: ${{ vars.PLATFORM_ACCOUNT_ID }}
+      - name: Pull cached development image
+        run: docker compose pull odoo
+      - name: Stub the aws CLI (no real AWS SSM access in a CI sandbox)
+        # docker/odoo-staging-entrypoint.sh calls `aws ssm get-parameter` (admin password)
+        # and `aws ssm get-parameters-by-path` (seed-account passwords) unconditionally — the
+        # dev image has no awscli installed at all, so this fake binary is the only `aws` the
+        # container ever finds. It answers only the two sub-commands the entrypoint actually
+        # calls, reading its canned response from the FAKE_ADMIN_PASSWORD/
+        # FAKE_SEED_ACCOUNTS_JSON env vars each scenario below sets, and fails loudly on any
+        # other invocation so a future entrypoint change calling a new aws subcommand breaks
+        # this job instead of silently no-op'ing. This keeps the entrypoint script itself free
+        # of any CI-only skip/fake-seed hook — the real script runs unmodified end to end
+        # (drop-and-recreate, self-heal install, seed step), only its one external dependency
+        # (AWS SSM) is faked at the process boundary.
+        run: |
+          mkdir -p "${RUNNER_TEMP}/fake-bin"
+          cat > "${RUNNER_TEMP}/fake-bin/aws" <<'SCRIPT'
+          #!/bin/sh
+          set -eu
+          case "${1:-} ${2:-}" in
+              'ssm get-parameter')
+                  printf '%s' "$FAKE_ADMIN_PASSWORD"
+                  ;;
+              'ssm get-parameters-by-path')
+                  printf '%s' "$FAKE_SEED_ACCOUNTS_JSON"
+                  ;;
+              *)
+                  echo "fake aws: unsupported invocation: $*" >&2
+                  exit 1
+                  ;;
+          esac
+          SCRIPT
+          chmod +x "${RUNNER_TEMP}/fake-bin/aws"
+      - name: No previous database (drop-and-recreate's "doesn't exist yet" case)
+        env:
+          FAKE_ADMIN_PASSWORD: ci-fake-admin-password
+          FAKE_SEED_ACCOUNTS_JSON: "[]"
+        run: |
+          docker compose run --rm \
+            -v "${RUNNER_TEMP}/fake-bin/aws:/usr/local/bin/aws:ro" \
+            --entrypoint /workspace/docker/odoo-staging-entrypoint.sh \
+            -e ODOO_DB=ci_staging_entrypoint_test \
+            -e POSTGRES_HOST=db \
+            -e POSTGRES_USER=odoo \
+            -e POSTGRES_PASSWORD=change-me-local-only \
+            -e AWS_REGION=us-east-1 \
+            -e ODOO_ADMIN_PASSWORD_SSM_PARAMETER=/ci/fake/admin-password \
+            -e SEED_ACCOUNT_PASSWORD_SSM_PARAMETER_PATH=/ci/fake/seed-accounts \
+            -e FAKE_ADMIN_PASSWORD \
+            -e FAKE_SEED_ACCOUNTS_JSON \
+            odoo --stop-after-init
+      - name: Existing database (drop-and-recreate's "already there" case)
+        env:
+          FAKE_ADMIN_PASSWORD: ci-fake-admin-password
+          FAKE_SEED_ACCOUNTS_JSON: "[]"
+        run: |
+          # A marker table proves the SECOND run actually dropped the database the first run
+          # just created and installed into, rather than reusing/upgrading it in place.
+          docker compose exec -T db psql -U odoo -d ci_staging_entrypoint_test \
+            -c 'CREATE TABLE ci_marker_pre_existing (id int);'
+          docker compose run --rm \
+            -v "${RUNNER_TEMP}/fake-bin/aws:/usr/local/bin/aws:ro" \
+            --entrypoint /workspace/docker/odoo-staging-entrypoint.sh \
+            -e ODOO_DB=ci_staging_entrypoint_test \
+            -e POSTGRES_HOST=db \
+            -e POSTGRES_USER=odoo \
+            -e POSTGRES_PASSWORD=change-me-local-only \
+            -e AWS_REGION=us-east-1 \
+            -e ODOO_ADMIN_PASSWORD_SSM_PARAMETER=/ci/fake/admin-password \
+            -e SEED_ACCOUNT_PASSWORD_SSM_PARAMETER_PATH=/ci/fake/seed-accounts \
+            -e FAKE_ADMIN_PASSWORD \
+            -e FAKE_SEED_ACCOUNTS_JSON \
+            odoo --stop-after-init
+          # The marker table must be gone: if it survived, the entrypoint reused the existing
+          # database instead of dropping and recreating it.
+          if docker compose exec -T db psql -U odoo -d ci_staging_entrypoint_test -tAc \
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'ci_marker_pre_existing'" \
+            | grep -q 1; then
+            echo "Marker table survived the second boot -- the database was not dropped and recreated." >&2
+            exit 1
+          fi
+      - name: Seed step fails loudly, not silently (#340 acceptance criterion)
+        env:
+          FAKE_ADMIN_PASSWORD: ci-fake-admin-password
+          # A login that cannot exist in any seeded res.users data -- the entrypoint must
+          # abort instead of swallowing the mismatch.
+          FAKE_SEED_ACCOUNTS_JSON: '[{"Name":"/ci/fake/seed-accounts/this-login-does-not-exist","Value":"whatever"}]'
+        run: |
+          set +e
+          output=$(docker compose run --rm \
+            -v "${RUNNER_TEMP}/fake-bin/aws:/usr/local/bin/aws:ro" \
+            --entrypoint /workspace/docker/odoo-staging-entrypoint.sh \
+            -e ODOO_DB=ci_staging_entrypoint_seed_fail \
+            -e POSTGRES_HOST=db \
+            -e POSTGRES_USER=odoo \
+            -e POSTGRES_PASSWORD=change-me-local-only \
+            -e AWS_REGION=us-east-1 \
+            -e ODOO_ADMIN_PASSWORD_SSM_PARAMETER=/ci/fake/admin-password \
+            -e SEED_ACCOUNT_PASSWORD_SSM_PARAMETER_PATH=/ci/fake/seed-accounts \
+            -e FAKE_ADMIN_PASSWORD \
+            -e FAKE_SEED_ACCOUNTS_JSON \
+            odoo --stop-after-init 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "Entrypoint exited 0 despite an unresolvable seed-account login -- it must fail loudly instead." >&2
+            exit 1
+          fi
+          if ! printf '%s' "$output" | grep -q 'No res.users match for seed-account login'; then
+            echo "Entrypoint failed, but not for the expected reason (seed-account login mismatch not found in its output)." >&2
+            exit 1
+          fi
