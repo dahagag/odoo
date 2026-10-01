@@ -6,5 +6,6 @@ from . import (
     test_crm_methodology_demo,
     test_crm_methodology_landing,
     test_crm_methodology_reset_demo_data,
+    test_crm_methodology_staging_access,
     test_crm_methodology_tour,
 )

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+
+    <!-- ============================================================
+         dev.domain.com staging seed accounts (#339, docs/adr/0040, docs/adr/0041).
+
+         Unlike crm_methodology_demo.xml's internal demo personas (committed plaintext
+         passwords, with-demo-gated, loaded only when a database opts into demo data), these
+         are REAL logins reachable by real external early-adopter clients and internal
+         stakeholders over Tailscale, so they live in this unconditional 'data' list (always
+         loaded when crm_methodology itself is installed - the module
+         docker/odoo-staging-entrypoint.sh always installs) rather than 'demo'. No <field
+         name="password"> is set on any record below - on purpose. Their real passwords are never
+         committed; they are applied post-install by docker/odoo-staging-entrypoint.sh's
+         seed_account_passwords() step, which reads each one from an SSM SecureString parameter
+         under SEED_ACCOUNT_PASSWORD_SSM_PARAMETER_PATH and matches it to a res.users login by the
+         parameter name's own final path segment (".../seed-accounts/<login>" seeds the login
+         "<login>") - so the logins below must stay in lock-step with whatever SSM parameters
+         ops provisions; adding or removing a named account is this file plus an SSM parameter,
+         never a Terraform or entrypoint change (ADR-0041).
+
+         context="{'no_reset_password': True}" skips Odoo's auto-generated-password invite email,
+         same as crm_methodology_demo.xml's own personas - these accounts have no stored password
+         hash at all until the staging entrypoint sets one, so a login attempt before that step
+         (or in any environment other than dev.domain.com staging, where nothing ever applies
+         these SSM-sourced passwords) simply fails rather than falling back to anything
+         guessable.
+         ============================================================ -->
+
+    <record id="crm_methodology_staging_user_early_adopter_acme" model="res.users" context="{'no_reset_password': True}">
+        <field name="name">Acme Early Adopter</field>
+        <field name="login">early-adopter-acme</field>
+        <field name="group_ids" eval="[Command.set([ref('group_staging_early_adopter')])]"/>
+    </record>
+
+    <record id="crm_methodology_staging_user_early_adopter_globex" model="res.users" context="{'no_reset_password': True}">
+        <field name="name">Globex Early Adopter</field>
+        <field name="login">early-adopter-globex</field>
+        <field name="group_ids" eval="[Command.set([ref('group_staging_early_adopter')])]"/>
+    </record>
+
+    <record id="crm_methodology_staging_user_stakeholder" model="res.users" context="{'no_reset_password': True}">
+        <field name="name">Staging Stakeholder</field>
+        <field name="login">stakeholder-ops</field>
+        <field name="group_ids" eval="[Command.set([ref('group_staging_stakeholder')])]"/>
+    </record>
+
+</odoo>
