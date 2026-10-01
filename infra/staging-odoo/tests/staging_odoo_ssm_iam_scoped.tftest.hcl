@@ -96,13 +96,19 @@ run "verify_task_role_seed_secrets_scoped" {
 
   # docker/odoo-staging-entrypoint.sh's seed step calls the plural, recursive
   # ssm:GetParametersByPath (not just the singular ssm:GetParameter above) to enumerate every
-  # seed-account password under the path prefix - distinct IAM actions, both required.
+  # seed-account password under the path prefix - distinct IAM actions, both required. IAM
+  # evaluates this action against the Path argument's own parameter resource, not only its
+  # children, so both the bare path ARN and its "/*" form must be present (CodeRabbit review on
+  # PR #346 - the "/*"-only grant left the direct call ungranted).
   assert {
     condition = (
       jsondecode(aws_iam_role_policy.ecs_task_seed_secrets.policy).Statement[2].Action == "ssm:GetParametersByPath"
-      && jsondecode(aws_iam_role_policy.ecs_task_seed_secrets.policy).Statement[2].Resource == "arn:aws:ssm:us-east-1:111111111111:parameter/staging-odoo/seed-accounts/*"
+      && toset(flatten([jsondecode(aws_iam_role_policy.ecs_task_seed_secrets.policy).Statement[2].Resource])) == toset([
+        "arn:aws:ssm:us-east-1:111111111111:parameter/staging-odoo/seed-accounts",
+        "arn:aws:ssm:us-east-1:111111111111:parameter/staging-odoo/seed-accounts/*",
+      ])
     )
-    error_message = "The ecs_task role must also be granted ssm:GetParametersByPath, scoped to exactly the seed-accounts path prefix - the entrypoint's seed step calls this plural action, not just ssm:GetParameter."
+    error_message = "The ecs_task role must be granted ssm:GetParametersByPath on both the bare seed-accounts path ARN and its /* form - the bare form alone or the /* form alone is each individually insufficient for this action."
   }
 }
 

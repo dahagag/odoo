@@ -600,7 +600,6 @@ data "aws_iam_policy_document" "platform_staging_odoo_deploy" {
       "ec2:DescribeVpcs",
       "ec2:CreateVpc",
       "ec2:DescribeVpcAttribute",
-      "ec2:ModifyVpcAttribute",
       "ec2:DescribeSubnets",
       "ec2:CreateSubnet",
       "ec2:DescribeInternetGateways",
@@ -649,6 +648,7 @@ data "aws_iam_policy_document" "platform_staging_odoo_deploy" {
     effect = "Allow"
     actions = [
       "ec2:DeleteVpc",
+      "ec2:ModifyVpcAttribute",
       "ec2:DeleteSubnet",
       "ec2:ModifySubnetAttribute",
       "ec2:AttachInternetGateway",

@@ -194,6 +194,7 @@ data "aws_iam_policy_document" "manage_own_role_staging_deploy" {
       aws_iam_role.production_deploy.arn,
       aws_iam_role.ecr_push.arn,
       aws_iam_role.infra_plan.arn,
+      aws_iam_role.staging_odoo_deploy.arn,
     ]
   }
 }
@@ -368,6 +369,7 @@ data "aws_iam_policy_document" "manage_own_role_production_deploy" {
       aws_iam_role.staging_deploy.arn,
       aws_iam_role.ecr_push.arn,
       aws_iam_role.infra_plan.arn,
+      aws_iam_role.staging_odoo_deploy.arn,
     ]
   }
 }
@@ -694,10 +696,13 @@ resource "aws_iam_role" "staging_odoo_deploy" {
 
 # No manage_own_role statement (unlike staging_deploy/production_deploy): this role never applies
 # infra/cicd itself (deploy-odoo-staging's infra-tofu step only ever runs dir: infra/staging-odoo),
-# so it needs no self-referential iam:PutRolePolicy grant — staging_deploy/production_deploy's
-# existing ManageCicdAndRegistryRoles-equivalent statement (infra_management_statements, scoped to
-# the github-actions-* name pattern this role's own name matches) already covers creating and
-# updating this role from infra/cicd's own apply.
+# so it needs no self-referential iam:PutRolePolicy grant. Its own creation (and any future change
+# to its own definition) is a manual, human-operator apply of infra/cicd, exactly like ecr_push's
+# and infra_plan's own definitions already are (CodeRabbit review on PR #346: confirmed neither
+# gets a write grant from staging_deploy/production_deploy anywhere, matching infra/README.md's
+# documented "new sibling role = human bootstrap" convention) — staging_deploy/production_deploy's
+# own manage_own_role_*'s ReadOtherManagedRoles statements each carry only read access to it, not
+# write, so this module's state can still be refreshed after this role exists.
 data "aws_iam_policy_document" "staging_odoo_deploy" {
   statement {
     sid    = "TofuStateBackendStagingOdoo"
@@ -708,6 +713,30 @@ data "aws_iam_policy_document" "staging_odoo_deploy" {
       "s3:DeleteObject",
     ]
     resources = [local.staging_odoo_state_object_arn]
+  }
+
+  # S3 object-level access above doesn't cover the backend's own bucket-level ListBucket call
+  # (OpenTofu's own docs; same split infra_management_statements' TofuStateBackendListBucket
+  # documents) — needed here too since this role doesn't reuse that shared document.
+  statement {
+    sid       = "TofuStateBackendListBucketStagingOdoo"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = [var.tofu_state_bucket_arn]
+  }
+
+  # deploy-odoo-staging's infra-tofu apply step passes dynamodb_table, so this role needs state
+  # locking too — same actions as infra_management_statements' shared TofuStateLock statement.
+  statement {
+    sid    = "TofuStateLockStagingOdoo"
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:DescribeTable",
+    ]
+    resources = [var.tofu_state_lock_table_arn]
   }
 
   # Same shape as administration_stack_deploy's AssumePlatformAdministrationStackDeployRole above:

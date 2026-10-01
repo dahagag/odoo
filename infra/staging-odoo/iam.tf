@@ -108,7 +108,11 @@ data "aws_iam_policy_document" "ecs_task_seed_secrets" {
     sid     = "ListSeedAccountSecretsByPath"
     effect  = "Allow"
     actions = ["ssm:GetParametersByPath"]
+    # IAM evaluates ssm:GetParametersByPath against the Path argument's own parameter resource,
+    # not only its children — the "/*" form alone doesn't cover the direct call (CodeRabbit review
+    # on PR #346). Both entries are needed; neither alone is sufficient.
     resources = [
+      "arn:aws:ssm:${var.aws_region}:${local.account_id}:parameter${var.seed_account_password_ssm_parameter_path}",
       "arn:aws:ssm:${var.aws_region}:${local.account_id}:parameter${var.seed_account_password_ssm_parameter_path}/*",
     ]
   }

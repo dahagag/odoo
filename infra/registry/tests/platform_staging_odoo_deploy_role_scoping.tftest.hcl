@@ -110,6 +110,28 @@ run "verify_platform_staging_odoo_deploy_trust_and_permissions" {
     error_message = "ManageStagingOdooNetworkingScoped must be conditioned on ec2:ResourceTag/TofuModule=staging-odoo, not \"platform\" (administration_stack's own tag value) or any other module's."
   }
 
+  # ec2:ModifyVpcAttribute must live only on the tag-scoped statement, never the unscoped
+  # ManageStagingOdooNetworking statement (CWE-269, CodeRabbit review on PR #346: a compromised
+  # staging_odoo_deploy session could otherwise modify DNS attributes on any VPC in the account,
+  # including infra/platform's own).
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.platform_staging_odoo_deploy.json).Statement :
+      statement.Sid == "ManageStagingOdooNetworkingScoped"
+      && contains(flatten([statement.Action]), "ec2:ModifyVpcAttribute")
+    ])
+    error_message = "ec2:ModifyVpcAttribute must be granted on the TofuModule-tag-scoped statement."
+  }
+
+  assert {
+    condition = !anytrue([
+      for statement in jsondecode(data.aws_iam_policy_document.platform_staging_odoo_deploy.json).Statement :
+      statement.Sid == "ManageStagingOdooNetworking"
+      && contains(flatten([statement.Action]), "ec2:ModifyVpcAttribute")
+    ])
+    error_message = "ec2:ModifyVpcAttribute must not be granted on the unscoped (resources = \"*\") ManageStagingOdooNetworking statement — that would let this role modify any VPC in the account, not just infra/staging-odoo's own tagged one."
+  }
+
   assert {
     condition = anytrue([
       for statement in jsondecode(data.aws_iam_policy_document.platform_staging_odoo_deploy.json).Statement :

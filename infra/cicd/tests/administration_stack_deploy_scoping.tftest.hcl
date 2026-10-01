@@ -78,6 +78,13 @@ override_resource {
   }
 }
 
+override_resource {
+  target = aws_iam_role.staging_odoo_deploy
+  values = {
+    arn = "arn:aws:iam::111111111111:role/github-actions-staging-odoo-deploy"
+  }
+}
+
 run "verify_administration_stack_deploy_scoping" {
   command = apply
 
@@ -88,6 +95,7 @@ run "verify_administration_stack_deploy_scoping" {
       aws_iam_role.production_deploy,
       aws_iam_role.ecr_push,
       aws_iam_role.infra_plan,
+      aws_iam_role.staging_odoo_deploy,
       data.aws_iam_policy_document.staging_deploy,
       data.aws_iam_policy_document.production_deploy,
     ]

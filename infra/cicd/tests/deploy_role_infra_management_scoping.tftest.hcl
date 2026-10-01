@@ -85,6 +85,13 @@ override_resource {
   }
 }
 
+override_resource {
+  target = aws_iam_role.staging_odoo_deploy
+  values = {
+    arn = "arn:aws:iam::111111111111:role/github-actions-staging-odoo-deploy"
+  }
+}
+
 run "verify_deploy_role_infra_management_scoping" {
   command = apply
 
@@ -95,6 +102,7 @@ run "verify_deploy_role_infra_management_scoping" {
       aws_iam_role.production_deploy,
       aws_iam_role.ecr_push,
       aws_iam_role.infra_plan,
+      aws_iam_role.staging_odoo_deploy,
       data.aws_iam_policy_document.staging_deploy,
       data.aws_iam_policy_document.production_deploy,
     ]
@@ -128,10 +136,11 @@ run "verify_deploy_role_infra_management_scoping" {
         "arn:aws:iam::111111111111:role/github-actions-production-deploy",
         "arn:aws:iam::111111111111:role/github-actions-ecr-push",
         "arn:aws:iam::111111111111:role/github-actions-infra-plan",
+        "arn:aws:iam::111111111111:role/github-actions-staging-odoo-deploy",
       ])
       && alltrue([for action in flatten([statement.Action]) : can(regex("^iam:(Get|List).*$", action))])
     ])
-    error_message = "staging_deploy's ReadOtherManagedRoles statement must grant only read-only actions against exactly the other three roles this state manages (production_deploy, ecr_push, infra_plan) — not itself, not a wildcard."
+    error_message = "staging_deploy's ReadOtherManagedRoles statement must grant only read-only actions against exactly the other four roles this state manages (production_deploy, ecr_push, infra_plan, staging_odoo_deploy) — not itself, not a wildcard, and never write access to staging_odoo_deploy (issue #349: its own creation/updates stay a human-operator apply, same as ecr_push/infra_plan)."
   }
 
   assert {
@@ -151,10 +160,11 @@ run "verify_deploy_role_infra_management_scoping" {
         "arn:aws:iam::111111111111:role/github-actions-staging-deploy",
         "arn:aws:iam::111111111111:role/github-actions-ecr-push",
         "arn:aws:iam::111111111111:role/github-actions-infra-plan",
+        "arn:aws:iam::111111111111:role/github-actions-staging-odoo-deploy",
       ])
       && alltrue([for action in flatten([statement.Action]) : can(regex("^iam:(Get|List).*$", action))])
     ])
-    error_message = "production_deploy's ReadOtherManagedRoles statement must grant only read-only actions against exactly the other three roles this state manages (staging_deploy, ecr_push, infra_plan) — not itself, not a wildcard."
+    error_message = "production_deploy's ReadOtherManagedRoles statement must grant only read-only actions against exactly the other four roles this state manages (staging_deploy, ecr_push, infra_plan, staging_odoo_deploy) — not itself, not a wildcard."
   }
 
   # --- cross-role isolation proof: neither role's policy grants a write action against the
