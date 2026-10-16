@@ -7,6 +7,31 @@ links to (0013, 0018-0024). It targets the **Hosting Account** from
 
 We use [OpenTofu](https://opentofu.org/) (MPL 2.0), not Terraform (BSL) — see ADR-0016 for why.
 
+## AWS paused
+
+The hosting project is on hold. On 2026-10-16 every applied stack was destroyed to stop the AWS
+bill: `platform`, `registry`, `cicd`, and both OpenTofu state backends (the S3 bucket and DynamoDB
+lock table, in the Hosting and Platform accounts). `foundation` was never applied.
+
+While the repository variable `AWS_PAUSED` is `true`, every `.github/workflows/ci.yml` job that
+assumes AWS credentials is skipped: the image builds, `test` (it pulls from ECR), `infra-plan`,
+`infra-apply`, `infra-plan-platform`, and both `deploy-administration-stack-*` jobs.
+`infra-checks` (fmt/validate/`tofu test`, no AWS calls) and the other non-AWS jobs still run. The
+[repository variables](#repository-variables-the-infra-planinfra-apply-ci-jobs-need) below still
+name the deleted resources. They are kept on purpose, as a record of what the resume must recreate.
+
+To resume, in order:
+
+1. Bootstrap the Hosting Account's state backend (`infra/bootstrap`, manual credentialed apply).
+2. Apply `infra/cicd` (manual first apply: the OIDC provider and `github-actions-*` roles).
+3. Apply `infra/registry` (manual first apply, see
+   [`registry`'s first apply](#tofu-apply-is-a-deliberate-humanops-action--for-bootstrap-and-foundation)).
+   The Platform Account's state backend was destroyed too. Recreate it first if a stack still
+   points at it.
+4. Re-set the repository variables in the table below from the new outputs.
+5. Unset `AWS_PAUSED` (`gh variable delete AWS_PAUSED --repo dahagag/odoo`).
+6. Let CI redeploy `infra/platform` (the next `dev/19.0` push runs the staging deploy).
+
 ## Layout
 
 ```
