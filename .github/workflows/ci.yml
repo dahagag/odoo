@@ -200,7 +200,9 @@ jobs:
     # (see infra/cicd/oidc.tf's ecr_push_trust comment) -- ecr_push's IAM trust policy alone
     # cannot tell the two apart, so this check is the actual gate keeping a fork's PR from ever
     # reaching the ecr-login step below.
-    if: needs.changes.outputs.image_relevant == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    # AWS_PAUSED kill switch (repo variable): skips this job while the AWS stacks are torn down --
+    # see infra/README.md's "AWS paused" section.
+    if: vars.AWS_PAUSED != 'true' && (needs.changes.outputs.image_relevant == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -259,7 +261,9 @@ jobs:
     needs: changes
     # See build-image's identical guard above: excludes a fork's pull_request run, which
     # ecr_push's IAM trust policy alone cannot distinguish from this repo's own.
-    if: needs.changes.outputs.prod_image_relevant == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    # AWS_PAUSED kill switch (repo variable): skips this job while the AWS stacks are torn down --
+    # see infra/README.md's "AWS paused" section.
+    if: vars.AWS_PAUSED != 'true' && (needs.changes.outputs.prod_image_relevant == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -322,7 +326,9 @@ jobs:
     needs: changes
     # Same fork-exclusion guard as build-image/build-prod-image (ecr_push's IAM trust policy
     # alone can't tell a fork's pull_request run from this repo's own).
-    if: needs.changes.outputs.stack_relevant == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    # AWS_PAUSED kill switch (repo variable): skips this job while the AWS stacks are torn down --
+    # see infra/README.md's "AWS paused" section.
+    if: vars.AWS_PAUSED != 'true' && (needs.changes.outputs.stack_relevant == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -558,7 +564,9 @@ jobs:
     # depends on infra-checks succeeding first (fmt/validate/test/lint) even though nothing here
     # consumes its output — a broken module shouldn't get a plan attempt against real state.
     needs: [changes, infra-checks]
-    if: github.event_name == 'pull_request' && needs.changes.outputs.infra_cicd_registry_relevant == 'true'
+    # AWS_PAUSED kill switch (repo variable): skips this job while the AWS stacks are torn down --
+    # see infra/README.md's "AWS paused" section.
+    if: vars.AWS_PAUSED != 'true' && (github.event_name == 'pull_request' && needs.changes.outputs.infra_cicd_registry_relevant == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -608,7 +616,9 @@ jobs:
     # Existing infra-checks (fmt/validate/test/lint) gates this apply, per #215's acceptance
     # criteria — a merge whose own infra-checks run failed must never reach `tofu apply`.
     needs: [changes, infra-checks]
-    if: github.event_name == 'push' && needs.changes.outputs.infra_cicd_registry_relevant == 'true'
+    # AWS_PAUSED kill switch (repo variable): skips this job while the AWS stacks are torn down --
+    # see infra/README.md's "AWS paused" section.
+    if: vars.AWS_PAUSED != 'true' && (github.event_name == 'push' && needs.changes.outputs.infra_cicd_registry_relevant == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -665,7 +675,9 @@ jobs:
     name: Infra plan (infra/platform)
     # See infra-plan's identical reasoning above for depending on infra-checks first.
     needs: [changes, infra-checks]
-    if: github.event_name == 'pull_request' && needs.changes.outputs.infra_platform_relevant == 'true'
+    # AWS_PAUSED kill switch (repo variable): skips this job while the AWS stacks are torn down --
+    # see infra/README.md's "AWS paused" section.
+    if: vars.AWS_PAUSED != 'true' && (github.event_name == 'pull_request' && needs.changes.outputs.infra_platform_relevant == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -735,7 +747,9 @@ jobs:
     # selection), never a repository variable. The workflow_dispatch arm (issue #218) is the only
     # way to redeploy an *older* already-published release tag — see the `on.workflow_dispatch`
     # comment above for why this needs its own trigger rather than reusing the push path.
-    if: (github.event_name == 'push' && github.ref_name == 'dev/19.0') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    # AWS_PAUSED kill switch (repo variable): skips this job while the AWS stacks are torn down --
+    # see infra/README.md's "AWS paused" section.
+    if: vars.AWS_PAUSED != 'true' && ((github.event_name == 'push' && github.ref_name == 'dev/19.0') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -881,7 +895,9 @@ jobs:
     # branch names are literal strings in ci.yml throughout (on.push.branches, infra-apply's role
     # selection), never a repository variable. See deploy-administration-stack-staging's identical
     # `needs`/workflow_dispatch comments above for why both still apply here unchanged.
-    if: (github.event_name == 'push' && github.ref_name == 'main/19.0') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    # AWS_PAUSED kill switch (repo variable): skips this job while the AWS stacks are torn down --
+    # see infra/README.md's "AWS paused" section.
+    if: vars.AWS_PAUSED != 'true' && ((github.event_name == 'push' && github.ref_name == 'main/19.0') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1082,7 +1098,9 @@ jobs:
     # See build-image's identical guard: excludes a fork's pull_request run, which ecr_push's
     # IAM trust policy alone cannot distinguish from this repo's own (this job assumes the same
     # role, to pull back the image build-image just pushed).
-    if: needs.changes.outputs.image_relevant == 'true' && needs.changes.outputs.test_modules != '[]' && github.event.pull_request.head.repo.full_name == github.repository
+    # AWS_PAUSED kill switch (repo variable): skips this job while the AWS stacks are torn down --
+    # see infra/README.md's "AWS paused" section.
+    if: vars.AWS_PAUSED != 'true' && (needs.changes.outputs.image_relevant == 'true' && needs.changes.outputs.test_modules != '[]' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       contents: read
