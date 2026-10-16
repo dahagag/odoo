@@ -17,6 +17,10 @@ COPY --chown=odoo:odoo odoo/ /workspace/odoo/
 COPY --chown=odoo:odoo addons/ /workspace/addons/
 COPY --chown=odoo:odoo custom_addons/ /workspace/custom_addons/
 COPY docker/odoo.conf /etc/odoo/odoo.conf
+# odoo-render-entrypoint.sh sources odoo-entrypoint-lib.sh from its own directory
+# ($(dirname "$0")), so the shared lib is copied alongside it here under its own
+# (renamed, extension-less) filename rather than only existing at its repo path.
+COPY --chmod=0755 docker/odoo-entrypoint-lib.sh /usr/local/bin/odoo-entrypoint-lib.sh
 COPY --chmod=0755 docker/odoo-render-entrypoint.sh /usr/local/bin/odoo-render-entrypoint
 
 RUN chmod 0755 /workspace/odoo-bin && chown -R odoo:odoo /var/lib/odoo

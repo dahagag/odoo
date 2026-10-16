@@ -124,3 +124,56 @@ variable "administration_stack_deployed_commit_parameter_name" {
   description = "infra/platform's aws_ssm_parameter.administration_stack_deployed_commit name default — the SSM parameter ci.yml's release-order guard (issue #218) reads/writes to detect an out-of-order deploy."
   default     = "/platform-administration-stack-api/deployed-commit"
 }
+
+# ---------------------------------------------------------------------------
+# infra/staging-odoo naming (issue #349) — same convention as the infra/platform block above:
+# fixed here, not read via remote state, so platform_staging_odoo_deploy/platform_staging_odoo_ci_plan's
+# permission documents can be scoped to these exact resource shapes. Values are infra/staging-odoo's
+# own var.environment/var.ecs_cluster_name defaults ("staging-odoo", both — infra/staging-odoo/
+# variables.tf), kept in sync by convention like administration_stack_* above.
+# ---------------------------------------------------------------------------
+
+variable "staging_odoo_ecs_cluster_name" {
+  type        = string
+  description = "infra/staging-odoo's var.ecs_cluster_name default (\"staging-odoo\")."
+  default     = "staging-odoo"
+}
+
+variable "staging_odoo_ecs_service_name" {
+  type        = string
+  description = "infra/staging-odoo's aws_ecs_service.staging_odoo name default (var.environment, \"staging-odoo\")."
+  default     = "staging-odoo"
+}
+
+variable "staging_odoo_task_family" {
+  type        = string
+  description = "infra/staging-odoo's aws_ecs_task_definition.staging_odoo family default (var.environment, \"staging-odoo\")."
+  default     = "staging-odoo"
+}
+
+variable "staging_odoo_deployed_commit_parameter_name" {
+  type        = string
+  description = "infra/staging-odoo's aws_ssm_parameter.staging_odoo_deployed_commit name default (infra/staging-odoo/ssm.tf) — the SSM parameter ci.yml's release-order guard (issue #218's pattern) reads/writes for this deployable unit."
+  default     = "/staging-odoo/deployed-commit"
+}
+
+variable "odoo_staging_retention_count" {
+  type        = number
+  description = "Number of most recent agentic-erp/odoo-staging images to retain — same content-hash-tagged scheme as odoo_dev/odoo_prod (ADR-0038), unlike tofu-runner/administration-stack-api which stay unmanaged."
+  default     = 10
+}
+
+# ---------------------------------------------------------------------------
+# Cross-account trust roles for CI (issue #349) — staging Odoo's own dedicated Hosting Account
+# roles, distinct from staging_deploy/infra_plan which this module's other cross-account roles
+# above are trusted by. Issue #341's own ci.yml wiring (already merged) names these as separate
+# repository variables (STAGING_ODOO_DEPLOY_ROLE_ARN, PLATFORM_STAGING_ODOO_CI_PLAN_ROLE_ARN),
+# so this module creates the Platform Account roles those variables are meant to resolve to,
+# matching that already-shipped design rather than retrofitting it onto the shared staging_deploy/
+# platform_ci_plan roles.
+# ---------------------------------------------------------------------------
+
+variable "staging_odoo_deploy_role_arn" {
+  type        = string
+  description = "infra/cicd's staging_odoo_deploy_role_arn output (Hosting Account) — the dedicated role deploy-odoo-staging assumes (issue #341/#349), distinct from the shared staging_deploy role since infra/staging-odoo is its own deployable unit. The only principal platform_staging_odoo_deploy's trust policy allows, and odoo_staging's repository policy's retag grant."
+}

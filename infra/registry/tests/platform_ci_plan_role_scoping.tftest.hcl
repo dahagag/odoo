@@ -27,6 +27,7 @@ variables {
   production_deploy_role_arn                  = "arn:aws:iam::222222222222:role/github-actions-production-deploy"
   infra_plan_role_arn                         = "arn:aws:iam::222222222222:role/github-actions-infra-plan"
   ecr_push_role_arn                           = "arn:aws:iam::222222222222:role/github-actions-ecr-push"
+  staging_odoo_deploy_role_arn                = "arn:aws:iam::222222222222:role/github-actions-staging-odoo-deploy"
 }
 
 override_data {
@@ -65,13 +66,20 @@ override_resource {
 }
 
 override_resource {
+  target = aws_ecr_repository.odoo_staging
+  values = {
+    arn = "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/odoo-staging"
+  }
+}
+
+override_resource {
   target = aws_iam_role.platform_ci_plan
   values = {
     arn = "arn:aws:iam::333333333333:role/platform-ci-plan"
   }
 }
 
-# platform_ci_plan's own policy also references its two sibling roles' ARNs
+# platform_ci_plan's own policy also references its four sibling roles' ARNs
 # (ReadRegistryCrossAccountRoles) — overridden here too so this run never attempts to create them
 # for real.
 override_resource {
@@ -88,6 +96,20 @@ override_resource {
   }
 }
 
+override_resource {
+  target = aws_iam_role.platform_staging_odoo_deploy
+  values = {
+    arn = "arn:aws:iam::333333333333:role/platform-staging-odoo-deploy"
+  }
+}
+
+override_resource {
+  target = aws_iam_role.platform_staging_odoo_ci_plan
+  values = {
+    arn = "arn:aws:iam::333333333333:role/platform-staging-odoo-ci-plan"
+  }
+}
+
 run "verify_platform_ci_plan_trust_and_read_only_scoping" {
   command = apply
 
@@ -97,9 +119,12 @@ run "verify_platform_ci_plan_trust_and_read_only_scoping" {
       aws_ecr_repository.odoo_prod,
       aws_ecr_repository.tofu_runner,
       aws_ecr_repository.administration_stack_api,
+      aws_ecr_repository.odoo_staging,
       aws_iam_role.platform_ci_plan,
       aws_iam_role.platform_registry_deploy,
       aws_iam_role.platform_administration_stack_deploy,
+      aws_iam_role.platform_staging_odoo_deploy,
+      aws_iam_role.platform_staging_odoo_ci_plan,
       data.aws_iam_policy_document.platform_ci_plan_trust,
       data.aws_iam_policy_document.platform_ci_plan,
     ]
@@ -134,9 +159,10 @@ run "verify_platform_ci_plan_trust_and_read_only_scoping" {
         "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/odoo-prod",
         "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/tofu-runner",
         "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/administration-stack-api",
+        "arn:aws:ecr:us-east-1:333333333333:repository/agentic-erp/odoo-staging",
       ])
     ])
-    error_message = "ReadRegistryRepositories must be scoped to exactly the four repository ARNs this module creates."
+    error_message = "ReadRegistryRepositories must be scoped to exactly the five repository ARNs this module creates (issue #349 adds odoo-staging)."
   }
 
   assert {

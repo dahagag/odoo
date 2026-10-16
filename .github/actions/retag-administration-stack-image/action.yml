@@ -1,20 +1,26 @@
-name: Retag the administration-stack image with a release version
+name: Retag an already-pushed image with a release version
 description: >-
-  Adds a second tag (the current release version) onto the administration-stack-api image
-  ecr_push already pushed under its content-hash tag at PR time — no rebuild, idempotent against a
+  Adds a second tag (the current release version) onto an image ecr_push (or an equivalent
+  content-hash-tagged build job) already pushed at PR time — no rebuild, idempotent against a
   re-run or a concurrent retag. Reused (issue #217) by deploy-administration-stack-staging and
   deploy-administration-stack-production so the two don't each carry their own copy of this shell
-  block.
+  block; generalized by `repository_name` (issue #341) so deploy-odoo-staging can reuse the exact
+  same logic for the agentic-erp/odoo-staging repository instead of a duplicate copy of this
+  action with a different hardcoded repository name.
 inputs:
   content_hash_tag:
-    description: The content-hash tag build-stack-image published this commit's image under.
+    description: The content-hash tag the build job published this commit's image under.
     required: true
   release_tag:
     description: The release version tag to add (from resolve-release-tag).
     required: true
   platform_account_id:
-    description: The Platform Account ID the administration-stack-api ECR repository lives in.
+    description: The Platform Account ID the ECR repository lives in.
     required: true
+  repository_name:
+    description: The ECR repository name to retag in.
+    required: false
+    default: agentic-erp/administration-stack-api
 runs:
   using: composite
   steps:
@@ -24,14 +30,15 @@ runs:
         CONTENT_HASH_TAG: ${{ inputs.content_hash_tag }}
         RELEASE_TAG: ${{ inputs.release_tag }}
         PLATFORM_ACCOUNT_ID: ${{ inputs.platform_account_id }}
+        REPOSITORY_NAME: ${{ inputs.repository_name }}
       run: |
         manifest=$(aws ecr batch-get-image \
           --registry-id "$PLATFORM_ACCOUNT_ID" \
-          --repository-name agentic-erp/administration-stack-api \
+          --repository-name "$REPOSITORY_NAME" \
           --image-ids imageTag="$CONTENT_HASH_TAG" \
           --query 'images[0].imageManifest' --output text)
         if [[ -z "$manifest" || "$manifest" == "None" ]]; then
-          echo "No agentic-erp/administration-stack-api image found for content-hash tag $CONTENT_HASH_TAG — did build-stack-image run for this commit's stack/** tree?" >&2
+          echo "No $REPOSITORY_NAME image found for content-hash tag $CONTENT_HASH_TAG — did the build job run for this commit's relevant tree?" >&2
           exit 1
         fi
         # Idempotent: a re-run for a commit whose release tag was already retagged must not fail
@@ -39,7 +46,7 @@ runs:
         # racing this one (ImageAlreadyExistsException) is a real deploy failure.
         existing=$(aws ecr batch-get-image \
           --registry-id "$PLATFORM_ACCOUNT_ID" \
-          --repository-name agentic-erp/administration-stack-api \
+          --repository-name "$REPOSITORY_NAME" \
           --image-ids imageTag="$RELEASE_TAG" \
           --query 'images[0].imageManifest' --output text 2>/dev/null || true)
         if [[ "$existing" == "$manifest" ]]; then
@@ -48,7 +55,7 @@ runs:
         fi
         if ! aws ecr put-image \
           --registry-id "$PLATFORM_ACCOUNT_ID" \
-          --repository-name agentic-erp/administration-stack-api \
+          --repository-name "$REPOSITORY_NAME" \
           --image-tag "$RELEASE_TAG" \
           --image-manifest "$manifest" 2> put-image.err; then
           if grep -q ImageAlreadyExistsException put-image.err; then

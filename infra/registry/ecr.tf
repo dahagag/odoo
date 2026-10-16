@@ -37,21 +37,33 @@ resource "aws_ecr_repository" "administration_stack_api" {
   }
 }
 
+resource "aws_ecr_repository" "odoo_staging" {
+  name = local.odoo_staging_repository_name
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+}
+
 # ---------------------------------------------------------------------------
-# Lifecycle policies. Count-based (not age-based): both images are content-hash tagged and
-# deduped on push, so a deploy pins a specific content-hash tag — age-based expiry risks deleting
-# a tag a stale deploy still references purely because it is old (ADR-0038). Both repositories'
-# rules are identical in shape, differing only by retention count, so one for_each renders both.
+# Lifecycle policies. Count-based (not age-based): all three images below are content-hash
+# tagged and deduped on push, so a deploy pins a specific content-hash tag — age-based expiry
+# risks deleting a tag a stale deploy still references purely because it is old (ADR-0038). All
+# three repositories' rules are identical in shape, differing only by retention count, so one
+# for_each renders them.
 #
 # tofu-runner and administration-stack-api deliberately get no lifecycle policy yet: neither has
 # a CI build workflow in this repo, so there is no build cadence or tagging scheme to set a rule
-# against (ADR-0038, "Deferred").
+# against (ADR-0038, "Deferred"). odoo_staging does have one (build-staging-odoo-image, issue
+# #341, content-hash tagged the same way build-prod-image is), so it gets a rule here rather than
+# joining that deferred pair.
 # ---------------------------------------------------------------------------
 
 locals {
   ecr_retention_by_repository = {
-    odoo_dev  = { repository_name = aws_ecr_repository.odoo_dev.name, retention_count = var.odoo_dev_retention_count }
-    odoo_prod = { repository_name = aws_ecr_repository.odoo_prod.name, retention_count = var.odoo_prod_retention_count }
+    odoo_dev     = { repository_name = aws_ecr_repository.odoo_dev.name, retention_count = var.odoo_dev_retention_count }
+    odoo_prod    = { repository_name = aws_ecr_repository.odoo_prod.name, retention_count = var.odoo_prod_retention_count }
+    odoo_staging = { repository_name = aws_ecr_repository.odoo_staging.name, retention_count = var.odoo_staging_retention_count }
   }
 }
 
@@ -244,4 +256,51 @@ data "aws_iam_policy_document" "administration_stack_api_push" {
 resource "aws_ecr_repository_policy" "administration_stack_api_push" {
   repository = aws_ecr_repository.administration_stack_api.name
   policy     = data.aws_iam_policy_document.administration_stack_api_push.json
+}
+
+# odoo_staging carries two distinct grants (issue #349), same shape as administration_stack_api
+# above: ecr_push's PR-time push (build-staging-odoo-image, content-hash tag), and
+# staging_odoo_deploy's own, separate, narrower retag-only access (BatchGetImage + PutImage
+# only — it never uploads new layers, only adds the release-version tag to the image ecr_push
+# already pushed). Unlike administration_stack_api there is no second (production) deploy
+# principal — staging Odoo has exactly one deployable environment.
+data "aws_iam_policy_document" "odoo_staging_push" {
+  statement {
+    sid    = "AllowEcrPushRolePush"
+    effect = "Allow"
+
+    principals {
+      type        = "AWS"
+      identifiers = [var.ecr_push_role_arn]
+    }
+
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:BatchGetImage",
+      "ecr:CompleteLayerUpload",
+      "ecr:InitiateLayerUpload",
+      "ecr:PutImage",
+      "ecr:UploadLayerPart",
+    ]
+  }
+
+  statement {
+    sid    = "AllowStagingOdooDeployRetag"
+    effect = "Allow"
+
+    principals {
+      type        = "AWS"
+      identifiers = [var.staging_odoo_deploy_role_arn]
+    }
+
+    actions = [
+      "ecr:BatchGetImage",
+      "ecr:PutImage",
+    ]
+  }
+}
+
+resource "aws_ecr_repository_policy" "odoo_staging_push" {
+  repository = aws_ecr_repository.odoo_staging.name
+  policy     = data.aws_iam_policy_document.odoo_staging_push.json
 }

@@ -17,3 +17,5 @@ access_sale_order_viewer,sale.order viewer,sale.model_sale_order,crm_methodology
 access_sale_order_line_viewer,sale.order.line viewer,sale.model_sale_order_line,crm_methodology_group_viewer,1,0,0,0
 access_crm_tag_viewer,crm.tag viewer,sales_team.model_crm_tag,crm_methodology_group_viewer,1,0,0,0
 access_account_move_viewer,account.move viewer,account.model_account_move,crm_methodology_group_viewer,1,0,0,0
+access_crm_lead_staging_early_adopter,crm.lead staging early adopter,crm.model_crm_lead,group_staging_early_adopter,1,1,1,0
+access_crm_methodology_staging_early_adopter,crm.methodology staging early adopter,model_crm_methodology,group_staging_early_adopter,1,0,0,0

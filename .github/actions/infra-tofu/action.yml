@@ -40,6 +40,18 @@ inputs:
     description: infra/platform's same-named input (only used when dir is infra/platform) — the release version this apply deploys (issue #216).
     required: false
     default: ""
+  odoo_repository_url:
+    description: infra/staging-odoo's same-named input (only used when dir is infra/staging-odoo) — the staging Odoo image's ECR repository URL (issue #341).
+    required: false
+    default: ""
+  odoo_image_tag:
+    description: infra/staging-odoo's same-named input (only used when dir is infra/staging-odoo) — the release version this apply deploys (issue #341, mirrors administration_stack_image_tag).
+    required: false
+    default: ""
+  staging_odoo_secrets_kms_key_arn:
+    description: infra/staging-odoo's same-named input (only used when dir is infra/staging-odoo) — the one KMS key every staging-Odoo SSM SecureString parameter is encrypted under (ADR-0041).
+    required: false
+    default: ""
   platform_registry_deploy_role_arn:
     description: infra/cicd's same-named input (only used when dir is infra/cicd) — infra/registry's platform_registry_deploy_role_arn output (issue #271/#272).
     required: false
@@ -70,13 +82,16 @@ inputs:
     default: ""
   platform_assume_role_arn:
     description: >-
-      infra/registry's and infra/platform's same-named input (used when dir is infra/registry or
-      infra/platform) — the Platform Account role this module's own AWS provider assumes into
-      (issue #271/#272). For infra/registry: unset for the operator's first bootstrap apply, or
-      infra/registry's own platform_registry_deploy_role_arn/platform_ci_plan_role_arn output for
-      apply/plan. For infra/platform: infra/registry's platform_administration_stack_deploy_role_arn
-      output for apply, or platform_ci_plan_role_arn for plan — always required (infra/platform is
-      never applied by a human operator directly).
+      infra/registry's, infra/platform's, and infra/staging-odoo's same-named input (used when dir
+      is infra/registry, infra/platform, or infra/staging-odoo) — the Platform Account role this
+      module's own AWS provider assumes into (issue #271/#272). For infra/registry: unset for the
+      operator's first bootstrap apply, or infra/registry's own
+      platform_registry_deploy_role_arn/platform_ci_plan_role_arn output for apply/plan. For
+      infra/platform: infra/registry's platform_administration_stack_deploy_role_arn output for
+      apply, or platform_ci_plan_role_arn for plan. For infra/staging-odoo: its own dedicated
+      cross-account deploy role (issue #341) for apply, or platform_ci_plan_role_arn for plan —
+      always required for infra/platform and infra/staging-odoo (neither is ever applied by a
+      human operator directly).
     required: false
     default: ""
 runs:
@@ -110,6 +125,19 @@ runs:
             extra_vars=(
               -var "administration_stack_api_repository_url=${{ inputs.administration_stack_api_repository_url }}"
               -var "administration_stack_image_tag=${{ inputs.administration_stack_image_tag }}"
+              -var "platform_assume_role_arn=${{ inputs.platform_assume_role_arn }}"
+            )
+            ;;
+          infra/staging-odoo)
+            # Issue #341: staging Odoo's own deployable unit, independent state key from
+            # infra/platform (the unrelated administration-stack API). Every other variable
+            # infra/staging-odoo/variables.tf declares has a default (Tailscale/SSM parameter
+            # names, VPC CIDRs, task sizing, etc.) — only the three below have none, so only
+            # these need wiring through here.
+            extra_vars=(
+              -var "odoo_repository_url=${{ inputs.odoo_repository_url }}"
+              -var "odoo_image_tag=${{ inputs.odoo_image_tag }}"
+              -var "staging_odoo_secrets_kms_key_arn=${{ inputs.staging_odoo_secrets_kms_key_arn }}"
               -var "platform_assume_role_arn=${{ inputs.platform_assume_role_arn }}"
             )
             ;;

@@ -56,4 +56,14 @@ locals {
   # -task_role_arn_pattern, -log_group_arn) moved to infra/registry — the module that now builds
   # infra/platform's resource ARNs, since platform_administration_stack_deploy and
   # platform_ci_plan (which actually reference them) live there.
+
+  # Issue #349: infra/staging-odoo's own state object (its own backend.tf key, #337) in the same
+  # shared bootstrap state bucket/lock table — scoped individually, same reasoning as
+  # managed_state_object_arns/administration_stack_platform_state_object_arn above, so a
+  # compromised staging_odoo_deploy session can't read/overwrite any other module's state.
+  staging_odoo_state_object_arn = "${var.tofu_state_bucket_arn}/staging-odoo/terraform.tfstate"
+
+  # The one ECR repository staging_odoo_deploy needs write access to — same "retag only, never
+  # push new content" split as administration_stack_api_repository_arn above.
+  staging_odoo_repository_arn = "arn:aws:ecr:${var.aws_region}:${var.platform_account_id}:repository/agentic-erp/odoo-staging"
 }

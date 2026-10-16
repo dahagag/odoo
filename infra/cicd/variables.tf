@@ -55,6 +55,7 @@ variable "ecr_repository_names" {
     "agentic-erp/odoo-prod",
     "agentic-erp/tofu-runner",
     "agentic-erp/administration-stack-api",
+    "agentic-erp/odoo-staging",
   ]
 }
 
@@ -88,6 +89,16 @@ variable "platform_administration_stack_deploy_role_arn" {
 variable "platform_ci_plan_role_arn" {
   type        = string
   description = "infra/registry's platform_ci_plan_role_arn output (issue #271/#272) — the Platform Account, read-only role infra_plan alone assumes (AssumePlatformCiPlanRole) for a real `tofu plan` of infra/registry or infra/platform."
+}
+
+variable "platform_staging_odoo_deploy_role_arn" {
+  type        = string
+  description = "infra/registry's platform_staging_odoo_deploy_role_arn output (issue #349) — the Platform Account role staging_odoo_deploy alone assumes (AssumePlatformStagingOdooDeployRole) to deploy infra/staging-odoo's VPC/ECS/IAM/Logs resources."
+}
+
+variable "platform_staging_odoo_ci_plan_role_arn" {
+  type        = string
+  description = "infra/registry's platform_staging_odoo_ci_plan_role_arn output (issue #349) — the Platform Account, read-only role infra_plan alone assumes (AssumePlatformStagingOdooCiPlanRole) for a real `tofu plan` of infra/staging-odoo."
 }
 
 variable "tofu_state_lock_table_arn" {
